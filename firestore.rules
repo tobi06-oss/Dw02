@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 각자 자기 기록만 읽고 쓴다 (예전 트래커의 users/{uid}/... 기록도 그대로 동작)
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    // 종가: 로그인한 사용자는 읽기만, 쓰기는 GitHub Actions(서비스 계정)만
+    match /prices/{ticker} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}
