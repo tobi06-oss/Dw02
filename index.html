@@ -653,10 +653,13 @@ const auth = getAuth(app);
 const fs = initializeFirestore(app, { ignoreUndefinedProperties: true });
 const $ = (id) => document.getElementById(id);
 
+// Firestore에는 봉을 {d,o,h,l,c} 객체로 저장하고(배열 안 배열 금지), 화면에는 [d,o,h,l,c] 배열로 넘깁니다.
+const toArr = (b) => Array.isArray(b) ? b : [b.d, b.o, b.h, b.l, b.c];
+const toObj = (b) => Array.isArray(b) ? { d: b[0], o: b[1], h: b[2], l: b[3], c: b[4] } : b;
 function mergeBars(g, m) {
   const map = new Map();
-  (g && g.bars || []).forEach(b => map.set(b[0], b));
-  (m && m.bars || []).forEach(b => map.set(b[0], b));
+  (g && g.bars || []).map(toArr).forEach(b => map.set(b[0], b));
+  (m && m.bars || []).map(toArr).forEach(b => map.set(b[0], b));
   const bars = [...map.values()].sort((a, b) => a[0] < b[0] ? -1 : 1).slice(-150);
   const updatedAt = [g && g.updatedAt, m && m.updatedAt].filter(Boolean).sort().pop() || null;
   return { bars, updatedAt };
@@ -671,7 +674,7 @@ function makeAdapter(uid) {
     throw new Error("unknown path " + p);
   };
   return {
-    doc: (p) => { const r = ref(p); return { set: (d) => setDoc(r, d), update: (d) => updateDoc(r, d), delete: () => deleteDoc(r) }; },
+    doc: (p) => { const r = ref(p); return { set: (d) => setDoc(r, d && Array.isArray(d.bars) ? { ...d, bars: d.bars.map(toObj) } : d), update: (d) => updateDoc(r, d), delete: () => deleteDoc(r) }; },
     collection: (name) => ({
       onSnapshot: (next, err) => {
         if (name === "accounts") {
