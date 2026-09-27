@@ -44,10 +44,13 @@ async function fetchBars(t) {
   return { bars: await fromStooq(t), source: "stooq" };
 }
 
+// Firestore는 배열 안의 배열을 저장할 수 없어서 봉 하나를 {d,o,h,l,c} 객체로 저장합니다.
+const toObj = (b) => (Array.isArray(b) ? { d: b[0], o: b[1], h: b[2], l: b[3], c: b[4] } : b);
+
 function sane(bars) {
   for (let i = 1; i < bars.length; i++) {
-    const ch = bars[i][4] / bars[i - 1][4] - 1;
-    if (Math.abs(ch) > 0.6) return `${bars[i][0]} 종가 변동 ${(ch * 100).toFixed(0)}%`;
+    const ch = bars[i].c / bars[i - 1].c - 1;
+    if (Math.abs(ch) > 0.6) return `${bars[i].d} 종가 변동 ${(ch * 100).toFixed(0)}%`;
   }
   return null;
 }
@@ -67,14 +70,14 @@ async function main() {
       if (bars.length && bars[bars.length - 1][0] === now.date && now.minutes < 16 * 60 + 10) bars = bars.slice(0, -1);
       const ref = db.collection("prices").doc(t);
       const snap = await ref.get();
-      const map = new Map((snap.exists ? snap.data().bars || [] : []).map((b) => [b[0], b]));
-      bars.forEach((b) => map.set(b[0], b));
-      const merged = [...map.values()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-KEEP);
+      const map = new Map((snap.exists ? snap.data().bars || [] : []).map(toObj).map((b) => [b.d, b]));
+      bars.map(toObj).forEach((b) => map.set(b.d, b));
+      const merged = [...map.values()].sort((a, b) => (a.d < b.d ? -1 : 1)).slice(-KEEP);
       const bad = sane(merged.slice(-30));
       if (bad) throw new Error(`${t} 값 이상 (${bad}) — 저장하지 않음`);
       await ref.set({ bars: merged, updatedAt: new Date().toISOString(), source });
       const last = merged[merged.length - 1];
-      console.log(`${t}: ${last[0]} 종가 ${last[4]} (${source}, ${merged.length}개)`);
+      console.log(`${t}: ${last.d} 종가 ${last.c} (${source}, ${merged.length}개)`);
     } catch (e) {
       failed++;
       console.error(`${t} 실패: ${e.message || e}`);
