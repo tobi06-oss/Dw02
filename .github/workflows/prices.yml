@@ -1,0 +1,25 @@
+name: 종가 업데이트
+
+on:
+  schedule:
+    - cron: "30 22 * * 1-5"
+    - cron: "30 23 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 패키지 설치
+        working-directory: scripts
+        run: npm install --no-audit --no-fund
+      - name: 종가 받아서 Firestore에 저장
+        working-directory: scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node update-prices.mjs
