@@ -29,15 +29,22 @@
   function starPct(base, N, T) { return base * (1 - 2 * T / N); }
 
   // 매수 사다리: 1회 예산으로 1주씩 더 살 수 있게 되는 가격을 차례로 구한다.
-  function ladder(budget, q, floorPrice, max) {
+  // ceil: 위쪽 본 매수 주문(별지점·평단 등) 중 가장 낮은 가격. 이 가격 이상인 칸은 의미가 없어 빼고, 그 아래 칸만 max개까지 낸다.
+  function ladder(budget, q, floorPrice, max, ceil) {
     var out = [];
     if (!(budget > 0)) return out;
-    for (var k = 1; k <= (max || 12); k++) {
+    for (var k = 1; out.length < (max || 12) && k < 400; k++) {
       var p = f2(budget / (q + k));
       if (p <= 0 || p < floorPrice) break;
-      out.push({ side: "BUY", kind: "ladder", type: "LOC", price: p, qty: 1, label: "하락 대비 " + k });
+      if (ceil != null && p >= ceil) continue;
+      out.push({ side: "BUY", kind: "ladder", type: "LOC", price: p, qty: 1, label: "하락 대비 " + (out.length + 1) });
     }
     return out;
+  }
+  function lowestBuy(orders) {
+    var m = null;
+    orders.forEach(function (o) { if (o.side === "BUY" && o.price != null) { var v = o.orig != null ? o.orig : o.price; if (m == null || v < m) m = v; } });
+    return m;
   }
 
   // 증권사 가격제한(현재가 ±20% 부근)을 피하는 큰수 주문. 체결 결과는 원래 주문과 같다.
@@ -82,7 +89,7 @@
       p.budget = bud;
       var bq = Math.floor(bud / p.buyP);
       if (bq > 0) p.orders.push(applyBig({ side: "BUY", kind: "rev-buy", type: "LOC", price: p.buyP, qty: bq, label: "쿼터매수 (잔금/4)" }, c0, a));
-      p.orders = p.orders.concat(ladder(bud, bq, floorPrice, 8));
+      p.orders = p.orders.concat(ladder(bud, bq, floorPrice, 8, lowestBuy(p.orders)));
       p.exitPrice = r2(avg * (1 - base / 100));
       p.notes.push("별지점 = 직전 5거래일 종가 평균. 종가가 $" + p.exitPrice.toFixed(2) + "(평단 −" + base + "%)를 넘으면 일반모드로 돌아갑니다.");
       return p;
@@ -96,7 +103,7 @@
       var big = f2(c0 * (a.bigMult || 1.12));
       var fq = Math.floor(budget / big);
       if (fq > 0) p.orders.push({ side: "BUY", kind: "first", type: "LOC", price: big, qty: fq, label: "처음매수 (큰수)" });
-      p.orders = p.orders.concat(ladder(budget, fq, floorPrice, 10));
+      p.orders = p.orders.concat(ladder(budget, fq, floorPrice, 10, lowestBuy(p.orders)));
       p.notes.push("처음매수는 전일 종가보다 " + Math.round(((a.bigMult || 1.12) - 1) * 100) + "% 높은 가격으로 LOC를 걸어 사실상 무조건 매수합니다.");
       return p;
     }
@@ -115,6 +122,9 @@
       var q1 = Math.floor(half / p.buyP);
       var avgP = r2(avg);
       var q2 = Math.floor((budget - q1 * p.buyP) / avgP);
+      // 종가가 평단 이하로 끝나면 두 주문이 다 체결되므로, 1회 매수금 한도 안에서 평단 가격으로 살 수 있는 최대 수량까지 평단 LOC에 싣는다
+      // (예전에는 이 몫이 평단보다 비싼 '하락 대비' 1주로 따로 나왔다)
+      while (q1 + q2 + 1 > 0 && f2(budget / (q1 + q2 + 1)) >= avgP) q2++;
       if (q1 > 0) p.orders.push(applyBig({ side: "BUY", kind: "star-half", type: "LOC", price: p.buyP, qty: q1, label: "별지점 절반" }, c0, a));
       if (q2 > 0) p.orders.push(applyBig({ side: "BUY", kind: "avg-half", type: "LOC", price: avgP, qty: q2, label: "평단 절반" }, c0, a));
       Q = q1 + q2;
@@ -123,7 +133,7 @@
       if (qf > 0) p.orders.push(applyBig({ side: "BUY", kind: "star-full", type: "LOC", price: p.buyP, qty: qf, label: "별지점 전체" }, c0, a));
       Q = qf;
     }
-    p.orders = p.orders.concat(ladder(budget, Q, floorPrice, 10));
+    p.orders = p.orders.concat(ladder(budget, Q, floorPrice, 10, lowestBuy(p.orders)));
 
     var quarter = Math.floor(qty / 4), rest = qty - quarter;
     var target = r2(avg * (1 + base / 100));
