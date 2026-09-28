@@ -462,7 +462,13 @@ function render(){
   var v = $("view");
   var openSet = {}; v.querySelectorAll("details[id]").forEach(function(d){ if(d.open) openSet[d.id]=1; });
   if(!loaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
-  if(!a){ v.innerHTML='<div class="panel"><div class="empty">계좌가 없습니다. 아래 "계좌 추가"에서 만들거나, 지금까지 정한 두 계좌(SOXL 무매 20/20 · VR 1호)를 불러오세요.</div><div class="actions"><button class="btn primary" type="button" id="seed-btn">내 계좌 두 개 불러오기</button></div></div>'; return; }
+  if(!a){
+    if(!trk.metaLoaded||!trk.cyclesLoaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
+    v.innerHTML = isOwner()
+      ? '<div class="panel"><div class="empty">계좌가 없습니다. 아래 "계좌 추가"에서 만들거나, 지금까지 정한 두 계좌(SOXL 무매 20/20 · VR 1호)를 불러오세요.</div><div class="actions"><button class="btn primary" type="button" id="seed-btn">내 계좌 두 개 불러오기</button></div></div>'
+      : '<div class="panel"><div class="empty">아직 계좌가 없어요. 무한매수법은 종목·분할수·원금을, VR은 시작 V·Pool·보유수량을 넣어 계좌를 만드세요.</div><div class="actions"><button class="btn primary" type="button" id="tab-add">계좌 만들기</button></div></div>';
+    return;
+  }
   if(!bars(a.ticker).length){ v.innerHTML='<div class="panel empty">'+esc(a.ticker)+' 종가가 아직 없습니다. 아래 "종가 직접 입력"에서 최근 종가를 넣어주세요.</div>'; return; }
   var ae=document.activeElement, fid=ae&&ae.id&&v.contains(ae)?ae.id:null, sel=null;
   try{ if(fid&&ae.selectionStart!=null) sel=[ae.selectionStart,ae.selectionEnd]; }catch(e){}
@@ -1105,8 +1111,11 @@ function copyText(a){
   return lines.join("\n");
 }
 
+// "내 계좌 두 개 불러오기"는 예전 트래커의 1~6차 기록이 있는 계정(= 만든 사람 계정)에서만 보인다
+var OWNER_CYCLE_IDS=["cycle_r1","cycle_r2","cycle_r3","cycle0","cycle_r5","cycle1"];
+function isOwner(){ return trk.cycles.some(function(c){ return OWNER_CYCLE_IDS.indexOf(c.id)>=0; }); }
 function seedDemo(){
-  if(!db) return;
+  if(!db||!isOwner()) return;
   var ts=Date.now();
   var inf={id:"acct-soxl",type:"INF",name:"SOXL 무매 20/20",ticker:"SOXL",createdAt:ts,order:0,N:20,basePct:20,principal:54400,initialPrincipal:54400,cash:54400,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:1.12,fee:0.07,realized:0,aside:0,pending:null,events:[],log:[]};
   var vr={id:"acct-vr1",type:"VR",name:"VR 1호",ticker:"TQQQ",createdAt:ts+1,order:1,V:2834.39,pool:300,qty:37,G:10,band:0.15,contrib:150,vrType:"INSTALLMENT",limitPct:75,invested:2387.06,nextUpdate:"2026-10-09",cycle:1,orderType:"LOC",fee:0.07,pending:null,events:[],log:[]};
@@ -1258,7 +1267,7 @@ window.DeskApp = {
     render();
     db.doc("cycle/current").onSnapshot(function(s){ trk.meta=s.exists?s.data():null; trk.metaLoaded=true; if(trk.entriesLoaded) maybeMigrate(); render(); }, function(e){ console.error("cycle",e); });
     db.collection("entries").onSnapshot(function(s){ trk.entries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; if(trk.metaLoaded) maybeMigrate(); render(); }, function(e){ console.error("entries",e); });
-    db.collection("cycles").onSnapshot(function(s){ trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); render(); }, function(e){ console.error("cycles",e); });
+    db.collection("cycles").onSnapshot(function(s){ trk.cyclesLoaded=true; trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); render(); }, function(e){ console.error("cycles",e); });
     db.collection("accounts").onSnapshot(function(snap){
       var next={};
       snap.docs.forEach(function(doc){ var v=JSON.parse(JSON.stringify(doc.data())); v.id=doc.id; next[doc.id]=v; });
