@@ -721,20 +721,42 @@ function computeRows(entries, trades, tk){
 }
 
 /* ----- 실행취소 ----- */
-function pushUndo(label, fn){ undoStack.push({id:++undoSeq,label:label,time:new Date(),undo:fn}); if(undoStack.length>15) undoStack.shift(); }
+// 실행취소는 "이 작업 직전의 문서 상태"를 저장해 두는 방식이라 창을 닫았다 열어도, 다른 기기에서도 남는다 (users/내ID/undo)
+var UNDO_MAX=20;
+function curDoc(path){
+  var sp=path.split("/"), c=sp[0], id=sp[1], x=null;
+  if(c==="accounts"){ if(accounts[id]){ x=JSON.parse(JSON.stringify(accounts[id])); delete x._plan; } }
+  else if(c==="cycle"){ if(trk.meta) x=JSON.parse(JSON.stringify(trk.meta)); }
+  else if(c==="entries"){ var e=trk.entries.filter(function(y){return y.id===id||y.date===id;})[0]; if(e){ x=JSON.parse(JSON.stringify(e)); delete x.id; } }
+  else if(c==="cycles"){ var cy=trk.cycles.filter(function(y){return y.id===id;})[0]; if(cy){ x=JSON.parse(JSON.stringify(cy)); delete x.id; } }
+  return x;
+}
+function snap(paths){ return paths.map(function(p){ return {p:p, d:curDoc(p)}; }); }
+function pushUndo(label, ops){
+  if(!db||!ops||!ops.length) return;
+  var id="u"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), item={label:label,time:Date.now(),ops:ops};
+  undoStack.push(Object.assign({id:id},item));
+  db.doc("undo/"+id).set(item).catch(function(e){ console.error("undo save",e); });
+  var old=undoStack.slice().sort(function(a,b){return a.time-b.time;});
+  while(old.length>UNDO_MAX){ var o=old.shift(); undoStack=undoStack.filter(function(u){return u.id!==o.id;}); db.doc("undo/"+o.id).delete(); }
+}
+function runUndo(u){
+  return Promise.all(u.ops.map(function(o){ return o.d ? db.doc(o.p).set(o.d) : db.doc(o.p).delete(); })).then(function(){ return db.doc("undo/"+u.id).delete(); });
+}
 function undoFab(){
   var el=$("undo-fab"); if(!el) return;
-  var u=undoStack[undoStack.length-1];
+  var u=undoStack.slice().sort(function(a,b){return a.time-b.time;}).pop();
   if(!u||!db){ el.hidden=true; return; }
   el.hidden=false; el.setAttribute("data-id",u.id); el.disabled=false;
   el.innerHTML='↶ 실행취소 <span>'+esc(u.label)+'</span>';
 }
 function undoPanel(){
   if(!undoStack.length) return "";
-  return '<section class="panel"><h2>실행취소</h2>'+undoStack.slice().reverse().map(function(u){
-    var t=("0"+u.time.getHours()).slice(-2)+":"+("0"+u.time.getMinutes()).slice(-2);
-    return '<div class="undo-row"><span class="l">'+esc(u.label)+'<span class="tm">'+t+'</span></span><button type="button" class="undo-btn" data-act="undo" data-id="'+u.id+'">실행취소</button></div>';
-  }).join("")+'</section>';
+  var list=undoStack.slice().sort(function(a,b){return b.time-a.time;});
+  return '<details class="panel" id="undo-panel"><summary>실행취소 ('+list.length+')</summary>'+list.map(function(u){
+    var d=new Date(u.time), t=(d.getMonth()+1)+"/"+d.getDate()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    return '<div class="undo-row"><span class="l">'+esc(u.label)+'<span class="tm">'+t+'</span></span><button type="button" class="undo-btn" data-act="undo" data-id="'+esc(u.id)+'">실행취소</button></div>';
+  }).join("")+'<div class="hint">되돌리면 그 작업 직전 상태로 돌아가요. 그 뒤에 같은 계좌나 기록에서 한 변경도 함께 되돌아가니, 가능하면 최근 것부터 되돌리세요. 최근 '+UNDO_MAX+'개까지 남고 창을 닫아도 유지됩니다.</div></details>';
 }
 
 /* ----- 차트 (SVG 문자열) ----- */
@@ -928,10 +950,10 @@ function linkBanner(a){
 
 /* ----- 저장 동작 ----- */
 function writeTrades(a, list, label, msg){
-  var prevT=getTrades().slice(), prevA=pickState(a);
+  var u=snap(["cycle/current","accounts/"+a.id]);
   return Promise.all([db.doc("cycle/current").update({trades:list}), save(a, statePatch(a,list))]).then(function(){
     if(msg) toast(msg);
-    pushUndo(label, function(){ return Promise.all([db.doc("cycle/current").update({trades:prevT}), save(accounts[a.id]||a, prevA)]); });
+    pushUndo(label, u);
     render();
   });
 }
@@ -997,14 +1019,14 @@ function maybeMigrate(){
 function recAct(act, b, a){
   var L=linkedAcct();
   if(act==="undo"){
-    var id=+b.getAttribute("data-id"), it=undoStack.filter(function(u){return u.id===id;})[0]; if(!it) return true;
+    var id=b.getAttribute("data-id"), it=undoStack.filter(function(u){return u.id===id;})[0]; if(!it) return true;
     b.disabled=true;
-    Promise.resolve(it.undo()).then(function(){ undoStack=undoStack.filter(function(u){return u.id!==id;}); toast("실행취소: "+it.label); render(); }).catch(function(e){ console.error(e); toast("실행취소에 실패했어요."); b.disabled=false; });
+    runUndo(it).then(function(){ undoStack=undoStack.filter(function(u){return u.id!==id;}); toast("실행취소: "+it.label); render(); }).catch(function(e){ console.error(e); toast("실행취소에 실패했어요."); b.disabled=false; });
     return true;
   }
   if(act==="link"){ b.disabled=true;
-    var prevL=JSON.parse(JSON.stringify(a)); delete prevL._plan; var hadMeta=!!trk.meta, prevMeta=hadMeta?JSON.parse(JSON.stringify(trk.meta)):null;
-    linkAccount(a).then(function(){ pushUndo("기록 연결",function(){ return db.doc("accounts/"+prevL.id).set(prevL).then(function(){ return hadMeta ? db.doc("cycle/current").set(prevMeta) : db.doc("cycle/current").delete(); }); }); render(); }).catch(function(e){ console.error(e); toast("연결하지 못했어요."); b.disabled=false; }); return true; }
+    var uL=snap(["accounts/"+a.id,"cycle/current"]);
+    linkAccount(a).then(function(){ pushUndo("기록 연결",uL); render(); }).catch(function(e){ console.error(e); toast("연결하지 못했어요."); b.disabled=false; }); return true; }
   if(act.indexOf("rec-")!==0) return false;
   if(act==="rec-inline"){ rf.inline=b.getAttribute("data-k"); render(); return true; }
   if(act==="rec-date"){ var tid=b.getAttribute("data-t"), el=$(tid), base=el&&el.value?new Date(el.value+"T12:00:00Z"):new Date(); base.setUTCDate(base.getUTCDate()+(+b.getAttribute("data-d"))); var v=base.toISOString().slice(0,10); if(tid==="a-date") rf.aDate=v; else rf.tDate=v; render(); return true; }
@@ -1063,19 +1085,19 @@ function recAct(act, b, a){
     var dd=b.getAttribute("data-date"), k2="e:"+dd;
     if(!armed[k2]){ Object.keys(armed).forEach(function(x){delete armed[x];}); armed[k2]=1; setTimeout(function(){ if(armed[k2]){ delete armed[k2]; render(); } },3000); render(); return true; }
     delete armed[k2];
-    var pe=Object.assign({},trk.entries.filter(function(e){return e.date===dd;})[0]||{date:dd}); delete pe.id;
-    db.doc("entries/"+dd).delete().then(function(){ toast(dd+" 기록을 삭제했어요."); pushUndo(dd+" 기록 삭제",function(){ return db.doc("entries/"+dd).set(pe); }); if(rf.editEntry===dd) rf.editEntry=null; render(); });
+    var uE=snap(["entries/"+dd]);
+    db.doc("entries/"+dd).delete().then(function(){ toast(dd+" 기록을 삭제했어요."); pushUndo(dd+" 기록 삭제",uE); if(rf.editEntry===dd) rf.editEntry=null; render(); });
     return true;
   }
   if(act==="rec-del-cycle"){
     if(!armed.cycle){ armed.cycle=1; setTimeout(function(){ if(armed.cycle){ delete armed.cycle; render(); } },4000); render(); return true; }
     delete armed.cycle;
-    var pm=JSON.parse(JSON.stringify(trk.meta)), pes=trk.entries.map(function(e){ var c=Object.assign({},e); delete c.id; return c; }), pa=pickState(L);
+    var pm=JSON.parse(JSON.stringify(trk.meta)), uC=snap(["cycle/current","accounts/"+L.id].concat(trk.entries.map(function(e){ return "entries/"+e.date; })));
     Promise.all(trk.entries.map(function(e){ return db.doc("entries/"+e.date).delete(); })).then(function(){
       return db.doc("cycle/current").set({ label:pm.label||"무매법 V4.0", startDate:todayKR(), startAmount:null, calc:{ticker:L.ticker,splitCount:L.N,seedCapitalUsd:L.principal}, trades:[] });
     }).then(function(){ return save(L,{qty:0,avg:null,cash:L.principal,T:0,realized:0,mode:"NORMAL",revDay:0,pending:null}); }).then(function(){
       toast("현재 사이클 기록을 지웠어요.");
-      pushUndo("사이클 기록 지우기", function(){ return Promise.all(pes.map(function(e){ return db.doc("entries/"+e.date).set(e); })).then(function(){ return db.doc("cycle/current").set(pm); }).then(function(){ return save(accounts[L.id]||L, pa); }); });
+      pushUndo("사이클 기록 지우기", uC);
       render();
     });
     return true;
@@ -1085,10 +1107,10 @@ function recAct(act, b, a){
 function saveInline(el){
   var k=el.getAttribute("data-k"), raw=el.value.trim(); rf.inline=null;
   if(!db||raw===""){ render(); return; }
-  if(k==="title"&&trk.meta&&raw!==trk.meta.label){ var pl=trk.meta.label||""; db.doc("cycle/current").update({label:raw}).then(function(){ pushUndo("사이클 이름 변경",function(){ return db.doc("cycle/current").update({label:pl}); }); render(); }); }
-  else if(k==="start"&&trk.meta){ var v=parseFloat(raw), pv=trk.meta.startAmount==null?null:trk.meta.startAmount; if(!isNaN(v)&&v!==pv) db.doc("cycle/current").update({startAmount:v}).then(function(){ toast("시작평가액을 "+krw(v)+"원으로 고쳤어요."); pushUndo("시작평가액 수정",function(){ return db.doc("cycle/current").update({startAmount:pv}); }); render(); }); }
-  else if(k.indexOf("alabel:")===0){ db.doc("cycles/"+k.slice(7)).update({label:raw}); }
-  else if(k.indexOf("afx:")===0){ var f=parseFloat(raw); if(!isNaN(f)) db.doc("cycles/"+k.slice(4)).update({fxLoss:f}); }
+  if(k==="title"&&trk.meta&&raw!==trk.meta.label){ var uT=snap(["cycle/current"]); db.doc("cycle/current").update({label:raw}).then(function(){ pushUndo("사이클 이름 변경",uT); render(); }); }
+  else if(k==="start"&&trk.meta){ var v=parseFloat(raw), pv=trk.meta.startAmount==null?null:trk.meta.startAmount; if(!isNaN(v)&&v!==pv){ var uS=snap(["cycle/current"]); db.doc("cycle/current").update({startAmount:v}).then(function(){ toast("시작평가액을 "+krw(v)+"원으로 고쳤어요."); pushUndo("시작평가액 수정",uS); render(); }); } }
+  else if(k.indexOf("alabel:")===0){ var uA=snap(["cycles/"+k.slice(7)]); db.doc("cycles/"+k.slice(7)).update({label:raw}).then(function(){ pushUndo("지난 사이클 이름 변경",uA); render(); }); }
+  else if(k.indexOf("afx:")===0){ var f=parseFloat(raw), uF=snap(["cycles/"+k.slice(4)]); if(!isNaN(f)) db.doc("cycles/"+k.slice(4)).update({fxLoss:f}).then(function(){ pushUndo("환차손 수정",uF); render(); }); }
   render();
 }
 function saveAmount(){
@@ -1098,17 +1120,18 @@ function saveAmount(){
   if(rf.editEntry){
     var od=rf.editEntry, orig=trk.entries.filter(function(e){return e.date===od;})[0]; if(!orig){ rf.editEntry=null; render(); return; }
     if(d!==od&&trk.entries.some(function(e){return e.date===d;})){ toast("이미 "+d+" 기록이 있어요."); return; }
-    var prev=Object.assign({},orig); delete prev.id;
+    var uEd=snap(["entries/"+od].concat(d!==od?["entries/"+d]:[]));
     var data={date:d,amount:amt}; if(sx!=="") data.soxlPrice=parseFloat(sx);
     var task = d===od ? db.doc("entries/"+od).set(data) : db.doc("entries/"+od).delete().then(function(){ return db.doc("entries/"+d).set(data); });
-    task.then(function(){ toast(d+" 평가액 기록을 고쳤어요."); pushUndo(d+" 평가액 수정",function(){ return d===od ? db.doc("entries/"+od).set(prev) : db.doc("entries/"+d).delete().then(function(){ return db.doc("entries/"+od).set(prev); }); }); rf.editEntry=null; rf.aAmount=""; rf.aSoxl=""; render(); });
+    task.then(function(){ toast(d+" 평가액 기록을 고쳤어요."); pushUndo(d+" 평가액 수정",uEd); rf.editEntry=null; rf.aAmount=""; rf.aSoxl=""; render(); });
     return;
   }
   var ex=trk.entries.filter(function(e){return e.date===d;})[0], had=ex&&ex.amount!=null, pa=had?ex.amount:null, hadS=ex&&ex.soxlPrice!=null, ps=hadS?ex.soxlPrice:null;
   var data2={date:d,amount:amt}; if(sx!=="") data2.soxlPrice=parseFloat(sx);
+  var uN=snap(["entries/"+d]);
   db.doc("entries/"+d).set(data2,{merge:true}).then(function(){
     toast(d+" 평가액을 저장했어요."); rf.aAmount=""; rf.aSoxl="";
-    pushUndo(d+" 평가액 기록",function(){ var r=db.doc("entries/"+d); if(!ex) return r.delete(); var p={amount: had?pa:db.deleteField()}; if(sx!=="") p.soxlPrice = hadS?ps:db.deleteField(); return r.update(p); });
+    pushUndo(d+" 평가액 기록",uN);
     render();
   }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
 }
@@ -1148,7 +1171,7 @@ document.addEventListener("click", function(ev){
   var act=b.getAttribute("data-act");
   if(recAct(act,b,a)) return;
   var snapA=function(){ var c=JSON.parse(JSON.stringify(a)); delete c._plan; return c; };
-  var undoSet=function(label,prev){ pushUndo(label,function(){ return db.doc("accounts/"+prev.id).set(prev); }); };
+  var undoSet=function(label,prev){ pushUndo(label,[{p:"accounts/"+prev.id,d:prev}]); };
   if(act==="place"){
     var p=a._plan, prevP=snapA();
     var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
@@ -1178,14 +1201,14 @@ document.addEventListener("click", function(ev){
       var ts=Date.now(), nt=res.log.map(function(l,i){ return tradeFromFill(a,l,bar.d,bar.c,ts+i); });
       var ended=(n.cycle||1)!==(a.cycle||1);
       if(nt.length&&!ended) nt[nt.length-1].tAfter=n.T;
-      var prevT=getTrades().slice(), all=prevT.concat(nt);
+      var prevT=getTrades().slice(), all=prevT.concat(nt), prevM=curDoc("cycle/current");
       (ended ? archiveAndRoll(a,all,bar.d,n) : db.doc("cycle/current").update({trades:all})).then(function(){ return save(a,patch); }).then(function(){
         done(ended?"사이클을 마감해 지난 사이클에 보관하고, 새 사이클을 시작했어요.":null);
-        if(!ended) pushUndo(undoLabel,function(){ return Promise.all([db.doc("cycle/current").update({trades:prevT}), db.doc("accounts/"+a.id).set(prevA)]); });
+        if(!ended) pushUndo(undoLabel,[{p:"cycle/current",d:prevM},{p:"accounts/"+a.id,d:prevA}]);
         render();
       }).catch(function(e){ console.error(e); toast("반영하지 못했어요."); b.disabled=false; });
     } else {
-      save(a,patch).then(function(){ done(); pushUndo(undoLabel,function(){ return db.doc("accounts/"+a.id).set(prevA); }); render(); });
+      save(a,patch).then(function(){ done(); pushUndo(undoLabel,[{p:"accounts/"+a.id,d:prevA}]); render(); });
     }
   } else if(act==="roll"){
     var rb=barsUpTo(a.ticker,a.nextUpdate); rb=rb[rb.length-1]||lastBar(a.ticker);
@@ -1195,7 +1218,7 @@ document.addEventListener("click", function(ev){
   } else if(act==="del"){
     if(b.getAttribute("data-armed")!=="1"){ b.setAttribute("data-armed","1"); b.textContent="한 번 더 누르면 삭제됩니다"; return; }
     var prevD=snapA();
-    db.doc("accounts/"+a.id).delete().then(function(){ toast("계좌를 삭제했어요."); selected=null; pushUndo(prevD.name+" 계좌 삭제",function(){ return db.doc("accounts/"+prevD.id).set(prevD).then(function(){ selected=prevD.id; }); }); render(); });
+    db.doc("accounts/"+a.id).delete().then(function(){ toast("계좌를 삭제했어요."); selected=null; pushUndo(prevD.name+" 계좌 삭제",[{p:"accounts/"+prevD.id,d:prevD}]); render(); });
   }
 });
 
@@ -1227,9 +1250,9 @@ document.addEventListener("submit", function(ev){
       if(patch.T!=null&&patch.T!==a.T&&list.length){ var srt=sortTrades(list), lastT=srt[srt.length-1]; list=list.map(function(t){ return t.id===lastT.id?Object.assign({},t,{tAfter:patch.T}):t; }); }
       var st=replay(list,seedNew); patch.cash=st.cash; patch.qty=st.qty; patch.avg=st.avg; patch.realized=st.realized; if(!list.length&&patch.T!=null) st.T=patch.T; patch.T=st.T;
       var mp={trades:list}; if(seedNew!==seedOf(a)){ mp.calc=Object.assign({},trk.meta.calc||{},{seedCapitalUsd:seedNew}); patch.initialPrincipal=seedNew; }
-      var prevMeta={trades:getTrades().slice(),calc:trk.meta.calc||null};
-      pre=db.doc("cycle/current").update(mp).then(function(){ pushUndo("상태 수정",function(){ return Promise.all([db.doc("cycle/current").update(prevMeta), db.doc("accounts/"+a.id).set(prevA)]); }); });
-    } else pushUndo("상태 수정",function(){ return db.doc("accounts/"+a.id).set(prevA); });
+      var prevMeta=curDoc("cycle/current");
+      pre=db.doc("cycle/current").update(mp).then(function(){ pushUndo("상태 수정",[{p:"cycle/current",d:prevMeta},{p:"accounts/"+a.id,d:prevA}]); });
+    } else pushUndo("상태 수정",[{p:"accounts/"+a.id,d:prevA}]);
     pre.then(function(){ return save(a,patch); }).then(function(){ toast("저장했어요."); render(); });
   } else if(f.id==="add-form"){
     var type=$("n-type").value, tk=$("n-ticker").value, name=$("n-name").value.trim();
@@ -1245,7 +1268,7 @@ document.addEventListener("submit", function(ev){
       Object.assign(base,{V:V,pool:pool,qty:parseInt($("n-qty").value,10)||0,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",limitPct:75,invested:pool+(parseInt($("n-qty").value,10)||0)*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:1,orderType:"LOC"});
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
-    db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",function(){ return db.doc("accounts/"+id).delete(); }); render(); });
+    db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}]); render(); });
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
@@ -1288,6 +1311,7 @@ window.DeskApp = {
     render();
     db.doc("cycle/current").onSnapshot(function(s){ trk.meta=s.exists?s.data():null; trk.metaLoaded=true; if(trk.entriesLoaded) maybeMigrate(); render(); }, function(e){ console.error("cycle",e); });
     db.collection("entries").onSnapshot(function(s){ trk.entries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; if(trk.metaLoaded) maybeMigrate(); render(); }, function(e){ console.error("entries",e); });
+    db.collection("undo").onSnapshot(function(s){ undoStack=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).filter(function(u){ return u.ops&&u.ops.length; }); render(); }, function(e){ console.error("undo",e); });
     db.collection("cycles").onSnapshot(function(s){ trk.cyclesLoaded=true; trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); render(); }, function(e){ console.error("cycles",e); });
     db.collection("accounts").onSnapshot(function(snap){
       var next={};
@@ -1334,7 +1358,7 @@ function makeAdapter(uid) {
     const [c, id] = p.split("/");
     if (c === "accounts") return doc(fs, "users", uid, "accounts", id);
     if (c === "prices") return doc(fs, "users", uid, "manualPrices", id);
-    if (c === "cycle" || c === "entries" || c === "cycles") return doc(fs, "users", uid, c, id);
+    if (c === "cycle" || c === "entries" || c === "cycles" || c === "undo") return doc(fs, "users", uid, c, id);
     throw new Error("unknown path " + p);
   };
   return {
@@ -1356,7 +1380,7 @@ function makeAdapter(uid) {
           };
           unsubs.push(onSnapshot(collection(fs, "prices"), (s) => { g = {}; s.docs.forEach((d) => g[d.id] = d.data()); emit(); }, err));
           unsubs.push(onSnapshot(collection(fs, "users", uid, "manualPrices"), (s) => { m = {}; s.docs.forEach((d) => m[d.id] = d.data()); emit(); }, err));
-        } else if (name === "entries" || name === "cycles") {
+        } else if (name === "entries" || name === "cycles" || name === "undo") {
           unsubs.push(onSnapshot(collection(fs, "users", uid, name), (s) => next({ docs: s.docs }), err));
         }
         return () => {};
