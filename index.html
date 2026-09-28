@@ -732,16 +732,90 @@ function curDoc(path){
   return x;
 }
 function snap(paths){ return paths.map(function(p){ return {p:p, d:curDoc(p)}; }); }
+// 작업 직전(d)과 직후(a) 상태를 같이 저장해 두고, 되돌릴 때는 "그 작업이 바꾼 부분만" 되돌린다.
+// 그 부분을 나중 작업이 다시 바꿨으면(충돌) 확인창을 띄운다.
 function pushUndo(label, ops){
   if(!db||!ops||!ops.length) return;
-  var id="u"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), item={label:label,time:Date.now(),ops:ops};
-  undoStack.push(Object.assign({id:id},item));
-  db.doc("undo/"+id).set(item).catch(function(e){ console.error("undo save",e); });
+  var id="u"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), t=Date.now();
+  var local={id:id,label:label,time:t,ops:ops}; undoStack.push(local);
+  Promise.all(ops.map(function(o){ return db.doc(o.p).get(); })).then(function(afters){
+    var item={label:label,time:t,ops:ops.map(function(o,i){ return {p:o.p, d:o.d, a:afters[i]==null?null:afters[i]}; })};
+    local.ops=item.ops;
+    return db.doc("undo/"+id).set(item);
+  }).catch(function(e){ console.error("undo save",e); });
   var old=undoStack.slice().sort(function(a,b){return a.time-b.time;});
   while(old.length>UNDO_MAX){ var o=old.shift(); undoStack=undoStack.filter(function(u){return u.id!==o.id;}); db.doc("undo/"+o.id).delete(); }
 }
+function normJ(x){ if(Array.isArray(x)) return x.map(normJ); if(x&&typeof x==="object"){ var o={}; Object.keys(x).sort().forEach(function(k){ if(x[k]!==undefined) o[k]=normJ(x[k]); }); return o; } return x===undefined?null:x; }
+function same(a,b){ return JSON.stringify(normJ(a))===JSON.stringify(normJ(b)); }
+function itemKey(x){ return x&&typeof x==="object"&&x.id!=null ? "id:"+x.id : "j:"+JSON.stringify(normJ(x)); }
+// 목록(매매내역·체결기록 등)은 항목 단위로: 이 작업이 넣은 항목만 빼고, 뺀 항목만 되살리고, 고친 항목만 되돌린다
+function mergeList(cur, before, after){
+  var out=(cur||[]).slice(), bm={}, am={}, conflict=false;
+  (before||[]).forEach(function(x){ bm[itemKey(x)]=x; }); (after||[]).forEach(function(x){ am[itemKey(x)]=x; });
+  var at=function(k){ for(var i=0;i<out.length;i++) if(itemKey(out[i])===k) return i; return -1; };
+  Object.keys(am).forEach(function(k){
+    if(bm[k]&&same(bm[k],am[k])) return;
+    var i=at(k);
+    if(bm[k]){ if(i<0||!same(out[i],am[k])) conflict=true; if(i>=0) out[i]=bm[k]; else out.push(bm[k]); }
+    else if(i>=0){ if(!same(out[i],am[k])) conflict=true; out.splice(i,1); }
+  });
+  Object.keys(bm).forEach(function(k){
+    if(am[k]) return;
+    if(at(k)>=0) conflict=true; else if(k.indexOf("j:")===0) out.unshift(bm[k]); else out.push(bm[k]);
+  });
+  return {val:out, conflict:conflict};
+}
+var DERIVED=["qty","avg","cash","T","realized"];
+function planOp(op, cur, skipKeys){
+  var b=op.d, a=op.a;
+  if(a===undefined) return b ? {kind:"set",data:b,conflict:false,legacy:true} : {kind:"delete",conflict:false,legacy:true};
+  if(!b&&!a) return {kind:"none",conflict:false};
+  if(!b) return {kind:"delete", conflict: !!cur && !same(cur,a)};
+  if(!a) return {kind:"set", data:b, conflict: !!cur};
+  if(!cur) return {kind:"set", data:b, conflict:true};
+  var patch={}, conflict=false, changed=false, keys={};
+  Object.keys(b).concat(Object.keys(a)).forEach(function(k){ keys[k]=1; });
+  Object.keys(keys).forEach(function(k){
+    if(same(b[k],a[k])||(skipKeys&&skipKeys.indexOf(k)>=0)) return;
+    changed=true;
+    if((Array.isArray(b[k])||Array.isArray(a[k]))&&(cur[k]==null||Array.isArray(cur[k]))){ var m=mergeList(cur[k],b[k],a[k]); patch[k]=m.val; if(m.conflict) conflict=true; return; }
+    if(!same(cur[k],a[k])) conflict=true;
+    patch[k] = b[k]===undefined ? db.deleteField() : b[k];
+  });
+  return {kind: changed?"update":"none", data:patch, conflict:conflict};
+}
 function runUndo(u){
-  return Promise.all(u.ops.map(function(o){ return o.d ? db.doc(o.p).set(o.d) : db.doc(o.p).delete(); })).then(function(){ return db.doc("undo/"+u.id).delete(); });
+  var paths=u.ops.map(function(o){ return o.p; });
+  return Promise.all(paths.map(function(p){ return db.doc(p).get(); })).then(function(curs){
+    var cycIdx=paths.indexOf("cycle/current");
+    var plans=u.ops.map(function(o,i){
+      var sp=o.p.split("/"), acct=sp[0]==="accounts"?accounts[sp[1]]:null;
+      var linkedWithTrades = acct&&acct.linked==="tracker"&&cycIdx>=0;
+      var pl=planOp(o, curs[i], linkedWithTrades?DERIVED:null); pl.p=o.p; pl.acct=linkedWithTrades?acct:null; return pl;
+    });
+    var legacy=plans.some(function(x){return x.legacy;});
+    var later=undoStack.filter(function(x){ return x.time>u.time && x.ops.some(function(o){ return paths.indexOf(o.p)>=0; }); });
+    var conflict=plans.some(function(x){return x.conflict;}) || (legacy&&later.length>0);
+    if(conflict){
+      var names=later.map(function(x){ return "· "+x.label; }).join("\n");
+      if(!window.confirm("「"+u.label+"」 뒤에 같은 항목을 바꾼 작업이 있어요."+(names?"\n"+names:"")+"\n\n되돌리면 그 뒤의 변경 중 겹치는 부분도 함께 되돌아가요. 계속할까요?")) return false;
+    }
+    // 연결된 무매 계좌: 매매내역을 되돌린 결과로 평단·보유·잔금·T를 다시 계산
+    var cyc=cycIdx>=0?plans[cycIdx]:null;
+    plans.forEach(function(pl){
+      if(!pl.acct||!cyc) return;
+      var trades = cyc.kind==="update"&&cyc.data.trades ? cyc.data.trades : (cyc.kind==="set"&&cyc.data ? cyc.data.trades||[] : getTrades());
+      var sp=statePatch(pl.acct, trades);
+      if(pl.kind==="update"){ Object.assign(pl.data, sp); } else if(pl.kind==="none"){ pl.kind="update"; pl.data=sp; }
+    });
+    return Promise.all(plans.map(function(pl){
+      if(pl.kind==="set") return db.doc(pl.p).set(pl.data);
+      if(pl.kind==="delete") return db.doc(pl.p).delete();
+      if(pl.kind==="update"&&Object.keys(pl.data).length) return db.doc(pl.p).update(pl.data);
+      return null;
+    })).then(function(){ return db.doc("undo/"+u.id).delete(); }).then(function(){ return true; });
+  });
 }
 function undoFab(){
   var el=$("undo-fab"); if(!el) return;
@@ -756,7 +830,7 @@ function undoPanel(){
   return '<details class="panel" id="undo-panel"><summary>실행취소 ('+list.length+')</summary>'+list.map(function(u){
     var d=new Date(u.time), t=(d.getMonth()+1)+"/"+d.getDate()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<div class="undo-row"><span class="l">'+esc(u.label)+'<span class="tm">'+t+'</span></span><button type="button" class="undo-btn" data-act="undo" data-id="'+esc(u.id)+'">실행취소</button></div>';
-  }).join("")+'<div class="hint">되돌리면 그 작업 직전 상태로 돌아가요. 그 뒤에 같은 계좌나 기록에서 한 변경도 함께 되돌아가니, 가능하면 최근 것부터 되돌리세요. 최근 '+UNDO_MAX+'개까지 남고 창을 닫아도 유지됩니다.</div></details>';
+  }).join("")+'<div class="hint">아무 항목이나 골라서 그 작업이 바꾼 부분만 되돌릴 수 있어요. 그 부분을 나중 작업이 다시 바꿨으면 확인창이 떠요. 최근 '+UNDO_MAX+'개까지 남고 창을 닫아도 유지됩니다.</div></details>';
 }
 
 /* ----- 차트 (SVG 문자열) ----- */
@@ -1021,7 +1095,7 @@ function recAct(act, b, a){
   if(act==="undo"){
     var id=b.getAttribute("data-id"), it=undoStack.filter(function(u){return u.id===id;})[0]; if(!it) return true;
     b.disabled=true;
-    runUndo(it).then(function(){ undoStack=undoStack.filter(function(u){return u.id!==id;}); toast("실행취소: "+it.label); render(); }).catch(function(e){ console.error(e); toast("실행취소에 실패했어요."); b.disabled=false; });
+    runUndo(it).then(function(ok){ if(!ok){ b.disabled=false; return; } undoStack=undoStack.filter(function(u){return u.id!==id;}); toast("실행취소: "+it.label); render(); }).catch(function(e){ console.error(e); toast("실행취소에 실패했어요."); b.disabled=false; });
     return true;
   }
   if(act==="link"){ b.disabled=true;
@@ -1332,7 +1406,7 @@ window.DeskApp = {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { initializeFirestore, doc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { FIREBASE_CONFIG } from "./firebase-config.js";
 
 const app = initializeApp(FIREBASE_CONFIG);
@@ -1366,6 +1440,7 @@ function makeAdapter(uid) {
     doc: (p) => { const r = ref(p); return {
       set: (d, o) => setDoc(r, d && Array.isArray(d.bars) ? { ...d, bars: d.bars.map(toObj) } : d, o && o.merge ? { merge: true } : {}),
       update: (d) => updateDoc(r, d), delete: () => deleteDoc(r),
+      get: () => getDoc(r).then((x) => (x.exists() ? x.data() : null)),
       onSnapshot: (cb, err) => { const u = onSnapshot(r, (s) => cb({ exists: s.exists(), data: () => s.data() }), err); unsubs.push(u); return u; }
     }; },
     collection: (name) => ({
