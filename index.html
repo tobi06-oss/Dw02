@@ -301,6 +301,12 @@ table.log.entries,table.log.trades,.archive-body table.log{min-width:0}
 .undo-row:last-child{border-bottom:none}
 .undo-row .l{font-size:12.5px}
 .undo-row .tm{font-size:11px;color:var(--ink-3);margin-left:6px;font-family:var(--mono)}
+.undo-fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:40;max-width:min(78vw,340px);display:flex;align-items:center;gap:6px;
+  background:var(--ink);color:var(--bg);border:none;border-radius:999px;padding:10px 16px;font-size:13px;font-weight:700;box-shadow:var(--shadow);white-space:nowrap;overflow:hidden}
+.undo-fab span{font-weight:400;opacity:.75;overflow:hidden;text-overflow:ellipsis}
+.undo-fab:disabled{opacity:.5}
+.placed-x{margin-left:6px;background:none;border:none;color:var(--ink-3);font-size:12px;padding:2px 4px;font-family:inherit}
+.placed-x:hover{color:var(--ink)}
 .undo-btn{background:var(--accent-soft);color:var(--accent);border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:700;white-space:nowrap}
 .danger-zone{border-color:var(--danger-soft)}
 .danger-zone h2{color:var(--danger)}
@@ -389,6 +395,7 @@ details.archive-item .a-label{font-size:13px}
   <footer class="foot" id="foot"></footer>
   </div>
 </div>
+<button type="button" id="undo-fab" class="undo-fab" data-act="undo" hidden></button>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="engine.js"></script>
@@ -457,7 +464,7 @@ function renderTabs(){
 }
 
 function render(){
-  renderTickers(); renderTabs();
+  renderTickers(); renderTabs(); undoFab();
   var a = selected ? accounts[selected] : null;
   var v = $("view");
   var openSet = {}; v.querySelectorAll("details[id]").forEach(function(d){ if(d.open) openSet[d.id]=1; });
@@ -532,7 +539,7 @@ function slip(a, plan, buyHtml, sellHtml, notes){
   var placed = a.pending && a.pending.session===plan.session;
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
     '<div class="when">'+dlabel(plan.session)+' 미국장 주문</div></div>'+
-    (placed?'<span class="placed"><i>✓</i>주문 넣음</span>':'')+'</div>'+
+    (placed?'<span class="placed"><i>✓</i>주문 넣음 · '+dlabel(plan.session)+'<button type="button" class="placed-x" data-act="cancel-pending">취소</button></span>':'')+'</div>'+
     '<div class="cols"><div class="col buy"><h3>매수</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
     '<div class="col sell"><h3>매도</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
@@ -715,6 +722,13 @@ function computeRows(entries, trades, tk){
 
 /* ----- 실행취소 ----- */
 function pushUndo(label, fn){ undoStack.push({id:++undoSeq,label:label,time:new Date(),undo:fn}); if(undoStack.length>15) undoStack.shift(); }
+function undoFab(){
+  var el=$("undo-fab"); if(!el) return;
+  var u=undoStack[undoStack.length-1];
+  if(!u||!db){ el.hidden=true; return; }
+  el.hidden=false; el.setAttribute("data-id",u.id); el.disabled=false;
+  el.innerHTML='↶ 실행취소 <span>'+esc(u.label)+'</span>';
+}
 function undoPanel(){
   if(!undoStack.length) return "";
   return '<section class="panel"><h2>실행취소</h2>'+undoStack.slice().reverse().map(function(u){
@@ -988,7 +1002,9 @@ function recAct(act, b, a){
     Promise.resolve(it.undo()).then(function(){ undoStack=undoStack.filter(function(u){return u.id!==id;}); toast("실행취소: "+it.label); render(); }).catch(function(e){ console.error(e); toast("실행취소에 실패했어요."); b.disabled=false; });
     return true;
   }
-  if(act==="link"){ b.disabled=true; linkAccount(a).catch(function(e){ console.error(e); toast("연결하지 못했어요."); b.disabled=false; }); return true; }
+  if(act==="link"){ b.disabled=true;
+    var prevL=JSON.parse(JSON.stringify(a)); delete prevL._plan; var hadMeta=!!trk.meta, prevMeta=hadMeta?JSON.parse(JSON.stringify(trk.meta)):null;
+    linkAccount(a).then(function(){ pushUndo("기록 연결",function(){ return db.doc("accounts/"+prevL.id).set(prevL).then(function(){ return hadMeta ? db.doc("cycle/current").set(prevMeta) : db.doc("cycle/current").delete(); }); }); render(); }).catch(function(e){ console.error(e); toast("연결하지 못했어요."); b.disabled=false; }); return true; }
   if(act.indexOf("rec-")!==0) return false;
   if(act==="rec-inline"){ rf.inline=b.getAttribute("data-k"); render(); return true; }
   if(act==="rec-date"){ var tid=b.getAttribute("data-t"), el=$(tid), base=el&&el.value?new Date(el.value+"T12:00:00Z"):new Date(); base.setUTCDate(base.getUTCDate()+(+b.getAttribute("data-d"))); var v=base.toISOString().slice(0,10); if(tid==="a-date") rf.aDate=v; else rf.tDate=v; render(); return true; }
@@ -1127,20 +1143,24 @@ document.addEventListener("click", function(ev){
   if(ev.target.closest("#tab-add")){ var ap=$("add-panel"); ap.open=true; ap.scrollIntoView({behavior:"smooth",block:"start"}); $("n-name").focus(); return; }
   if(ev.target.closest("summary")&&(ev.target.closest("[data-act]")||ev.target.id==="inline-edit")) ev.preventDefault();
   var b=ev.target.closest("[data-act]"); if(!b) return;
+  if(b.getAttribute("data-act")==="undo"){ recAct("undo",b,null); return; }
   var a=accounts[selected]; if(!a) return;
   var act=b.getAttribute("data-act");
   if(recAct(act,b,a)) return;
+  var snapA=function(){ var c=JSON.parse(JSON.stringify(a)); delete c._plan; return c; };
+  var undoSet=function(label,prev){ pushUndo(label,function(){ return db.doc("accounts/"+prev.id).set(prev); }); };
   if(act==="place"){
-    var p=a._plan;
+    var p=a._plan, prevP=snapA();
     var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
-    save(a,{pending:{session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()}, events:[]}).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요.");});
+    save(a,{pending:{session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()}, events:[]}).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
   } else if(act==="copy"){
     var txt=copyText(a);
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){toast("주문을 복사했어요.");},function(){toast("복사가 막혀 있어요. 주문표를 길게 눌러 복사하세요.");}); }
     else toast("복사가 막혀 있어요.");
   } else if(act==="cancel-pending"){
     delete fillEdits[a.id];
-    save(a,{pending:null}).then(function(){toast("주문 기록을 지웠어요.");});
+    var prevC=snapA(), lbl=a.pending?dlabel(a.pending.session)+" 주문 기록 취소":"주문 기록 취소";
+    save(a,{pending:null}).then(function(){toast("주문 기록을 지웠어요."); undoSet(lbl,prevC); render();});
   } else if(act==="apply-fills"){
     var p2=a.pending, bar=barOn(a.ticker,p2.session), fe=fillEdits[a.id];
     var fills=fe.fills;
@@ -1169,12 +1189,13 @@ document.addEventListener("click", function(ev){
     }
   } else if(act==="roll"){
     var rb=barsUpTo(a.ticker,a.nextUpdate); rb=rb[rb.length-1]||lastBar(a.ticker);
-    var r=E.vrRoll(a,rb.c,rb.d), nx=r.next;
+    var r=E.vrRoll(a,rb.c,rb.d), nx=r.next, prevR=snapA();
     var note={d:rb.d,side:"NOTE",text:(a.cycle||1)+"회차 마감: V "+usd(a.V)+" → "+usd(nx.V)+", Pool "+usd(nx.pool)+" (E "+usd(r.E)+")"};
-    save(a,{V:nx.V,pool:nx.pool,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요.");});
+    save(a,{V:nx.V,pool:nx.pool,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요."); undoSet((a.cycle||1)+"회차 V 갱신",prevR); render();});
   } else if(act==="del"){
     if(b.getAttribute("data-armed")!=="1"){ b.setAttribute("data-armed","1"); b.textContent="한 번 더 누르면 삭제됩니다"; return; }
-    db.doc("accounts/"+a.id).delete().then(function(){ toast("계좌를 삭제했어요."); selected=null; });
+    var prevD=snapA();
+    db.doc("accounts/"+a.id).delete().then(function(){ toast("계좌를 삭제했어요."); selected=null; pushUndo(prevD.name+" 계좌 삭제",function(){ return db.doc("accounts/"+prevD.id).set(prevD).then(function(){ selected=prevD.id; }); }); render(); });
   }
 });
 
@@ -1224,7 +1245,7 @@ document.addEventListener("submit", function(ev){
       Object.assign(base,{V:V,pool:pool,qty:parseInt($("n-qty").value,10)||0,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",limitPct:75,invested:pool+(parseInt($("n-qty").value,10)||0)*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:1,orderType:"LOC"});
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
-    db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); toast(name+" 계좌를 만들었어요."); });
+    db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",function(){ return db.doc("accounts/"+id).delete(); }); render(); });
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
