@@ -699,6 +699,8 @@ function statePatch(a, list){ var s=replay(list, seedOf(a)); return { qty:s.qty,
 function pickState(a){ return { qty:a.qty||0, avg:a.avg==null?null:a.avg, cash:a.cash, T:a.T||0, realized:a.realized||0, mode:a.mode||"NORMAL", revDay:a.revDay||0, pending:a.pending||null }; }
 
 // 날짜별 기록 행: 원화 평가액 + 그날 기준 보유수량·평단 (trades가 null이면 행에 저장된 값을 그대로 씀 — 지난 사이클용)
+// 그 날짜의 종가 봉 (휴장일·한국 날짜면 그 전 마지막 거래일)
+function closeOn(tk, d){ var b=bars(tk), x=null; for(var i=0;i<b.length;i++){ if(b[i].d<=d) x=b[i]; else break; } return x; }
 function computeRows(entries, trades, tk){
   var sorted=(entries||[]).slice().sort(function(a,b){return a.date<b.date?-1:1;});
   var tr = trades ? tradeRows(trades) : [];
@@ -712,8 +714,10 @@ function computeRows(entries, trades, tk){
     var e=byDate[d], rec=!!(e&&e.amount!=null), dp=null, da=null;
     if(rec){ if(prev!==null){ dp=e.amount/prev-1; da=e.amount-prev; } prev=e.amount; lastAmt=e.amount; }
     var st=trades?asOf(d):null, info=dayInfo[d]||{};
-    var px = info.soxlPrice!=null ? info.soxlPrice : (e&&e.soxlPrice!=null ? e.soxlPrice : null);
-    if(px==null && tk){ var bb=barOn(tk,d); if(bb) px=bb.c; }
+    var px = null;
+    // 기록 날짜는 한국 날짜: 그날 아침에 나오는 종가 = 미국 전날 종가. 전날 미국장이 없었으면(한국 일·월요일, 미국 휴장 다음날) 점을 찍지 않는다
+    if(tk){ var bb=barOn(tk,E.addDays(d,-1)); if(bb) px=bb.c; }
+    else px = info.soxlPrice!=null ? info.soxlPrice : (e&&e.soxlPrice!=null ? e.soxlPrice : null);
     rows.push({ date:d, amount:lastAmt, amountRecorded:rec, soxlPrice:px, tradePrice:info.tradePrice!=null?info.tradePrice:null,
       qty: trades ? (st?st.qty:0) : (e&&e.qty!=null?e.qty:null), avgPrice: trades ? (st?st.avg:null) : (e&&e.avgPrice!=null?e.avgPrice:null), diffPct:dp, diffAmt:da });
   });
@@ -870,12 +874,12 @@ function lineChart(rows, startAmount, trades, tk){
   o+='<path d="'+d+'" class="line-path"/>';
   if(ready&&trades){
     var idx={}; rs.forEach(function(r,i){idx[r.date]=i;});
-    trades.forEach(function(t){ var i2=idx[t.date]; if(i2==null) return; var v=t.soxlPrice!=null?t.soxlPrice:t.price; if(v==null) return;
+    trades.forEach(function(t){ var i2=idx[t.date]; if(i2==null) return; var v=rs[i2].soxlPrice!=null?rs[i2].soxlPrice:t.price; if(v==null) return;
       o+='<circle cx="'+x(i2)+'" cy="'+ny(v)+'" r="3.4" class="'+(t.type==="buy"?"dot-buy":"dot-sell")+'"><title>'+t.date+' · '+(t.type==="buy"?"매수":"매도")+' $'+t.price+' × '+t.qty+'주</title></circle>'; });
   }
   var ix=rs.length===1?[0]:[0,Math.floor((rs.length-1)/2),rs.length-1];
   ix.forEach(function(i){ o+='<text x="'+x(i)+'" y="'+(H-6)+'" text-anchor="'+(i===0?"start":(i===rs.length-1?"end":"middle"))+'" class="axis-label">'+rs[i].date.slice(5)+'</text>'; });
-  var lg=[{label:"총자산",color:"var(--accent)"}]; if(hasPx) lg.push({label:(tk||"SOXL")+"주가",color:"var(--price)"}); if(hasAvg) lg.push({label:"평단",color:"var(--avgprice)",dash:true});
+  var lg=[{label:"총자산",color:"var(--accent)"}]; if(hasPx) lg.push({label:(tk||"SOXL")+" 종가",color:"var(--price)"}); if(hasAvg) lg.push({label:"평단",color:"var(--avgprice)",dash:true});
   if(trades){ lg.push({label:"매수",color:"var(--buy)",dot:true}); lg.push({label:"매도",color:"var(--sell)",dot:true}); }
   o+=svgLegend(lg,padL);
   return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="평가액 추이">'+o+'</svg>';
@@ -910,7 +914,7 @@ function downloadCSV(name, header, lines){
   toast("CSV 파일로 저장했어요.");
 }
 function entryCsvLines(rows){ return rows.map(function(r){ return [r.date, r.amountRecorded?r.amount:"", r.diffPct==null?"":(r.diffPct*100).toFixed(2), r.diffAmt==null?"":r.diffAmt, r.soxlPrice, r.avgPrice, r.qty]; }); }
-var ENTRY_CSV_HEAD=["일시","평가액(원)","증감(%)","증감액","주가($)","평단가($)","보유수량"];
+var ENTRY_CSV_HEAD=["일시","평가액(원)","증감(%)","증감액","종가($)","평단가($)","보유수량"];
 
 /* ----- 화면 조각 ----- */
 function inlineOr(key, shown, val, cls){
@@ -934,9 +938,8 @@ function amountForm(a){
   var lb=lastBar(a.ticker);
   return '<section class="panel"><h2>자산총액 기록 (원화)</h2><form class="entry" data-form="amount">'+dateField("a-date","일시",rf.aDate)+
     '<div class="field"><label for="a-amount">평가액 (원)</label><input type="number" id="a-amount" placeholder="자산총액" required inputmode="numeric" value="'+esc(rf.aAmount)+'"></div>'+
-    '<div class="field"><label for="a-soxl">'+esc(a.ticker)+' 시세 ($, 선택)</label><input type="number" id="a-soxl" step="0.01" inputmode="decimal" placeholder="'+(lb?n2(lb.c):"-")+'" value="'+esc(rf.aSoxl)+'"></div>'+
     '<button type="submit">'+(rf.editEntry?"수정 저장":"평가액 저장")+'</button>'+(rf.editEntry?'<button type="button" class="sub-btn" data-act="rec-entry-cancel">수정 취소</button>':'')+'</form>'+
-    '<div class="hint">계좌 전체 평가금액(원화)을 그날그날 기록합니다. 매매가 없는 날도 평가액만 넣으면 됩니다. 시세를 비우면 그날 자동 종가가 있으면 그걸로 차트를 그립니다.</div></section>';
+    '<div class="hint">계좌 전체 평가금액(원화)을 그날그날 기록합니다. 매매가 없는 날도 평가액만 넣으면 됩니다. 차트의 초록선은 매일 자동으로 들어오는 종가예요.</div></section>';
 }
 function tradeForm(a){
   var bt=function(v,l){ return '<button type="button" class="t-delta-btn'+(rf.tDelta===v?" active":"")+'" data-act="rec-tdelta" data-v="'+v+'">'+l+'</button>'; };
@@ -968,7 +971,7 @@ function entryTable(rows, editable){
     return '<tr><td>'+esc(r.date)+'</td><td>'+(r.amountRecorded?krw(r.amount):"-")+'</td><td class="'+cls+'">'+(r.diffPct==null?"-":pct(r.diffPct))+'</td><td class="'+cls+'">'+(r.diffAmt==null?"-":krwS(r.diffAmt))+'</td><td>'+(r.soxlPrice!=null?"$"+n2(r.soxlPrice):"-")+'</td><td>'+(r.avgPrice!=null?"$"+n2(r.avgPrice):"-")+'</td><td>'+(r.qty!=null?r.qty:"-")+'</td>'+
       (editable?'<td>'+(r.amountRecorded?'<button type="button" class="del" data-act="rec-entry-edit" data-date="'+esc(r.date)+'">수정</button> ':'')+(trk.entries.some(function(e){return e.date===r.date;})?'<button type="button" class="del'+(del?" confirming":"")+'" data-act="rec-entry-del" data-date="'+esc(r.date)+'">'+(del?"한번더?":"삭제")+'</button>':'')+'</td>':'')+'</tr>';
   }).join("");
-  return body?'<div class="tablewrap"><table class="log entries"><thead><tr><th>일시</th><th>평가액(원)</th><th>증감</th><th>증감액</th><th>주가($)</th><th>평단($)</th><th>수량</th>'+(editable?'<th></th>':'')+'</tr></thead><tbody>'+body+'</tbody></table></div>':'<div class="empty">아직 기록이 없습니다.</div>';
+  return body?'<div class="tablewrap"><table class="log entries"><thead><tr><th>일시</th><th>평가액(원)</th><th>증감</th><th>증감액</th><th>종가($)</th><th>평단($)</th><th>수량</th>'+(editable?'<th></th>':'')+'</tr></thead><tbody>'+body+'</tbody></table></div>':'<div class="empty">아직 기록이 없습니다.</div>';
 }
 function recCharts(a){
   var rows=computeRows(trk.entries,getTrades(),a.ticker);
@@ -1038,7 +1041,7 @@ function tradesFromLog(a){
   return out;
 }
 function tradeFromFill(a, l, d, close, ts){
-  var N=a.N||20, t={ id:genId(), date:d, type:l.side==="BUY"?"buy":"sell", price:l.px, qty:l.q, createdAt:ts, fee:a.fee||0, src:"desk", kind:l.kind||null };
+  var N=a.N||20, t={ id:genId(), date:E.addDays(d,1), usDate:d, type:l.side==="BUY"?"buy":"sell", price:l.px, qty:l.q, createdAt:ts, fee:a.fee||0, src:"desk", kind:l.kind||null };
   if(close!=null) t.soxlPrice=close;
   if(t.type==="buy") t.tDelta = TD[l.kind]!=null ? TD[l.kind] : 0;
   else { var m={ quarter:[0.75,"별지점"], limit:[0.25,"목표가"], "rev-moc":[1-2/N,"리버스 MOC"], "rev-sell":[1-2/N,"리버스"] }[l.kind]||[1,""]; t.tMult=m[0]; t.tTag=m[1]; }
