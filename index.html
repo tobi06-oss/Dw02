@@ -874,7 +874,10 @@ function lineChart(rows, startAmount, trades, tk){
   o+='<path d="'+d+'" class="line-path"/>';
   if(ready&&trades){
     var idx={}; rs.forEach(function(r,i){idx[r.date]=i;});
-    trades.forEach(function(t){ var i2=idx[t.date]; if(i2==null) return; var v=rs[i2].soxlPrice!=null?rs[i2].soxlPrice:t.price; if(v==null) return;
+    trades.forEach(function(t){ var i2=idx[t.date]; if(i2==null) return;
+      // 그날 종가가 없으면(한국 일·월요일 등) 바로 앞의 종가 점에 붙여 찍는다 → 점이 항상 초록선 위에
+      while(i2>0&&rs[i2].soxlPrice==null) i2--;
+      var v=rs[i2].soxlPrice!=null?rs[i2].soxlPrice:t.price; if(v==null) return;
       o+='<circle cx="'+x(i2)+'" cy="'+ny(v)+'" r="3.4" class="'+(t.type==="buy"?"dot-buy":"dot-sell")+'"><title>'+t.date+' · '+(t.type==="buy"?"매수":"매도")+' $'+t.price+' × '+t.qty+'주</title></circle>'; });
   }
   var ix=rs.length===1?[0]:[0,Math.floor((rs.length-1)/2),rs.length-1];
@@ -1083,6 +1086,15 @@ function archiveAndRoll(a, allTrades, endDate, next){
 }
 
 /* ----- 예전 방식(entries에 수량을 적어 둔 기록) → 매매내역으로 한 번만 옮기기 ----- */
+// 주문표로 반영한 체결 중 예전(미국 날짜)로 기록된 것은 한국 날짜(+1일)로 한 번만 옮긴다
+function fixDeskTradeDates(){
+  if(!db||!trk.meta||trk.fixedDates) return;
+  var list=getTrades(), need=list.some(function(t){ return t.src==="desk"&&!t.usDate; });
+  trk.fixedDates=true;
+  if(!need) return;
+  var out=list.map(function(t){ return (t.src==="desk"&&!t.usDate) ? Object.assign({},t,{usDate:t.date,date:E.addDays(t.date,1)}) : t; });
+  db.doc("cycle/current").update({trades:out}).catch(function(e){ console.error("fix dates",e); });
+}
 function maybeMigrate(){
   if(trk.migrated||!db||!trk.meta||trk.meta.trades!=null) return;
   trk.migrated=true;
@@ -1386,7 +1398,7 @@ window.DeskApp = {
     db=adapter; loaded=false; accounts={}; prices={};
     trk={meta:null,metaLoaded:false,entries:[],entriesLoaded:false,cycles:[],migrated:false}; undoStack=[]; rf.aDate=rf.tDate=todayKR(); rf.editTrade=rf.editEntry=rf.inline=null;
     render();
-    db.doc("cycle/current").onSnapshot(function(s){ trk.meta=s.exists?s.data():null; trk.metaLoaded=true; if(trk.entriesLoaded) maybeMigrate(); render(); }, function(e){ console.error("cycle",e); });
+    db.doc("cycle/current").onSnapshot(function(s){ trk.meta=s.exists?s.data():null; trk.metaLoaded=true; if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); render(); }, function(e){ console.error("cycle",e); });
     db.collection("entries").onSnapshot(function(s){ trk.entries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; if(trk.metaLoaded) maybeMigrate(); render(); }, function(e){ console.error("entries",e); });
     db.collection("undo").onSnapshot(function(s){ undoStack=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).filter(function(u){ return u.ops&&u.ops.length; }); render(); }, function(e){ console.error("undo",e); });
     db.collection("cycles").onSnapshot(function(s){ trk.cyclesLoaded=true; trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); render(); }, function(e){ console.error("cycles",e); });
