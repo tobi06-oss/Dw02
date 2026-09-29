@@ -1177,8 +1177,8 @@ function entryTable(rows, editable){
 function recCharts(a){
   var rows=computeRows(trk.entries,getTrades(),a.ticker);
   return '<section class="panel"><div class="panel-head"><h2>추이</h2><button type="button" class="export-btn" data-act="rec-csv-entries">CSV로 저장</button></div>'+
-    assetHero(rows,trk.meta.startAmount)+assetChart(rows,trk.meta.startAmount)+
-    '<div class="chart-sub">'+esc(a.ticker)+' 종가 · 평단 · 매매</div>'+priceChart(a.ticker,trk.meta,getTrades())+'</section>'+
+    '<div class="chart-sub" style="border-top:none;padding-top:0;margin-top:6px">'+esc(a.ticker)+' 종가 · 평단 · 매매</div>'+priceChart(a.ticker,trk.meta,getTrades())+
+    '<div class="chart-sub"></div>'+assetHero(rows,trk.meta.startAmount)+assetChart(rows,trk.meta.startAmount)+'</section>'+
     '<section class="panel"><h2>기록 ('+rows.length+'건)</h2>'+entryTable(rows,true)+'</section>';
 }
 function dangerZone(){
@@ -1208,12 +1208,12 @@ function archiveSection(){
       else { badge=krwS(sh)+"원 ("+pct(shp)+")"; up=sh>=0; fx=inlineOr("afx:"+c.id,'<span class="a-fx">'+(c.fxLoss!=null?"환차손 "+krwS(c.fxLoss)+"원 별도":"환차손 미입력")+'</span>',c.fxLoss); }
     }
     var tx = c.entriesOnly ? (c.entries||[]) : (c.trades||[]);
-    var trTable = tx.length ? '<div class="panel-head" style="margin-top:16px"><div class="chart-cap" style="margin:0">매매 · 평단가 <span>(달러 기준)</span></div><button type="button" class="export-btn" data-act="rec-csv-arc-tr" data-id="'+esc(c.id)+'">CSV로 저장</button></div>'+tradeChart(tx)+
+    var trTable = tx.length ? '<div class="panel-head" style="margin-top:0"><div class="chart-cap" style="margin:0">매매 · 평단가 <span>(달러 기준)</span></div><button type="button" class="export-btn" data-act="rec-csv-arc-tr" data-id="'+esc(c.id)+'">CSV로 저장</button></div>'+tradeChart(tx)+
       '<div class="tablewrap" style="margin-top:12px"><table class="log"><thead><tr><th>일시</th><th>구분</th><th>체결가</th><th>수량</th><th>금액</th><th>누적수량</th><th>평단</th></tr></thead><tbody>'+
       tx.slice().reverse().map(function(t){ return '<tr><td>'+esc(t.date)+'</td><td class="'+(t.type==="매수"?"up":"down")+'">'+esc(t.type)+'</td><td>$'+t.price+'</td><td>'+t.qty+'</td><td>$'+t.amount+'</td><td>'+t.cumQty+'</td><td>'+(t.avgPrice!=null?"$"+t.avgPrice:"-")+'</td></tr>'; }).join("")+'</tbody></table></div>' : "";
-    var body = c.entriesOnly ? trTable :
-      '<div class="panel-head"><div class="chart-cap" style="margin:0">평가액 추이</div><button type="button" class="export-btn" data-act="rec-csv-arc" data-id="'+esc(c.id)+'">CSV로 저장</button></div>'+assetChart(computeRows(c.entries||[],null),c.startAmount)+
-      '<div style="margin-top:12px">'+entryTable(computeRows(c.entries||[],null),false)+'</div>'+trTable;
+    var body = c.entriesOnly ? trTable : trTable+
+      '<div class="panel-head" style="margin-top:'+(trTable?'22px':'0')+'"><div class="chart-cap" style="margin:0">평가액 추이</div><button type="button" class="export-btn" data-act="rec-csv-arc" data-id="'+esc(c.id)+'">CSV로 저장</button></div>'+assetChart(computeRows(c.entries||[],null),c.startAmount)+
+      '<div style="margin-top:12px">'+entryTable(computeRows(c.entries||[],null),false)+'</div>';
     return '<details class="archive-item" id="arc-'+esc(c.id)+'"><summary>'+inlineOr("alabel:"+c.id,'<span class="a-label">'+esc(c.label||c.id)+'</span>',c.label||"")+
       '<span class="a-period">'+esc(c.startDate||"-")+' ~ '+esc(c.endDate||"-")+'</span><span class="a-amounts"><span class="a-pl '+(up?"up":"down")+'">'+badge+'</span>'+(seedLine?'<span class="a-fx">'+esc(seedLine)+'</span>':'')+(fx?'<span>'+fx+'</span>':'')+'</span></summary><div class="archive-body">'+body+'</div></details>';
   }).join("");
