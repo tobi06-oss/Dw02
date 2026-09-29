@@ -935,8 +935,15 @@ function man(v){ return Math.round(v/10000).toLocaleString("ko-KR")+"만"; }
 function chartShell(id, svg, W, H){
   return '<div class="chart-wrap" data-chart="'+id+'">'+svg+'<div class="chart-tip" hidden></div></div>';
 }
+// 날짜 글자가 겹치지 않는 선에서 최대한 많이: 글자 사이 최소 간격(GAP)을 두고 일정 간격으로 고른다. 처음·마지막 날짜는 항상 표시
 function xAxis(xs, dates, H, padB){
-  var n=xs.length, pick=n<=1?[0]:(n<5?[0,n-1]:[0,Math.round((n-1)/2),n-1]), o="";
+  var n=xs.length, o="", GAP=46, pick=[];
+  if(n<=1) pick=[0];
+  else {
+    var span=xs[n-1]-xs[0], per=span/(n-1), step=Math.max(1,Math.ceil(GAP/Math.max(per,0.001)));
+    for(var i=0;i<n;i+=step) pick.push(i);
+    if(pick[pick.length-1]!==n-1){ if(xs[n-1]-xs[pick[pick.length-1]]<GAP) pick.pop(); pick.push(n-1); }
+  }
   pick.forEach(function(i){ o+='<text x="'+xs[i]+'" y="'+(H-8)+'" text-anchor="'+(i===0&&n>1?"start":(i===n-1&&n>1?"end":"middle"))+'" class="ax">'+mdLabel(dates[i])+'</text>'; });
   return o;
 }
