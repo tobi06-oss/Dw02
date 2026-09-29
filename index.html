@@ -936,14 +936,37 @@ function chartShell(id, svg, W, H){
   return '<div class="chart-wrap" data-chart="'+id+'">'+svg+'<div class="chart-tip" hidden></div></div>';
 }
 // 날짜 글자가 겹치지 않는 선에서 최대한 많이: 글자 사이 최소 간격(GAP)을 두고 일정 간격으로 고른다. 처음·마지막 날짜는 항상 표시
-function xAxis(xs, dates, H, padB){
-  var n=xs.length, o="", GAP=46, pick=[];
-  if(n<=1) pick=[0];
-  else {
-    var span=xs[n-1]-xs[0], per=span/(n-1), step=Math.max(1,Math.ceil(GAP/Math.max(per,0.001)));
-    for(var i=0;i<n;i+=step) pick.push(i);
-    if(pick[pick.length-1]!==n-1){ if(xs[n-1]-xs[pick[pick.length-1]]<GAP) pick.pop(); pick.push(n-1); }
+// 날짜 고르기: 처음·마지막 → 최고·최저 → 꺾이는 지점(꼭짓점, 크게 꺾일수록 먼저) → 남는 자리 채우기. 글자끼리 GAP보다 가까우면 안 넣는다
+function pickLabels(xs, dates, vals, GAP){
+  var n=xs.length; if(n<=1) return n?[0]:[];
+  var pr=[[0,1e12],[n-1,1e12]];
+  if(vals){
+    var imax=-1, imin=-1;
+    for(var i=0;i<n;i++){ if(vals[i]==null) continue; if(imax<0||vals[i]>vals[imax]) imax=i; if(imin<0||vals[i]<vals[imin]) imin=i; }
+    if(imax>=0) pr.push([imax,1e11]); if(imin>=0) pr.push([imin,1e11]);
+    for(var k=1;k<n-1;k++){ var a=vals[k-1], b=vals[k], c=vals[k+1]; if(a==null||b==null||c==null) continue;
+      if((b>a&&b>=c)||(b<a&&b<=c)) pr.push([k, Math.abs(b-a)+Math.abs(b-c)]); }
   }
+  pr.sort(function(p,q){ return q[1]-p[1]; });
+  var edge=function(i){ return i===0||i===n-1; }; // 처음·마지막 글자는 한쪽으로 붙어 있어 옆 글자와 더 떨어져야 한다
+  var chosen=[], ok=function(i){ for(var j=0;j<chosen.length;j++){ var c=chosen[j]; if(c===i||dates[c]===dates[i]||Math.abs(xs[c]-xs[i])<GAP*(edge(c)||edge(i)?1.5:1)) return false; } return true; };
+  pr.forEach(function(p){ if(ok(p[0])) chosen.push(p[0]); });
+  // 남는 구간마다 들어갈 수 있는 만큼 고르게 채운다
+  chosen.sort(function(a,b){return a-b;});
+  var base=chosen.slice();
+  for(var g=0;g+1<base.length;g++){
+    var A=base[g], B=base[g+1], span=xs[B]-xs[A], slots=Math.floor(span/GAP)-1;
+    for(var sl=1;sl<=slots;sl++){
+      var tx=xs[A]+span*sl/(slots+1), best=-1;
+      for(var q=A+1;q<B;q++){ if(ok(q)&&(best<0||Math.abs(xs[q]-tx)<Math.abs(xs[best]-tx))) best=q; }
+      if(best>=0) chosen.push(best);
+    }
+  }
+  for(var m=0;m<n;m++) if(ok(m)) chosen.push(m);
+  return chosen.sort(function(a,b){return a-b;});
+}
+function xAxis(xs, dates, H, padB, vals){
+  var n=xs.length, o="", pick=pickLabels(xs, dates, vals, 38);
   pick.forEach(function(i){ o+='<text x="'+xs[i]+'" y="'+(H-8)+'" text-anchor="'+(i===0&&n>1?"start":(i===n-1&&n>1?"end":"middle"))+'" class="ax">'+mdLabel(dates[i])+'</text>'; });
   return o;
 }
@@ -965,7 +988,7 @@ function assetChart(rows, startAmount){
   if(n>1) o+='<path d="'+d+" L"+xs[n-1]+","+(padT+ph)+" L"+xs[0]+","+(padT+ph)+' Z" fill="url(#g'+id+')"/>';
   o+='<path d="'+d+'" class="ln" stroke="var(--accent)"/>';
   o+='<circle cx="'+xs[n-1]+'" cy="'+ys[n-1]+'" r="4.5" class="dot" fill="var(--accent)"/>';
-  o+=xAxis(xs, rs.map(function(r){return r.date;}), H, padB);
+  o+=xAxis(xs, rs.map(function(r){return r.date;}), H, padB, vals);
   o+='<line class="xh" y1="'+padT+'" y2="'+(padT+ph)+'" x1="0" x2="0" visibility="hidden"/><circle class="xd" r="5" fill="var(--accent)" visibility="hidden"/>';
   chartReg[id]={W:W, xs:xs, ys:ys, tips:rs.map(function(r){
     return { t:r.date+" ("+WD[new Date(r.date+"T12:00:00Z").getUTCDay()]+")", rows:[["총자산","var(--accent)",krw(r.amount)+"원"]].concat(r.diffPct!=null?[["전 기록 대비","",pct(r.diffPct)+" ("+krwS(r.diffAmt)+")"]]:[]).concat(base?[["시작 대비","",pct(r.amount/base-1)]]:[]) };
@@ -1018,7 +1041,7 @@ function priceChart(tk, meta, trades){
   Object.keys(marks).forEach(function(j){ j=+j; var ts=marks[j], hasB=ts.some(function(t){return t.type==="buy";}), hasS=ts.some(function(t){return t.type==="sell";}), cy=ys[j];
     if(hasB) o+='<circle cx="'+(xs[j]-(hasS?4:0))+'" cy="'+cy+'" r="5" class="dot" fill="var(--buy)"/>';
     if(hasS) o+='<circle cx="'+(xs[j]+(hasB?4:0))+'" cy="'+cy+'" r="5" class="dot" fill="var(--sell)"/>'; });
-  o+=xAxis(xs, bs.map(function(b){return b.d;}), H, padB);
+  o+=xAxis(xs, bs.map(function(b){return b.d;}), H, padB, bs.map(function(b){return b.c;}));
   o+='<line class="xh" y1="'+padT+'" y2="'+(padT+ph)+'" x1="0" x2="0" visibility="hidden"/><circle class="xd" r="5" fill="var(--price)" visibility="hidden"/>';
   chartReg[id]={W:W, xs:xs, ys:ys, tips:bs.map(function(b,i3){
     var r=[[tk+" 종가","var(--price)","$"+n2(b.c)]];
@@ -1057,8 +1080,12 @@ document.addEventListener("pointermove", chartHover);
 document.addEventListener("pointerdown", chartHover);
 document.addEventListener("pointerout", chartLeave);
 
-function tradeChart(tx){
-  if(!tx.length) return "";
+function tradeChart(tx0){
+  if(!tx0||!tx0.length) return "";
+  // 같은 날 같은 가격·같은 구분(매수/매도)으로 체결된 건은 점 하나로 합친다 (수량 합산, 평단은 마지막 값)
+  var tx=[]; tx0.forEach(function(t){ var p=tx[tx.length-1];
+    if(p&&p.date===t.date&&p.type===t.type&&Number(p.price)===Number(t.price)){ p.qty+=Number(t.qty)||0; p.avgPrice=t.avgPrice; p.n++; }
+    else tx.push({date:t.date,type:t.type,price:Number(t.price),qty:Number(t.qty)||0,avgPrice:t.avgPrice,n:1}); });
   var wh=chartWH(), W=wh[0], H=wh[1], padL=W<720?48:54,padR=18,padT=30,padB=30,pw=W-padL-padR,ph=H-padT-padB;
   var pr=tx.map(function(t){return t.price;}), av=tx.filter(function(t){return t.avgPrice!=null;}).map(function(t){return t.avgPrice;}), all=pr.concat(av);
   var lo=Math.min.apply(null,all), hi=Math.max.apply(null,all), rg=hi-lo||1; lo-=rg*.1; hi+=rg*.1; rg=hi-lo;
@@ -1070,10 +1097,8 @@ function tradeChart(tx){
   var ap=[]; tx.forEach(function(t,k){ if(t.avgPrice!=null) ap.push({i:k,v:t.avgPrice}); });
   if(ap.length>=2){ var s="M"+x(ap[0].i)+","+y(ap[0].v); for(var a=1;a<ap.length;a++) s+=" L"+x(ap[a].i)+","+y(ap[a].v); o+='<path d="'+s+'" class="avgprice-line"/>'; }
   tx.forEach(function(t,j){ var buy=t.type==="매수"||t.type==="buy"; o+='<circle cx="'+x(j)+'" cy="'+y(t.price)+'" r="4" class="'+(buy?"dot-buy":"dot-sell")+'"><title>'+t.date+' · '+(buy?"매수":"매도")+' $'+t.price+' · '+t.qty+'주</title></circle>'; });
-  // 날짜: 겹치지 않는 선에서 최대한 많이 (같은 날 여러 거래는 한 번만), 처음·마지막은 항상
-  var GAP=40, ix=[], lastX=-1e9, lastD=null;
-  for(var q=0;q<tx.length;q++){ if(tx[q].date===lastD) continue; if(x(q)-lastX>=GAP){ ix.push(q); lastX=x(q); lastD=tx[q].date; } }
-  var L=tx.length-1; if(tx.length>1&&ix[ix.length-1]!==L&&tx[L].date!==tx[ix[ix.length-1]].date){ if(x(L)-x(ix[ix.length-1])<GAP) ix.pop(); ix.push(L); }
+  // 날짜: 꼭짓점 위주로, 겹치지 않는 선에서 최대한 많이 (같은 날은 한 번만)
+  var L=tx.length-1, ix=pickLabels(tx.map(function(t,q){return x(q);}), tx.map(function(t){return t.date;}), pr, 32);
   ix.forEach(function(i){ o+='<text x="'+x(i)+'" y="'+(H-6)+'" text-anchor="'+(i===0?"start":(i===L?"end":"middle"))+'" class="axis-label">'+mdLabel(tx[i].date)+'</text>'; });
   o+=svgLegend([{label:"매수",color:"var(--buy)",dot:true},{label:"매도",color:"var(--sell)",dot:true},{label:"평단",color:"var(--avgprice)",dash:true}],padL);
   return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="체결가와 평단">'+o+'</svg>';
