@@ -985,7 +985,13 @@ function priceChart(tk, meta, trades){
   for(var k=0;k<all.length;k++){ if(all[k].d>=startUS){ i0=k; break; } }
   if(i0<0) i0=all.length-1;
   var from=i0, bs=all.slice(from), n=bs.length;  // 사이클 시작일부터만 그린다
-  var usOf=function(t){ return t.usDate||E.addDays(t.date,-1); };
+  var closeByDate={}; all.forEach(function(b){ closeByDate[b.d]=b.c; });
+  var usOf=function(t){
+    if(t.usDate) return t.usDate;
+    var a=t.date, b=E.addDays(t.date,-1), ca=closeByDate[a], cb=closeByDate[b];
+    if(ca!=null&&cb!=null) return Math.abs(cb-t.price)<Math.abs(ca-t.price)-1e-9 ? b : a;
+    if(ca!=null) return a; if(cb!=null) return b; return a;
+  };
   var sorted=sortTrades(trades||[]), rowsT=tradeRows(sorted);
   // 날짜별 평단(그날 장 마감 뒤 기준), 매매 모음
   var avgAt=function(u){ var a=null, q=0; rowsT.forEach(function(r){ if(usOf(r)<=u){ a=r.avgPrice; q=r.cumQty; } }); return q>0?a:null; };
@@ -1008,10 +1014,10 @@ function priceChart(tk, meta, trades){
   avgs.forEach(function(v,i2){ if(v==null){ on=false; return; } var yy=y(v); ad+=(on?" L":"M")+xs[i2]+","+yy; on=true; });
   if(ad) o+='<path d="'+ad+'" class="ln avg"/>';
   o+='<path d="'+d+'" class="ln" stroke="var(--price)"/>';
+  if(!marks[n-1]) o+='<circle cx="'+xs[n-1]+'" cy="'+lastY+'" r="4" class="dot" fill="var(--price)"/>'; o+='<text x="'+(W-4)+'" y="'+(lastY+4)+'" text-anchor="end" class="ax last">$'+n2(bs[n-1].c)+'</text>';
   Object.keys(marks).forEach(function(j){ j=+j; var ts=marks[j], hasB=ts.some(function(t){return t.type==="buy";}), hasS=ts.some(function(t){return t.type==="sell";}), cy=ys[j];
     if(hasB) o+='<circle cx="'+(xs[j]-(hasS?4:0))+'" cy="'+cy+'" r="5" class="dot" fill="var(--buy)"/>';
     if(hasS) o+='<circle cx="'+(xs[j]+(hasB?4:0))+'" cy="'+cy+'" r="5" class="dot" fill="var(--sell)"/>'; });
-  o+='<circle cx="'+xs[n-1]+'" cy="'+lastY+'" r="4" class="dot" fill="var(--price)"/><text x="'+(W-4)+'" y="'+(lastY+4)+'" text-anchor="end" class="ax last">$'+n2(bs[n-1].c)+'</text>';
   o+=xAxis(xs, bs.map(function(b){return b.d;}), H, padB);
   o+='<line class="xh" y1="'+padT+'" y2="'+(padT+ph)+'" x1="0" x2="0" visibility="hidden"/><circle class="xd" r="5" fill="var(--price)" visibility="hidden"/>';
   chartReg[id]={W:W, xs:xs, ys:ys, tips:bs.map(function(b,i3){
@@ -1209,7 +1215,7 @@ function tradesFromLog(a){
   return out;
 }
 function tradeFromFill(a, l, d, close, ts){
-  var N=a.N||20, t={ id:genId(), date:E.addDays(d,1), usDate:d, type:l.side==="BUY"?"buy":"sell", price:l.px, qty:l.q, createdAt:ts, fee:a.fee||0, src:"desk", kind:l.kind||null };
+  var N=a.N||20, t={ id:genId(), date:d, usDate:d, type:l.side==="BUY"?"buy":"sell", price:l.px, qty:l.q, createdAt:ts, fee:a.fee||0, src:"desk", kind:l.kind||null };
   if(close!=null) t.soxlPrice=close;
   if(t.type==="buy") t.tDelta = TD[l.kind]!=null ? TD[l.kind] : 0;
   else { var m={ quarter:[0.75,"별지점"], limit:[0.25,"목표가"], "rev-moc":[1-2/N,"리버스 MOC"], "rev-sell":[1-2/N,"리버스"] }[l.kind]||[1,""]; t.tMult=m[0]; t.tTag=m[1]; }
@@ -1254,10 +1260,10 @@ function archiveAndRoll(a, allTrades, endDate, next){
 // 주문표로 반영한 체결 중 예전(미국 날짜)로 기록된 것은 한국 날짜(+1일)로 한 번만 옮긴다
 function fixDeskTradeDates(){
   if(!db||!trk.meta||trk.fixedDates) return;
-  var list=getTrades(), need=list.some(function(t){ return t.src==="desk"&&!t.usDate; });
+  var list=getTrades(), bad=function(t){ return t.src==="desk" && (!t.usDate || t.date!==t.usDate); }, need=list.some(bad);
   trk.fixedDates=true;
   if(!need) return;
-  var out=list.map(function(t){ return (t.src==="desk"&&!t.usDate) ? Object.assign({},t,{usDate:t.date,date:E.addDays(t.date,1)}) : t; });
+  var out=list.map(function(t){ return bad(t) ? Object.assign({},t,{usDate:t.usDate||t.date,date:t.usDate||t.date}) : t; });
   db.doc("cycle/current").update({trades:out}).catch(function(e){ console.error("fix dates",e); });
 }
 function maybeMigrate(){
