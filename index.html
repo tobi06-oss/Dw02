@@ -1017,7 +1017,7 @@ function priceChart(tk, meta, trades){
   };
   var sorted=sortTrades(trades||[]), rowsT=tradeRows(sorted);
   // 날짜별 평단(그날 장 마감 뒤 기준), 매매 모음
-  var avgAt=function(u){ var a=null, q=0; rowsT.forEach(function(r){ if(usOf(r)<=u){ a=r.avgPrice; q=r.cumQty; } }); return q>0?a:null; };
+  var avgAt=function(u){ var a=null, last=null; rowsT.forEach(function(r){ if(usOf(r)<=u){ if(r.avgPrice!=null) last=r.avgPrice; a=r.avgPrice!=null?r.avgPrice:last; } }); return a; };
   var marks={}; sorted.forEach(function(t){ var u=usOf(t), j=-1; for(var m=0;m<n;m++){ if(bs[m].d<=u) j=m; } if(j<0) return; (marks[j]=marks[j]||[]).push(t); });
   var avgs=bs.map(function(b){ return avgAt(b.d); });
   var wh=chartWH(), W=wh[0], H=W<720?230:260, padL=6, padR=W<720?52:64, padT=14, padB=28, pw=W-padL-padR, ph=H-padT-padB;
@@ -1094,7 +1094,7 @@ function tradeChart(tx0){
   for(var g=0;g<=3;g++){ var gv=lo+rg*g/3, gy=y(gv); o+='<line x1="'+padL+'" x2="'+(W-padR)+'" y1="'+gy+'" y2="'+gy+'" class="grid-line"/><text x="'+(padL-6)+'" y="'+(gy+3)+'" text-anchor="end" class="axis-label">$'+gv.toFixed(2)+'</text>'; }
   var d="M"+x(0)+","+y(pr[0]); for(var i=1;i<tx.length;i++) d+=" L"+x(i)+","+y(pr[i]);
   o+='<path d="'+d+'" fill="none" stroke="var(--ink-3)" stroke-width="1.3"/>';
-  var ap=[]; tx.forEach(function(t,k){ if(t.avgPrice!=null) ap.push({i:k,v:t.avgPrice}); });
+  var ap=[], lastAvg=null; tx.forEach(function(t,k){ var v=t.avgPrice!=null?t.avgPrice:lastAvg; if(v!=null){ ap.push({i:k,v:v}); lastAvg=v; } });
   if(ap.length>=2){ var s="M"+x(ap[0].i)+","+y(ap[0].v); for(var a=1;a<ap.length;a++) s+=" L"+x(ap[a].i)+","+y(ap[a].v); o+='<path d="'+s+'" class="avgprice-line"/>'; }
   tx.forEach(function(t,j){ var buy=t.type==="매수"||t.type==="buy"; o+='<circle cx="'+x(j)+'" cy="'+y(t.price)+'" r="4" class="'+(buy?"dot-buy":"dot-sell")+'"><title>'+t.date+' · '+(buy?"매수":"매도")+' $'+t.price+' · '+t.qty+'주</title></circle>'; });
   // 날짜: 꼭짓점 위주로, 겹치지 않는 선에서 최대한 많이 (같은 날은 한 번만)
