@@ -1070,8 +1070,11 @@ function tradeChart(tx){
   var ap=[]; tx.forEach(function(t,k){ if(t.avgPrice!=null) ap.push({i:k,v:t.avgPrice}); });
   if(ap.length>=2){ var s="M"+x(ap[0].i)+","+y(ap[0].v); for(var a=1;a<ap.length;a++) s+=" L"+x(ap[a].i)+","+y(ap[a].v); o+='<path d="'+s+'" class="avgprice-line"/>'; }
   tx.forEach(function(t,j){ var buy=t.type==="매수"||t.type==="buy"; o+='<circle cx="'+x(j)+'" cy="'+y(t.price)+'" r="4" class="'+(buy?"dot-buy":"dot-sell")+'"><title>'+t.date+' · '+(buy?"매수":"매도")+' $'+t.price+' · '+t.qty+'주</title></circle>'; });
-  var ix=tx.length===1?[0]:[0,Math.floor((tx.length-1)/2),tx.length-1];
-  ix.forEach(function(i){ o+='<text x="'+x(i)+'" y="'+(H-6)+'" text-anchor="'+(i===0?"start":(i===tx.length-1?"end":"middle"))+'" class="axis-label">'+tx[i].date.slice(5)+'</text>'; });
+  // 날짜: 겹치지 않는 선에서 최대한 많이 (같은 날 여러 거래는 한 번만), 처음·마지막은 항상
+  var GAP=40, ix=[], lastX=-1e9, lastD=null;
+  for(var q=0;q<tx.length;q++){ if(tx[q].date===lastD) continue; if(x(q)-lastX>=GAP){ ix.push(q); lastX=x(q); lastD=tx[q].date; } }
+  var L=tx.length-1; if(tx.length>1&&ix[ix.length-1]!==L&&tx[L].date!==tx[ix[ix.length-1]].date){ if(x(L)-x(ix[ix.length-1])<GAP) ix.pop(); ix.push(L); }
+  ix.forEach(function(i){ o+='<text x="'+x(i)+'" y="'+(H-6)+'" text-anchor="'+(i===0?"start":(i===L?"end":"middle"))+'" class="axis-label">'+mdLabel(tx[i].date)+'</text>'; });
   o+=svgLegend([{label:"매수",color:"var(--buy)",dot:true},{label:"매도",color:"var(--sell)",dot:true},{label:"평단",color:"var(--avgprice)",dash:true}],padL);
   return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="체결가와 평단">'+o+'</svg>';
 }
