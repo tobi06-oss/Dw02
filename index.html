@@ -977,7 +977,7 @@ function priceChart(tk, meta, trades){
   var startUS=meta&&meta.startDate?E.addDays(meta.startDate,-1):all[Math.max(0,all.length-20)].d, i0=-1;
   for(var k=0;k<all.length;k++){ if(all[k].d>=startUS){ i0=k; break; } }
   if(i0<0) i0=all.length-1;
-  var from=Math.max(0,Math.min(i0-3,all.length-20)), bs=all.slice(from), n=bs.length;
+  var from=i0, bs=all.slice(from), n=bs.length;  // 사이클 시작일부터만 그린다
   var usOf=function(t){ return t.usDate||E.addDays(t.date,-1); };
   var sorted=sortTrades(trades||[]), rowsT=tradeRows(sorted);
   // 날짜별 평단(그날 장 마감 뒤 기준), 매매 모음
@@ -991,14 +991,14 @@ function priceChart(tk, meta, trades){
   var id="c"+(++chartSeq), o='<defs><linearGradient id="g'+id+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--price)" stop-opacity=".16"/><stop offset="1" stop-color="var(--price)" stop-opacity="0"/></linearGradient></defs>';
   var lastY=y(bs[n-1].c);
   niceTicks(lo,hi,4).forEach(function(t){ var gy=y(t); o+='<line x1="'+padL+'" x2="'+(padL+pw)+'" y1="'+gy+'" y2="'+gy+'" class="gl"/>'+(Math.abs(gy-lastY)>13?'<text x="'+(W-4)+'" y="'+(gy+4)+'" text-anchor="end" class="ax">$'+(t>=100?t.toFixed(0):t.toFixed(1))+'</text>':''); });
-  if(i0>from){ var sx=x(i0); o+='<rect x="'+padL+'" y="'+padT+'" width="'+Math.max(0,sx-padL)+'" height="'+ph+'" class="pre"/>';
+  if(i0>from){ var sx=x(i0-from); o+='<rect x="'+padL+'" y="'+padT+'" width="'+Math.max(0,sx-padL)+'" height="'+ph+'" class="pre"/>';
     o+='<line x1="'+sx+'" x2="'+sx+'" y1="'+padT+'" y2="'+(padT+ph)+'" class="ref"/><text x="'+(sx+4)+'" y="'+(padT+10)+'" class="ref-t">'+esc((meta&&meta.label||"").replace(/^.*\[(\d+차)\].*$/,"$1") || "사이클")+' 시작</text>'; }
   var xs=bs.map(function(b,i){return x(i);}), ys=bs.map(function(b){return y(b.c);}), d="M"+xs[0]+","+ys[0];
   for(var i=1;i<n;i++) d+=" L"+xs[i]+","+ys[i];
   if(n>1) o+='<path d="'+d+" L"+xs[n-1]+","+(padT+ph)+" L"+xs[0]+","+(padT+ph)+' Z" fill="url(#g'+id+')"/>';
-  // 평단: 계단선 (매매가 있던 날 바뀜)
+  // 평단: 날짜마다 이어지는 점선
   var ad="", on=false;
-  avgs.forEach(function(v,i2){ if(v==null){ on=false; return; } var yy=y(v); if(!on){ ad+="M"+xs[i2]+","+yy; on=true; } else ad+=" H"+xs[i2]+" V"+yy; });
+  avgs.forEach(function(v,i2){ if(v==null){ on=false; return; } var yy=y(v); ad+=(on?" L":"M")+xs[i2]+","+yy; on=true; });
   if(ad) o+='<path d="'+ad+'" class="ln avg"/>';
   o+='<path d="'+d+'" class="ln" stroke="var(--price)"/>';
   Object.keys(marks).forEach(function(j){ j=+j; var ts=marks[j], hasB=ts.some(function(t){return t.type==="buy";}), hasS=ts.some(function(t){return t.type==="sell";}), cy=ys[j];
