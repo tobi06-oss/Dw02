@@ -738,7 +738,8 @@ function pickState(a){ return { qty:a.qty||0, avg:a.avg==null?null:a.avg, cash:a
 function closeOn(tk, d){ var b=bars(tk), x=null; for(var i=0;i<b.length;i++){ if(b[i].d<=d) x=b[i]; else break; } return x; }
 function computeRows(entries, trades, tk){
   var sorted=(entries||[]).slice().sort(function(a,b){return a.date<b.date?-1:1;});
-  var tr = trades ? tradeRows(trades) : [];
+  // 매매는 미국 장 날짜로 기록되고, 원화 기록은 한국 날짜라서 그 매매가 반영된 보유·평단은 다음 날(한국) 줄에 보인다
+  var tr = trades ? tradeRows(trades).map(function(r){ return Object.assign({}, r, {date: tk ? E.addDays(r.usDate||r.date,1) : r.date}); }) : [];
   var per=[]; tr.forEach(function(r){ var l=per[per.length-1]; if(l&&l.date===r.date){ l.qty=r.cumQty; l.avg=r.avgPrice; } else per.push({date:r.date,qty:r.cumQty,avg:r.avgPrice}); });
   var asOf=function(d){ var x=null; for(var i=0;i<per.length;i++){ if(per[i].date<=d) x=per[i]; else break; } return x; };
   var dayInfo={}; tr.forEach(function(r){ dayInfo[r.date]={tradePrice:r.price, soxlPrice:r.soxlPrice!=null?r.soxlPrice:null}; });
