@@ -295,8 +295,8 @@
     // 한도는 사이클 시작(적립 후) Pool 기준으로 고정하고, 이번 사이클에 이미 매수에 쓴 돈을 뺀다 (개요 글 "한사이클당 pool 사용의 제한")
     var cap = a.cycleCap != null ? a.cycleCap : (pool + (a.cycleUsed || 0)) * limitPct / 100;
     var limit = Math.max(0, Math.min(pool, cap - (a.cycleUsed || 0)));
-    // VR은 본장 지정가 예약주문이 기본이다 (예약매수 초과체결 글)
-    var type = a.orderType || "LIMIT";
+    // VR은 본장 지정가 예약주문으로만 한다 (예약매수 초과체결 글). 예전에 저장된 orderType은 쓰지 않는다.
+    var type = "LIMIT";
     var p = { basis: last, session: nextSession(last.d), min: min, max: max, E: qty * c0, ratio: a.V ? qty * c0 / a.V : null,
       limit: limit, limitPct: limitPct, buys: [], sells: [], orders: [], notes: [] };
     var cum = 0;
