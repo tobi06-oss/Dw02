@@ -44,6 +44,27 @@ async function fetchBars(t) {
   return { bars: await fromStooq(t), source: "stooq" };
 }
 
+// 무매 지정가매도는 프리장~본장~애프터장까지 유효하므로, 날짜별 시간외 포함 고가·저가(xh, xl)를 따로 받는다.
+// 실패해도 종가 저장은 계속한다 (앱은 xh가 없으면 본장 고가로 판정).
+async function fromYahooExt(t) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${t}?range=1mo&interval=1h&includePrePost=true`;
+  const r = await fetch(url, { headers: UA });
+  if (!r.ok) throw new Error(`yahoo ext ${t} HTTP ${r.status}`);
+  const j = await r.json();
+  const res = j?.chart?.result?.[0];
+  const q = res?.indicators?.quote?.[0];
+  if (!res?.timestamp || !q) throw new Error(`yahoo ext ${t} empty`);
+  const out = new Map();
+  res.timestamp.forEach((s, i) => {
+    const h = q.high[i], l = q.low[i];
+    if (!(typeof h === "number" && isFinite(h) && typeof l === "number" && isFinite(l))) return;
+    const d = nyDate(s), x = out.get(d) || { xh: -Infinity, xl: Infinity };
+    x.xh = Math.max(x.xh, h); x.xl = Math.min(x.xl, l);
+    out.set(d, x);
+  });
+  return out;
+}
+
 // Firestore는 배열 안의 배열을 저장할 수 없어서 봉 하나를 {d,o,h,l,c} 객체로 저장합니다.
 const toObj = (b) => (Array.isArray(b) ? { d: b[0], o: b[1], h: b[2], l: b[3], c: b[4] } : b);
 
@@ -66,12 +87,21 @@ async function main() {
   for (const t of TICKERS) {
     try {
       let { bars, source } = await fetchBars(t);
+      let ext = null;
+      try { ext = await fromYahooExt(t); } catch (e) { console.warn(String(e)); }
       // 장이 아직 안 끝난 오늘 봉은 버린다 (뉴욕 16:10 이전)
       if (bars.length && bars[bars.length - 1][0] === now.date && now.minutes < 16 * 60 + 10) bars = bars.slice(0, -1);
       const ref = db.collection("prices").doc(t);
       const snap = await ref.get();
       const map = new Map((snap.exists ? snap.data().bars || [] : []).map(toObj).map((b) => [b.d, b]));
-      bars.map(toObj).forEach((b) => map.set(b.d, b));
+      bars.map(toObj).forEach((b) => {
+        const x = ext && ext.get(b.d);
+        // 오늘 애프터장이 아직 안 끝났으면(뉴욕 20:00 이전) 그날 시간외 값은 다음 실행 때 채운다
+        const extDone = b.d !== now.date || now.minutes >= 20 * 60 + 5;
+        if (x && extDone) { b.xh = r2(Math.max(b.h, x.xh)); b.xl = r2(Math.min(b.l, x.xl)); }
+        else if (map.get(b.d)?.xh != null) { b.xh = map.get(b.d).xh; b.xl = map.get(b.d).xl; }
+        map.set(b.d, b);
+      });
       const merged = [...map.values()].sort((a, b) => (a.d < b.d ? -1 : 1)).slice(-KEEP);
       const bad = sane(merged.slice(-30));
       if (bad) throw new Error(`${t} 값 이상 (${bad}) — 저장하지 않음`);
