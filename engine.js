@@ -47,16 +47,22 @@
     return m;
   }
 
-  // 증권사 가격제한(현재가 ±20% 부근)을 피하는 큰수 주문. 체결 결과는 원래 주문과 같다.
-  function applyBig(o, c0, a) {
-    var lim = (a.bigLimitPct || 20) / 100;
-    if (o.type !== "LOC") return o;
-    if (o.side === "BUY" && o.price > c0 * (1 + lim)) {
-      o.orig = o.price; o.price = f2(c0 * (1 + lim - 0.02)); o.big = true;
-    } else if (o.side === "SELL" && o.price < c0 * (1 - lim)) {
-      o.orig = o.price; o.price = c2(c0 * (1 - lim + 0.02)); o.big = true;
-    }
-    return o;
+  // 큰수 매수: 매수가가 현재가와 너무 멀면 증권사가 주문을 거부하므로, 현재가 +15% 쯤의 '큰 수'에
+  // 그보다 위 가격의 매수 수량을 모두 합쳐 건다 (라오어 <큰수 매수> 글, 엑셀 기준 15%). 그 아래 사다리는 그대로.
+  // 매도는 가격을 바꾸지 않는다. 거부되면 걸지 않는 것이 규칙이다 (매수매도거부 글).
+  function applyBig(p, c0, a) {
+    var pct = a.bigPct != null ? a.bigPct : 15;
+    var bigP = f2(c0 * (1 + pct / 100)), moved = 0;
+    p.orders.forEach(function (o) {
+      if (o.side === "BUY" && o.type === "LOC" && o.price > bigP) {
+        o.orig = o.price; o.price = bigP; o.big = true; moved += o.qty;
+      }
+    });
+    if (moved) p.notes.push("매수가가 현재가보다 " + pct + "% 넘게 높아, 그 위 매수 " + moved + "주를 큰수 $" + bigP.toFixed(2) + "에 모았습니다. 같은 가격 주문은 합쳐서 " + moved + "주로 넣으세요.");
+    var rejLim = (a.rejectPct != null ? a.rejectPct : 20) / 100;
+    var far = p.orders.filter(function (o) { return o.side === "SELL" && o.price != null && o.price > c0 * (1 + rejLim); });
+    if (far.length) p.notes.push(far.map(function (o) { return o.label; }).join(", ") + " 가격이 현재가보다 " + Math.round(rejLim * 100) + "% 넘게 높아 증권사가 거부할 수 있습니다. 거부되면 걸지 마세요. 가격을 낮춰 걸면 안 됩니다.");
+    return p;
   }
 
   function infPlan(a, bars) {
@@ -84,18 +90,26 @@
       p.sellP = r2(star);
       p.buyP = r2(r2(star) - 0.01);
       var sq = Math.floor(qty / div);
-      if (sq > 0) p.orders.push(applyBig({ side: "SELL", kind: "rev-sell", type: "LOC", price: p.sellP, qty: sq, label: "별지점 위 매도 (1/" + div + ")" }, c0, a));
       var bud = cash / 4;
       p.budget = bud;
       var bq = Math.floor(bud / p.buyP);
-      if (bq > 0) p.orders.push(applyBig({ side: "BUY", kind: "rev-buy", type: "LOC", price: p.buyP, qty: bq, label: "쿼터매수 (잔금/4)" }, c0, a));
-      p.orders = p.orders.concat(ladder(bud, bq, floorPrice, 8, lowestBuy(p.orders)));
       p.exitPrice = r2(avg * (1 - base / 100));
+      if (bq <= 0) {
+        // 리버스 중 소진: 쿼터매수(잔금/4)로 1주도 못 사면 매수 없이 MOC 매도만 (소진 기준 추가 글, 2026-08)
+        p.phase += " · 소진";
+        if (sq > 0) p.orders.push({ side: "SELL", kind: "rev-moc", type: "MOC", price: null, qty: sq, label: "소진 · 무조건 매도 (1/" + div + ")" });
+        p.notes.push("잔금/4($" + bud.toFixed(2) + ")로 1주도 살 수 없어 매수 없이 MOC로 매도합니다.");
+        return p;
+      }
+      if (sq > 0) p.orders.push({ side: "SELL", kind: "rev-sell", type: "LOC", price: p.sellP, qty: sq, label: "별지점 위 매도 (1/" + div + ")" });
+      p.orders.push({ side: "BUY", kind: "rev-buy", type: "LOC", price: p.buyP, qty: bq, label: "쿼터매수 (잔금/4)" });
+      p.orders = p.orders.concat(ladder(bud, bq, floorPrice, 8, lowestBuy(p.orders)));
       p.notes.push("별지점 = 직전 5거래일 종가 평균. 종가가 $" + p.exitPrice.toFixed(2) + "(평단 −" + base + "%)를 넘으면 일반모드로 돌아갑니다.");
-      return p;
+      return applyBig(p, c0, a);
     }
 
-    var budget = cash / (N - T);
+    // 일반모드에서는 T ≤ N−1이라 분모가 1 이상이다. 혹시라도 넘으면 잔금 이상을 걸지 않도록 막는다.
+    var budget = cash / Math.max(1, N - T);
     p.budget = budget;
 
     if (qty <= 0) {
@@ -105,7 +119,7 @@
       if (fq > 0) p.orders.push({ side: "BUY", kind: "first", type: "LOC", price: big, qty: fq, label: "처음매수 (큰수)" });
       p.orders = p.orders.concat(ladder(budget, fq, floorPrice, 10, lowestBuy(p.orders)));
       p.notes.push("처음매수는 전일 종가보다 " + Math.round(((a.bigMult || 1.12) - 1) * 100) + "% 높은 가격으로 LOC를 걸어 사실상 무조건 매수합니다.");
-      return p;
+      return applyBig(p, c0, a);
     }
 
     var sp = starPct(base, N, T);
@@ -125,12 +139,12 @@
       // 종가가 평단 이하로 끝나면 두 주문이 다 체결되므로, 1회 매수금 한도 안에서 평단 가격으로 살 수 있는 최대 수량까지 평단 LOC에 싣는다
       // (예전에는 이 몫이 평단보다 비싼 '하락 대비' 1주로 따로 나왔다)
       while (q1 + q2 + 1 > 0 && f2(budget / (q1 + q2 + 1)) >= avgP) q2++;
-      if (q1 > 0) p.orders.push(applyBig({ side: "BUY", kind: "star-half", type: "LOC", price: p.buyP, qty: q1, label: "별지점 절반" }, c0, a));
-      if (q2 > 0) p.orders.push(applyBig({ side: "BUY", kind: "avg-half", type: "LOC", price: avgP, qty: q2, label: "평단 절반" }, c0, a));
+      if (q1 > 0) p.orders.push({ side: "BUY", kind: "star-half", type: "LOC", price: p.buyP, qty: q1, label: "별지점 절반" });
+      if (q2 > 0) p.orders.push({ side: "BUY", kind: "avg-half", type: "LOC", price: avgP, qty: q2, label: "평단 절반" });
       Q = q1 + q2;
     } else {
       var qf = Math.floor(budget / p.buyP);
-      if (qf > 0) p.orders.push(applyBig({ side: "BUY", kind: "star-full", type: "LOC", price: p.buyP, qty: qf, label: "별지점 전체" }, c0, a));
+      if (qf > 0) p.orders.push({ side: "BUY", kind: "star-full", type: "LOC", price: p.buyP, qty: qf, label: "별지점 전체" });
       Q = qf;
     }
     p.orders = p.orders.concat(ladder(budget, Q, floorPrice, 10, lowestBuy(p.orders)));
@@ -138,12 +152,11 @@
     var quarter = Math.floor(qty / 4), rest = qty - quarter;
     var target = r2(avg * (1 + base / 100));
     p.target = target;
-    if (quarter > 0) p.orders.push(applyBig({ side: "SELL", kind: "quarter", type: "LOC", price: p.sellP, qty: quarter, label: "쿼터매도 (1/4)" }, c0, a));
-    if (rest > 0) p.orders.push({ side: "SELL", kind: "limit", type: "LIMIT", price: target, qty: rest, label: "지정가매도 (+" + base + "%)" });
-    if (target > c0 * 1.3) p.notes.push("지정가 $" + target.toFixed(2) + "가 현재가보다 30% 이상 높아 증권사에서 거부되면, 가격이 가까워졌을 때 다시 거세요.");
+    if (quarter > 0) p.orders.push({ side: "SELL", kind: "quarter", type: "LOC", price: p.sellP, qty: quarter, label: "쿼터매도 (1/4)" });
+    if (rest > 0) p.orders.push({ side: "SELL", kind: "limit", type: "LIMIT", ext: true, price: target, qty: rest, label: "지정가매도 (+" + base + "%)" });
     if (!front) p.notes.push("후반전: 별지점이 평단보다 낮아 쿼터매도는 손절입니다. 무매는 손절이 핵심입니다.");
     if (T + 1 > N - 1) p.notes.push("이번 매수가 체결되면 T가 " + (N - 1) + "을 넘어 리버스모드로 넘어갑니다.");
-    return p;
+    return applyBig(p, c0, a);
   }
 
   function judge(o, bar) {
@@ -154,8 +167,12 @@
       return bar.c >= o.price - EPS ? { px: bar.c } : null;
     }
     if (o.type === "LIMIT") {
-      if (o.side === "SELL") return bar.h >= o.price - EPS ? { px: bar.o >= o.price ? bar.o : o.price } : null;
-      return bar.l <= o.price + EPS ? { px: bar.o <= o.price ? bar.o : o.price } : null;
+      // 무매 지정가매도는 프리장~본장~애프터장까지 유효하다 (일반모드 글 6). 시간외 고가·저가(xh·xl)가 있으면 그것으로 판정.
+      // VR은 본장 기준이다 (예약매수 초과체결 글).
+      var hi = o.ext && bar.xh != null ? Math.max(bar.h, bar.xh) : bar.h;
+      var lo = o.ext && bar.xl != null ? Math.min(bar.l, bar.xl) : bar.l;
+      if (o.side === "SELL") return hi >= o.price - EPS ? { px: bar.o >= o.price ? bar.o : o.price } : null;
+      return lo <= o.price + EPS ? { px: bar.o <= o.price ? bar.o : o.price } : null;
     }
     return null;
   }
@@ -203,13 +220,19 @@
         if (has("rev-moc")) T = T * factor;
         s.revDay = 1;
       } else {
-        if (has("rev-sell")) T = T * factor;
+        if (has("rev-sell") || has("rev-moc")) T = T * factor;
         if (has("rev-buy") || has("ladder")) T = T + (N - T) * 0.25;
         s.revDay = (a.revDay || 0) + 1;
       }
       if (s.qty > 0 && bar.c > s.avg * (1 - base / 100)) {
-        s.mode = "NORMAL"; s.revDay = 0;
-        events.push("종가 $" + bar.c.toFixed(2) + "가 평단 −" + base + "%를 넘어 일반모드로 돌아갑니다.");
+        if (T > N - 1) {
+          // 일반모드로 돌아가도 T가 1회분도 안 남았으면 다시 리버스모드 시작 (리버스모드 글 6-(6))
+          s.revDay = 0;
+          events.push("종가 $" + bar.c.toFixed(2) + "가 평단 −" + base + "%를 넘었지만 T가 " + (N - 1) + "을 넘어 1회분이 남지 않았습니다. 리버스모드를 처음부터 다시 시작합니다. 다음 주문은 MOC 매도입니다.");
+        } else {
+          s.mode = "NORMAL"; s.revDay = 0;
+          events.push("종가 $" + bar.c.toFixed(2) + "가 평단 −" + base + "%를 넘어 일반모드로 돌아갑니다.");
+        }
       }
     } else {
       var quarter = has("quarter"), limit = has("limit");
@@ -246,7 +269,21 @@
 
   /* ---------------- VR ---------------- */
 
-  var VR_LIMIT = { INSTALLMENT: 75, LUMPSUM: 50, WITHDRAWAL: 25 };
+  var VR_LIMIT = { INSTALLMENT: 75, LUMPSUM: 50, WITHDRAWAL: 10 };
+
+  // 한 사이클(2주)에 Pool에서 매수로 쓸 수 있는 비율.
+  // 적립식: 75%에서 시작해 26주마다 5%씩 줄여 10%까지 (pool 사용한도 글). 0원부터 시작한 VR은 첫 1년 100%.
+  // 거치식 50% (개요 글), 인출식 10% (pool 사용한도 글).
+  function vrLimitPct(a, cycle) {
+    var type = a.vrType || "INSTALLMENT";
+    if (type !== "INSTALLMENT") return VR_LIMIT[type];
+    var week = (a.startWeek || 0) + ((cycle || a.cycle || 1) - 1) * 2;
+    if (a.fromZero) {
+      if (week < 52) return 100;
+      week -= 52;
+    }
+    return Math.max(10, 75 - 5 * Math.floor(week / 26));
+  }
 
   function vrPlan(a, bars) {
     if (!bars || !bars.length) return null;
@@ -254,9 +291,12 @@
     var band = a.band != null ? a.band : 0.15;
     var min = a.V * (1 - band), max = a.V * (1 + band);
     var qty = a.qty || 0, pool = a.pool || 0;
-    var limitPct = a.limitPct != null ? a.limitPct : (VR_LIMIT[a.vrType || "INSTALLMENT"] || 75);
-    var limit = pool * limitPct / 100;
-    var type = a.orderType || "LOC";
+    var limitPct = vrLimitPct(a);
+    // 한도는 사이클 시작(적립 후) Pool 기준으로 고정하고, 이번 사이클에 이미 매수에 쓴 돈을 뺀다 (개요 글 "한사이클당 pool 사용의 제한")
+    var cap = a.cycleCap != null ? a.cycleCap : (pool + (a.cycleUsed || 0)) * limitPct / 100;
+    var limit = Math.max(0, Math.min(pool, cap - (a.cycleUsed || 0)));
+    // VR은 본장 지정가 예약주문이 기본이다 (예약매수 초과체결 글)
+    var type = a.orderType || "LIMIT";
     var p = { basis: last, session: nextSession(last.d), min: min, max: max, E: qty * c0, ratio: a.V ? qty * c0 / a.V : null,
       limit: limit, limitPct: limitPct, buys: [], sells: [], orders: [], notes: [] };
     var cum = 0;
@@ -275,15 +315,18 @@
     }
     p.orders = p.buys.concat(p.sells);
     p.due = a.nextUpdate && last.d >= a.nextUpdate;
-    if (!p.buys.length) p.notes.push("Pool 사용 한도($" + limit.toFixed(2) + ")로 살 수 있는 매수 주문이 없습니다.");
+    p.cap = cap; p.used = a.cycleUsed || 0;
+    if (!p.buys.length) p.notes.push("이번 사이클 Pool 매수 한도 중 남은 $" + limit.toFixed(2) + "로 살 수 있는 매수 주문이 없습니다.");
     return p;
   }
 
   function vrApply(a, fills, bar) {
     var s = clone(a), fee = (a.fee || 0) / 100, log = [];
+    if (s.cycleCap == null) s.cycleCap = r2(((a.pool || 0) + (a.cycleUsed || 0)) * vrLimitPct(a) / 100);
     fills.filter(function (f) { return f.filled && f.qty > 0 && f.px > 0; }).forEach(function (f) {
       if (f.order.side === "BUY") {
         s.qty += f.qty; s.pool -= f.px * f.qty * (1 + fee);
+        s.cycleUsed = r2((s.cycleUsed || 0) + f.px * f.qty * (1 + fee));
       } else {
         var q = Math.min(f.qty, s.qty);
         s.qty -= q; s.pool += f.px * q * (1 - fee);
@@ -305,6 +348,8 @@
     s.pool = r2(a.pool + sign * contrib);
     if (sign > 0) s.invested = r2((a.invested || 0) + contrib);
     s.cycle = (a.cycle || 1) + 1;
+    s.cycleCap = r2(s.pool * vrLimitPct(a, s.cycle) / 100);
+    s.cycleUsed = 0;
     s.nextUpdate = addDays(a.nextUpdate || date, 14);
     s.lastRoll = { d: date, close: close, E: r2(E), Vprev: a.V, Vnext: s.V };
     return { next: s, E: E, growth: growth, contrib: sign * contrib };
@@ -312,7 +357,7 @@
 
   var api = { r2: r2, f2: f2, nextSession: nextSession, addDays: addDays, starPct: starPct,
     infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll,
-    vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, VR_LIMIT: VR_LIMIT };
+    vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Engine = api;
 })(this);

@@ -450,7 +450,7 @@ function signCls(n){ return n>0?"up":(n<0?"down":""); }
 var WD = ["일","월","화","수","목","금","토"];
 function dlabel(d){ var t=new Date(d+"T12:00:00Z"); return (t.getUTCMonth()+1)+"/"+t.getUTCDate()+"("+WD[t.getUTCDay()]+")"; }
 function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(function(){t.classList.remove("show");},2200); }
-function bars(tk){ var p=prices[tk]; if(!p||!p.bars) return []; return p.bars.map(function(b){return {d:b[0],o:b[1],h:b[2],l:b[3],c:b[4]};}); }
+function bars(tk){ var p=prices[tk]; if(!p||!p.bars) return []; return p.bars.map(function(b){return {d:b[0],o:b[1],h:b[2],l:b[3],c:b[4],xh:b.length>5?b[5]:null,xl:b.length>6?b[6]:null};}); }
 function lastBar(tk){ var b=bars(tk); return b[b.length-1]; }
 function barOn(tk,d){ var b=bars(tk); for(var i=0;i<b.length;i++) if(b[i].d===d) return b[i]; return null; }
 function barsUpTo(tk,d){ return bars(tk).filter(function(b){return b.d<=d;}); }
@@ -553,7 +553,8 @@ function renderFillConfirm(a,p,bar){
   }).join("");
   var n=fills.filter(function(f){return f.filled;}).length;
   return '<div class="banner ok"><div class="row spread"><div class="bt">'+dlabel(p.session)+' 체결 확인</div><div class="small num">종가 '+usd(bar.c)+' · 고가 '+usd(bar.h)+'</div></div>'+
-    '<div class="bd">종가 기준으로 '+n+'건 체결로 판정했어요. 실제 체결과 다르면 체크와 가격·수량을 고친 뒤 반영하세요.</div>'+
+    '<div class="bd">종가 기준으로 '+n+'건 체결로 판정했어요. 실제 체결과 다르면 체크와 가격·수량을 고친 뒤 반영하세요.'+
+      (p.orders.some(function(o){return o.ext;})?(bar.xh!=null?' 지정가매도는 프리·애프터장 고가 '+usd(bar.xh)+'까지 보고 판정했어요.':' 지정가매도는 프리·애프터장에서도 체결될 수 있는데, 이 날은 시간외 시세가 없어 본장 고가로만 판정했어요.'):'')+'</div>'+
     '<div class="fills">'+rows+'</div>'+
     '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="apply-fills">계좌에 반영</button><button class="btn ghost" data-act="cancel-pending">이 날 체결 없음</button></div></div>';
 }
@@ -637,11 +638,11 @@ function renderVR(a){
       '<div class="bandz" style="left:'+X(plan.min)+'%;width:'+(X(plan.max)-X(plan.min))+'%"></div>'+
       '<div class="vt" style="left:'+X(a.V)+'%"></div><div class="et" style="left:'+X(plan.E)+'%" title="E"></div>'+
       '<span class="gl" style="left:'+X(plan.min)+'%">'+usd(plan.min,0)+'</span><span class="gl" style="left:'+X(a.V)+'%">V '+usd(a.V,0)+'</span><span class="gl" style="left:'+X(plan.max)+'%">'+usd(plan.max,0)+'</span></div>'+
-    '<div class="stats" style="margin-top:14px">'+stat("V",usd(a.V))+stat("평가금 E",usd(plan.E))+stat("Pool",usd(a.pool))+stat("매수 한도 "+plan.limitPct+"%",usd(plan.limit))+stat("보유",a.qty+"주")+stat("다음 V 갱신",a.nextUpdate?dlabel(a.nextUpdate):"-")+'</div></section>';
+    '<div class="stats" style="margin-top:14px">'+stat("V",usd(a.V))+stat("평가금 E",usd(plan.E))+stat("Pool",usd(a.pool))+stat("이번 사이클 매수 한도 "+plan.limitPct+"%",usd(plan.limit)+' <span class="small muted">/ '+usd(plan.cap)+'</span>')+stat("보유",a.qty+"주")+stat("다음 V 갱신",a.nextUpdate?dlabel(a.nextUpdate):"-")+'</div></section>';
   var vt=function(list){ return list.length?'<table class="vtable">'+list.map(function(o,i){return '<tr><td class="idx">'+(i+1)+'</td><td class="r"><b>'+n2(o.price)+'</b> × 1</td><td class="r muted">Pool '+usd(o.left)+'</td></tr>';}).join("")+'</table>':''; };
   var buyHtml=vt(plan.buys), sellHtml=vt(plan.sells);
   var notes=plan.notes.slice();
-  notes.push("주문 방식: "+((a.orderType||"LOC")==="LOC"?"LOC (종가 기준 체결 판정)":"지정가 (장중 고가·저가 기준 체결 판정)")+" · 설정에서 바꿀 수 있어요.");
+  notes.push("주문 방식: "+((a.orderType||"LIMIT")==="LOC"?"LOC (종가 기준 체결 판정)":"지정가 (본장 고가·저가 기준 체결 판정)")+" · 설정에서 바꿀 수 있어요.");
   return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+undoPanel()+editorVR(a)+logPanel(a);
 }
 
@@ -666,12 +667,12 @@ function editorVR(a){
   return '<details class="panel" id="ed-'+esc(a.id)+'"><summary>상태 수정</summary><form class="form" data-form="edit">'+
     fld("e-name","이름",a.name,"text")+fld("e-V","V ($)",a.V,"number","0.01")+fld("e-pool","Pool ($)",a.pool,"number","0.01")+fld("e-qty","보유 수량",a.qty,"number","1")+
     fld("e-G","G",a.G,"number","1")+fld("e-band","밴드 (0.15 = ±15%)",a.band,"number","0.01")+fld("e-contrib","2주 적립금 ($)",a.contrib,"number","0.01")+
-    fld("e-limitPct","Pool 매수 한도 %",a.limitPct,"number","1")+fld("e-invested","누적 투자금 ($)",a.invested,"number","0.01")+fld("e-nextUpdate","다음 V 갱신일",a.nextUpdate,"date")+
+    fld("e-startWeek","시작 주차 (1회차가 몇 주차였는지)",a.startWeek||0,"number","1")+fld("e-cycleUsed","이번 사이클 매수에 쓴 돈 ($)",a.cycleUsed||0,"number","0.01")+fld("e-invested","누적 투자금 ($)",a.invested,"number","0.01")+fld("e-nextUpdate","다음 V 갱신일",a.nextUpdate,"date")+
     fld("e-cycle","회차",a.cycle,"number","1")+fld("e-fee","수수료 %",a.fee,"number","0.01")+
     '<div class="field"><label for="e-vrType">유형</label><select id="e-vrType">'+[["INSTALLMENT","적립식"],["LUMPSUM","거치식"],["WITHDRAWAL","인출식"]].map(function(o){return '<option value="'+o[0]+'"'+((a.vrType||"INSTALLMENT")===o[0]?" selected":"")+'>'+o[1]+'</option>';}).join("")+'</select></div>'+
-    '<div class="field"><label for="e-orderType">주문 방식</label><select id="e-orderType"><option value="LOC"'+((a.orderType||"LOC")==="LOC"?" selected":"")+'>LOC</option><option value="LIMIT"'+(a.orderType==="LIMIT"?" selected":"")+'>지정가</option></select></div>'+
+    '<div class="field"><label for="e-orderType">주문 방식</label><select id="e-orderType"><option value="LIMIT"'+((a.orderType||"LIMIT")==="LIMIT"?" selected":"")+'>지정가</option><option value="LOC"'+(a.orderType==="LOC"?" selected":"")+'>LOC</option></select></div>'+
     '<div class="field" style="align-self:end"><button class="btn primary" type="submit">저장</button></div></form>'+
-    '<div class="hint">매수점 = V×(1−밴드) ÷ 보유수량, 매도점 = V×(1+밴드) ÷ 보유수량으로 1주씩 계산합니다. V는 2주마다 "V 갱신"으로 바뀝니다. G가 오르는 시점(예: 53주차 +1)은 직접 수정하세요.</div>'+
+    '<div class="hint">매수점 = V×(1−밴드) ÷ 보유수량, 매도점 = V×(1+밴드) ÷ 보유수량으로 1주씩 계산합니다. V는 2주마다 "V 갱신"으로 바뀝니다. Pool 매수 한도는 사이클마다 적립 후 Pool 기준으로 정해지고, 적립식은 75%에서 26주마다 5%씩 줄어 10%까지 내려갑니다 (거치식 50%, 인출식 10%). G가 오르는 시점(예: 53주차 +1)은 직접 수정하세요.</div>'+
     '<div class="actions"><button class="btn danger" data-act="del">이 계좌 삭제</button></div></details>';
 }
 var KIND={first:"처음매수","star-half":"별지점 절반","avg-half":"평단 절반","star-full":"별지점 전체",ladder:"하락 대비",quarter:"쿼터매도",limit:"지정가매도","rev-moc":"리버스 MOC","rev-sell":"리버스 매도","rev-buy":"쿼터매수","vr-buy":"VR 매수","vr-sell":"VR 매도",roll:"V 갱신",edit:"상태 수정"};
@@ -1446,7 +1447,7 @@ function seedDemo(){
   if(!db||!isOwner()) return;
   var ts=Date.now();
   var inf={id:"acct-soxl",type:"INF",name:"SOXL 무매 20/20",ticker:"SOXL",createdAt:ts,order:0,N:20,basePct:20,principal:54400,initialPrincipal:54400,cash:54400,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:1.12,fee:0.07,realized:0,aside:0,pending:null,events:[],log:[]};
-  var vr={id:"acct-vr1",type:"VR",name:"VR 1호",ticker:"TQQQ",createdAt:ts+1,order:1,V:2834.39,pool:300,qty:37,G:10,band:0.15,contrib:150,vrType:"INSTALLMENT",limitPct:75,invested:2387.06,nextUpdate:"2026-10-09",cycle:1,orderType:"LOC",fee:0.07,pending:null,events:[],log:[]};
+  var vr={id:"acct-vr1",type:"VR",name:"VR 1호",ticker:"TQQQ",createdAt:ts+1,order:1,V:2834.39,pool:300,qty:37,G:10,band:0.15,contrib:150,vrType:"INSTALLMENT",invested:2387.06,nextUpdate:"2026-10-09",cycle:1,orderType:"LIMIT",fee:0.07,pending:null,events:[],log:[]};
   Promise.all([db.doc("accounts/acct-soxl").set(inf),db.doc("accounts/acct-vr1").set(vr)]).then(function(){ return linkAccount(inf); }).then(function(){ toast("계좌 두 개를 불러왔어요"+(trk.meta?" (SOXL은 예전 트래커 기록으로 이어받음)":"")+". 값이 다르면 상태 수정에서 고치세요."); });
 }
 document.addEventListener("click", function(ev){
@@ -1478,7 +1479,7 @@ document.addEventListener("click", function(ev){
     var fills=fe.fills;
     var res = a.type==="VR" ? E.vrApply(a,fills,bar) : E.infApply(a,fills,bar);
     var n=res.next, patch={};
-    var keys = a.type==="VR" ? ["qty","pool"] : ["T","cash","qty","avg","mode","revDay","realized","cycle","principal","aside"];
+    var keys = a.type==="VR" ? ["qty","pool","cycleCap","cycleUsed"] : ["T","cash","qty","avg","mode","revDay","realized","cycle","principal","aside"];
     keys.forEach(function(k){ patch[k]= n[k]===undefined?null:n[k]; });
     patch.pending=null;
     patch.events=res.events;
@@ -1503,7 +1504,7 @@ document.addEventListener("click", function(ev){
     var rb=barsUpTo(a.ticker,a.nextUpdate); rb=rb[rb.length-1]||lastBar(a.ticker);
     var r=E.vrRoll(a,rb.c,rb.d), nx=r.next, prevR=snapA();
     var note={d:rb.d,side:"NOTE",text:(a.cycle||1)+"회차 마감: V "+usd(a.V)+" → "+usd(nx.V)+", Pool "+usd(nx.pool)+" (E "+usd(r.E)+")"};
-    save(a,{V:nx.V,pool:nx.pool,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요."); undoSet((a.cycle||1)+"회차 V 갱신",prevR); render();});
+    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요."); undoSet((a.cycle||1)+"회차 V 갱신",prevR); render();});
   } else if(act==="del"){
     if(b.getAttribute("data-armed")!=="1"){ b.setAttribute("data-armed","1"); b.textContent="한 번 더 누르면 삭제됩니다"; return; }
     var prevD=snapA();
@@ -1526,9 +1527,11 @@ document.addEventListener("submit", function(ev){
     var a=accounts[selected]; if(!a) return;
     var num=function(id){ var e=$(id); if(!e) return undefined; var v=e.value; return v===""?null:parseFloat(v); };
     var patch={name:$("e-name").value.trim()||a.name};
-    var numKeys = a.type==="VR" ? ["V","pool","qty","G","band","contrib","limitPct","invested","cycle","fee"] : ["principal","cash","qty","avg","T","basePct","fee","bigMult","revDay"];
+    var numKeys = a.type==="VR" ? ["V","pool","qty","G","band","contrib","startWeek","cycleUsed","invested","cycle","fee"] : ["principal","cash","qty","avg","T","basePct","fee","bigMult","revDay"];
     numKeys.forEach(function(k){ var v=num("e-"+k); if(v!==undefined) patch[k]=v; });
-    if(a.type==="VR"){ patch.nextUpdate=$("e-nextUpdate").value||null; patch.vrType=$("e-vrType").value; patch.orderType=$("e-orderType").value; }
+    if(a.type==="VR"){ patch.nextUpdate=$("e-nextUpdate").value||null; patch.vrType=$("e-vrType").value; patch.orderType=$("e-orderType").value;
+      // 이번 사이클 한도를 수정값으로 다시 잡는다: (지금 Pool + 이번 사이클에 쓴 돈) = 사이클 시작 Pool
+      var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
     var note={d:new Date().toISOString().slice(0,10),side:"NOTE",text:"상태를 직접 수정했어요."};
     patch.log=[note].concat(a.log||[]).slice(0,400);
@@ -1554,7 +1557,7 @@ document.addEventListener("submit", function(ev){
     } else {
       var V=parseFloat($("n-V").value), pool=parseFloat($("n-pool").value);
       if(!(V>0)||!(pool>=0)){ toast("시작 V와 Pool을 넣어주세요."); return; }
-      Object.assign(base,{V:V,pool:pool,qty:parseInt($("n-qty").value,10)||0,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",limitPct:75,invested:pool+(parseInt($("n-qty").value,10)||0)*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:1,orderType:"LOC"});
+      Object.assign(base,{V:V,pool:pool,qty:parseInt($("n-qty").value,10)||0,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:pool+(parseInt($("n-qty").value,10)||0)*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:1,orderType:"LIMIT"});
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
     db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}]); render(); });
@@ -1630,8 +1633,9 @@ const fs = initializeFirestore(app, { ignoreUndefinedProperties: true });
 const $ = (id) => document.getElementById(id);
 
 // Firestore에는 봉을 {d,o,h,l,c} 객체로 저장하고(배열 안 배열 금지), 화면에는 [d,o,h,l,c] 배열로 넘깁니다.
-const toArr = (b) => Array.isArray(b) ? b : [b.d, b.o, b.h, b.l, b.c];
-const toObj = (b) => Array.isArray(b) ? { d: b[0], o: b[1], h: b[2], l: b[3], c: b[4] } : b;
+// [d, o, h, l, c, xh, xl] — xh·xl은 프리·애프터장 포함 고가·저가 (없을 수 있음)
+const toArr = (b) => Array.isArray(b) ? b : (b.xh != null ? [b.d, b.o, b.h, b.l, b.c, b.xh, b.xl] : [b.d, b.o, b.h, b.l, b.c]);
+const toObj = (b) => Array.isArray(b) ? (b.length > 5 ? { d: b[0], o: b[1], h: b[2], l: b[3], c: b[4], xh: b[5], xl: b[6] } : { d: b[0], o: b[1], h: b[2], l: b[3], c: b[4] }) : b;
 function mergeBars(g, m) {
   const map = new Map();
   (g && g.bars || []).map(toArr).forEach(b => map.set(b[0], b));
