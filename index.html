@@ -88,6 +88,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .tab[aria-selected="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent),var(--shadow)}
 .tab.add{color:var(--ink-3);display:flex;align-items:center;justify-content:center;font-size:13px;background:transparent;border-style:dashed;box-shadow:none}
 .tab.add:hover{color:var(--accent);border-color:var(--accent)}
+.obadge{position:absolute;top:-9px;right:10px;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;box-shadow:0 0 0 2px var(--bg)}
+.obadge.todo{background:var(--danger);color:#fff} .obadge.warn{background:var(--warn-soft);color:var(--warn)}
 .kind{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--accent-soft);color:var(--accent)}
 
 /* 패널 */
@@ -488,13 +490,28 @@ function renderTickers(){
   $("foot").innerHTML=foot;
 }
 
+// 탭 배지: 무매는 다음 장 주문을 아직 안 넣었을 때, VR은 2주 주문일(V 갱신 후 새 표)에 아직 안 넣었을 때
+function orderBadge(a){
+  var b=bars(a.ticker); if(!b.length) return null;
+  if(a.type==="VR"){
+    var vp=E.vrPlan(a,b), pendBlock=a.pending&&a.nextUpdate&&a.pending.session<=a.nextUpdate;
+    if(vp&&vp.due&&!pendBlock) return {cls:"warn",txt:"V 갱신 필요"};
+    if(a.cycleOrdered===false) return {cls:"todo",txt:"주문 전"};
+    return null;
+  }
+  var p=E.infPlan(a,b); if(!p||!p.orders.length) return null;
+  if(a.pending&&a.pending.session===p.session) return null;
+  if(a.pending&&barOn(a.ticker,a.pending.session)) return {cls:"warn",txt:"체결 확인"};
+  return {cls:"todo",txt:"주문 전"};
+}
+
 function renderTabs(){
   var list=orderedAccounts();
   if(!selected || !accounts[selected]) selected = list.length ? list[0].id : null;
   var html=list.map(function(a){
-    var v=valueOf(a);
+    var v=valueOf(a), ob=orderBadge(a);
     return '<button class="tab" role="tab" aria-selected="'+(a.id===selected)+'" data-id="'+esc(a.id)+'">'+
-      '<div class="t1"><span class="kind">'+(a.type==="VR"?"VR":"무매")+'</span>'+esc(a.name)+'</div>'+
+      '<div class="t1"><span class="kind">'+(a.type==="VR"?"VR":"무매")+'</span>'+esc(a.name)+(ob?'<span class="obadge '+ob.cls+'">'+ob.txt+'</span>':'')+'</div>'+
       '<div class="t2 num">'+(v.eq!=null?usd(v.eq,0):"-")+' <span class="'+signCls(v.pl)+'">'+pct(v.pl,1)+'</span></div></button>';
   }).join("");
   html+='<button class="tab add" type="button" id="tab-add">+ 계좌 추가</button>';
@@ -1473,7 +1490,9 @@ document.addEventListener("click", function(ev){
   if(act==="place"){
     var p=a._plan, prevP=snapA();
     var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
-    save(a,{pending:{session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()}, events:[]}).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
+    var pp={pending:{session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()}, events:[]};
+    if(a.type==="VR"&&a.cycleOrdered===false){ pp.cycleOrdered=true; pp.pending.cycleOrder=true; }
+    save(a,pp).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
   } else if(act==="copy"){
     var txt=copyText(a);
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){toast("주문을 복사했어요.");},function(){toast("복사가 막혀 있어요. 주문표를 길게 눌러 복사하세요.");}); }
@@ -1481,7 +1500,9 @@ document.addEventListener("click", function(ev){
   } else if(act==="cancel-pending"){
     delete fillEdits[a.id];
     var prevC=snapA(), lbl=a.pending?dlabel(a.pending.session)+" 주문 기록 취소":"주문 기록 취소";
-    save(a,{pending:null}).then(function(){toast("주문 기록을 지웠어요."); undoSet(lbl,prevC); render();});
+    var cp={pending:null};
+    if(a.type==="VR"&&a.pending&&a.pending.cycleOrder&&!barOn(a.ticker,a.pending.session)) cp.cycleOrdered=false;
+    save(a,cp).then(function(){toast("주문 기록을 지웠어요."); undoSet(lbl,prevC); render();});
   } else if(act==="apply-fills"){
     var p2=a.pending, bar=barOn(a.ticker,p2.session), fe=fillEdits[a.id];
     var fills=fe.fills;
@@ -1512,7 +1533,7 @@ document.addEventListener("click", function(ev){
     var rb=barsUpTo(a.ticker,a.nextUpdate); rb=rb[rb.length-1]||lastBar(a.ticker);
     var r=E.vrRoll(a,rb.c,rb.d), nx=r.next, prevR=snapA();
     var note={d:rb.d,side:"NOTE",text:(a.cycle||1)+"회차 마감: V "+usd(a.V)+" → "+usd(nx.V)+", Pool "+usd(nx.pool)+" (E "+usd(r.E)+")"};
-    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요."); undoSet((a.cycle||1)+"회차 V 갱신",prevR); render();});
+    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,cycleOrdered:false,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요."); undoSet((a.cycle||1)+"회차 V 갱신",prevR); render();});
   } else if(act==="del"){
     if(b.getAttribute("data-armed")!=="1"){ b.setAttribute("data-armed","1"); b.textContent="한 번 더 누르면 삭제됩니다"; return; }
     var prevD=snapA();
