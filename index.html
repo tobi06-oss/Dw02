@@ -496,7 +496,7 @@ function orderBadge(a){
   if(a.type==="VR"){
     var vp=E.vrPlan(a,b), pendBlock=a.pending&&a.nextUpdate&&a.pending.session<=a.nextUpdate;
     if(vp&&vp.due&&!pendBlock) return {cls:"warn",txt:"V 갱신 필요"};
-    if(a.cycleOrdered===false) return {cls:"todo",txt:"주문 전"};
+    if(!vrOrdered(a)) return {cls:"todo",txt:"주문 전"};
     return null;
   }
   var p=E.infPlan(a,b); if(!p||!p.orders.length) return null;
@@ -593,15 +593,29 @@ function ordRow(o){
     (o.big?'<div class="bigalt"><span class="tag big">큰수 LOC</span> <b>'+n2(o.price)+'</b> × '+o.qty+' · '+usd(o.price*o.qty)+'</div>':'')+'</div>';
 }
 
+// VR은 2주 회차마다 기간 예약주문을 한 번만 넣는다. 그 뒤로는 같은 주문이 유지된다고 보고 매일 체결만 확인한다.
+function vrOrdered(a){ return a.type==="VR" && a.cycleOrdered===true; }
+function vrCarry(a, st, fromD){
+  if(!vrOrdered(a) || !a.nextUpdate) return null;
+  var ns=E.nextSession(fromD); if(ns>a.nextUpdate) return null;
+  var p=E.vrPlan(Object.assign({},a,st), barsUpTo(a.ticker,fromD)); if(!p) return null;
+  var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
+  return {session:ns,basis:fromD,orders:orders,placedAt:Date.now(),carried:true};
+}
+
 function slip(a, plan, buyHtml, sellHtml, notes){
   var placed = a.pending && a.pending.session===plan.session;
+  var carried = placed && a.pending.carried;
+  var vrLock = a.type==="VR" && !placed && (vrOrdered(a) || plan.due);
+  var vrMsg = plan.due ? "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요." : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(a.nextUpdate):"-")+") 후에 넣어요.";
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
     '<div class="when">'+dlabel(plan.session)+' 미국장 주문</div></div>'+
-    (placed?'<span class="placed"><i>✓</i>주문 넣음 · '+dlabel(plan.session)+'<button type="button" class="placed-x" data-act="cancel-pending">취소</button></span>':'')+'</div>'+
+    (carried?'<span class="placed"><i>✓</i>회차 주문 유지 중 · '+dlabel(a.nextUpdate)+'까지</span>':placed?'<span class="placed"><i>✓</i>주문 넣음 · '+dlabel(plan.session)+'<button type="button" class="placed-x" data-act="cancel-pending">취소</button></span>':'')+'</div>'+
     '<div class="cols"><div class="col buy"><h3>매수</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
     '<div class="col sell"><h3>매도</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
-    '<div class="actions">'+(placed?'':'<button class="btn primary" data-act="place">이대로 주문 넣었어요</button>')+'<button class="btn" data-act="copy">주문 복사</button></div></section>';
+    (vrLock?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
+    '<div class="actions">'+(placed||vrLock?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+'<button class="btn" data-act="copy">주문 복사</button></div></section>';
 }
 
 function renderINF(a){
@@ -1491,7 +1505,7 @@ document.addEventListener("click", function(ev){
     var p=a._plan, prevP=snapA();
     var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
     var pp={pending:{session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()}, events:[]};
-    if(a.type==="VR"&&a.cycleOrdered===false){ pp.cycleOrdered=true; pp.pending.cycleOrder=true; }
+    if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true; }
     save(a,pp).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
   } else if(act==="copy"){
     var txt=copyText(a);
@@ -1501,7 +1515,11 @@ document.addEventListener("click", function(ev){
     delete fillEdits[a.id];
     var prevC=snapA(), lbl=a.pending?dlabel(a.pending.session)+" 주문 기록 취소":"주문 기록 취소";
     var cp={pending:null};
-    if(a.type==="VR"&&a.pending&&a.pending.cycleOrder&&!barOn(a.ticker,a.pending.session)) cp.cycleOrdered=false;
+    if(a.type==="VR"&&a.pending){
+      var waiting=!barOn(a.ticker,a.pending.session);
+      if(a.pending.cycleOrder&&waiting&&!(lastBar(a.ticker)&&lastBar(a.ticker).d>a.pending.session)) cp.cycleOrdered=false;
+      else cp.pending=vrCarry(a,{},a.pending.session);
+    }
     save(a,cp).then(function(){toast("주문 기록을 지웠어요."); undoSet(lbl,prevC); render();});
   } else if(act==="apply-fills"){
     var p2=a.pending, bar=barOn(a.ticker,p2.session), fe=fillEdits[a.id];
@@ -1510,7 +1528,7 @@ document.addEventListener("click", function(ev){
     var n=res.next, patch={};
     var keys = a.type==="VR" ? ["qty","pool","cycleCap","cycleUsed"] : ["T","cash","qty","avg","mode","revDay","realized","cycle","principal","aside"];
     keys.forEach(function(k){ patch[k]= n[k]===undefined?null:n[k]; });
-    patch.pending=null;
+    patch.pending=a.type==="VR"?vrCarry(a,n,p2.session):null;
     patch.events=res.events;
     patch.log=res.log.slice().reverse().concat(a.log||[]).slice(0,400);
     b.disabled=true;
