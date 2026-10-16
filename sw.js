@@ -9,7 +9,7 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(fetch(e.request).then((r) => { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); return r; }).catch(() => caches.match(e.request)));
 });
 
-// 밤 9시 주문 알림 (GitHub Actions → Firebase Cloud Messaging). 받은 내용을 그대로 알림으로 띄웁니다.
+// 주문 알림 (GitHub Actions → Firebase Cloud Messaging). 받은 내용을 그대로 알림으로 띄웁니다.
 self.addEventListener("push", (e) => {
   let m = {};
   try { const j = e.data ? e.data.json() : {}; m = j.data || j.notification || j; } catch (_) {}

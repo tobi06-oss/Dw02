@@ -1,6 +1,7 @@
-// 한국시간 밤 9시에 오늘 밤 주문을 아직 안 넣은 계좌가 있으면 폰으로 푸시 알림을 보냅니다.
+// 평일 낮 12시~밤 11시 반 사이 30분마다 돌면서, 각자 고른 알림 시간(users/{uid}/settings/push.time, 기본 21:00)이
+// 지났고 오늘 아직 안 보냈으면, 오늘 밤 주문을 안 넣은 계좌가 있을 때 폰으로 푸시 알림을 보냅니다.
 // "주문 전" 판정은 앱 탭 배지와 같은 engine.js orderStatus를 씁니다.
-// 알림 받을 기기는 앱의 "밤 9시 주문 알림" 패널에서 켜면 users/{uid}/pushTokens/{id}에 저장됩니다.
+// 알림 받을 기기는 앱의 "주문 알림" 패널에서 켜면 users/{uid}/pushTokens/{id}에 저장됩니다.
 // 실행: FIREBASE_SERVICE_ACCOUNT='<서비스 계정 JSON>' node order-reminder.mjs   (TEST=1이면 주문 여부와 상관없이 테스트 알림)
 import admin from "firebase-admin";
 import { createRequire } from "node:module";
@@ -24,8 +25,9 @@ function mergeBars(g, m) {
     .map((b) => ({ d: b[0], o: b[1], h: b[2], l: b[3], c: b[4], xh: b.length > 5 ? b[5] : null, xl: b.length > 6 ? b[6] : null }));
 }
 
-// 한국 시각의 오늘 날짜 = 오늘 밤 열리는 미국장 날짜
-const kstToday = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+// 한국 시각의 오늘 날짜(= 오늘 밤 열리는 미국장 날짜)와 HH:MM
+const kstNow = () => { const iso = new Date(Date.now() + 9 * 3600e3).toISOString(); return { date: iso.slice(0, 10), hm: iso.slice(11, 16) }; };
+const DEFAULT_TIME = "21:00";
 
 async function main() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -33,12 +35,12 @@ async function main() {
   admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
   const db = admin.firestore();
 
-  const session = kstToday();
+  const { date: session, hm } = kstNow();
   const dow = new Date(session + "T12:00:00Z").getUTCDay();
   if (!TEST && (dow === 0 || dow === 6 || US_HOLIDAYS.has(session))) { console.log(`${session}: 미국장 휴장, 알림 없음`); return; }
 
   const tokSnap = await db.collectionGroup("pushTokens").get();
-  if (tokSnap.empty) { console.log("알림을 켠 기기가 없습니다. 앱에서 '밤 9시 주문 알림'을 켜세요."); return; }
+  if (tokSnap.empty) { console.log("알림을 켠 기기가 없습니다. 앱에서 '주문 알림'을 켜세요."); return; }
   const byUser = new Map();
   tokSnap.docs.forEach((d) => {
     const uid = d.ref.parent.parent.id, t = d.get("token");
@@ -49,6 +51,10 @@ async function main() {
   (await db.collection("prices").get()).docs.forEach((d) => (shared[d.id] = d.data()));
 
   for (const [uid, toks] of byUser) {
+    const setRef = db.collection("users").doc(uid).collection("settings").doc("push");
+    const set = (await setRef.get()).data() || {};
+    const at = /^\d\d:\d\d$/.test(set.time || "") ? set.time : DEFAULT_TIME;
+    if (!TEST && (hm < at || set.lastSent === session)) { console.log(`${uid.slice(0, 6)}…: 알림 ${at}, ${set.lastSent === session ? "오늘 이미 보냄" : "아직 시간 전"}`); continue; }
     const manual = {};
     (await db.collection("users").doc(uid).collection("manualPrices").get()).docs.forEach((d) => (manual[d.id] = d.data()));
     const accts = (await db.collection("users").doc(uid).collection("accounts").get()).docs
@@ -60,6 +66,7 @@ async function main() {
       if (st) todo.push(`${a.name || a.ticker} ${st.txt}`);
     }
     console.log(`${uid.slice(0, 6)}…: ${todo.length ? todo.join(", ") : "모두 주문함"} (기기 ${toks.length}대)`);
+    if (!TEST) await setRef.set({ lastSent: session }, { merge: true }); // 하루 한 번만 확인 (그 뒤에 넣은 주문은 다시 안 알림)
     if (!todo.length && !TEST) continue;
 
     const title = TEST ? "테스트 알림" : "아직 주문 안 넣은 계좌가 있어요";
