@@ -680,7 +680,7 @@ function renderVR(a){
   var vt=function(list){ return list.length?'<table class="vtable">'+list.map(function(o,i){return '<tr><td class="idx">'+(i+1)+'</td><td class="r"><b>'+n2(o.price)+'</b> × 1</td><td class="r muted">Pool '+usd(o.left)+'</td></tr>';}).join("")+'</table>':''; };
   var buyHtml=vt(plan.buys), sellHtml=vt(plan.sells);
   var notes=plan.notes.slice();
-  notes.push("주문 방식: "+((a.orderType||"LIMIT")==="LOC"?"LOC (종가 기준 체결 판정)":"지정가 (본장 고가·저가 기준 체결 판정)")+" · 설정에서 바꿀 수 있어요.");
+  notes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
   return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+undoPanel()+editorVR(a)+logPanel(a);
 }
 
@@ -708,7 +708,6 @@ function editorVR(a){
     fld("e-startWeek","시작 주차 (1회차가 몇 주차였는지)",a.startWeek||0,"number","1")+fld("e-cycleUsed","이번 사이클 매수에 쓴 돈 ($)",a.cycleUsed||0,"number","0.01")+fld("e-invested","누적 투자금 ($)",a.invested,"number","0.01")+fld("e-nextUpdate","다음 V 갱신일",a.nextUpdate,"date")+
     fld("e-cycle","회차",a.cycle,"number","1")+fld("e-fee","수수료 %",a.fee,"number","0.01")+
     '<div class="field"><label for="e-vrType">유형</label><select id="e-vrType">'+[["INSTALLMENT","적립식"],["LUMPSUM","거치식"],["WITHDRAWAL","인출식"]].map(function(o){return '<option value="'+o[0]+'"'+((a.vrType||"INSTALLMENT")===o[0]?" selected":"")+'>'+o[1]+'</option>';}).join("")+'</select></div>'+
-    '<div class="field"><label for="e-orderType">주문 방식</label><select id="e-orderType"><option value="LIMIT"'+((a.orderType||"LIMIT")==="LIMIT"?" selected":"")+'>지정가</option><option value="LOC"'+(a.orderType==="LOC"?" selected":"")+'>LOC</option></select></div>'+
     '<div class="field" style="align-self:end"><button class="btn primary" type="submit">저장</button></div></form>'+
     '<div class="hint">매수점 = V×(1−밴드) ÷ 보유수량, 매도점 = V×(1+밴드) ÷ 보유수량으로 1주씩 계산합니다. V는 2주마다 "V 갱신"으로 바뀝니다. Pool 매수 한도는 사이클마다 적립 후 Pool 기준으로 정해지고, 적립식은 75%에서 26주마다 5%씩 줄어 10%까지 내려갑니다 (거치식 50%, 인출식 10%). G가 오르는 시점(예: 53주차 +1)은 직접 수정하세요.</div>'+
     '<div class="actions"><button class="btn danger" data-act="del">이 계좌 삭제</button></div></details>';
@@ -1486,7 +1485,7 @@ function seedDemo(){
   if(!db||!isOwner()) return;
   var ts=Date.now();
   var inf={id:"acct-soxl",type:"INF",name:"SOXL 무매 20/20",ticker:"SOXL",createdAt:ts,order:0,N:20,basePct:20,principal:54400,initialPrincipal:54400,cash:54400,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:1.12,fee:0.07,realized:0,aside:0,pending:null,events:[],log:[]};
-  var vr={id:"acct-vr1",type:"VR",name:"VR 1호",ticker:"TQQQ",createdAt:ts+1,order:1,V:2834.39,pool:300,qty:37,G:10,band:0.15,contrib:150,vrType:"INSTALLMENT",invested:2387.06,nextUpdate:"2026-10-09",cycle:1,orderType:"LIMIT",fee:0.07,pending:null,events:[],log:[]};
+  var vr={id:"acct-vr1",type:"VR",name:"VR 1호",ticker:"TQQQ",createdAt:ts+1,order:1,V:2834.39,pool:300,qty:37,G:10,band:0.15,contrib:150,vrType:"INSTALLMENT",invested:2387.06,nextUpdate:"2026-10-09",cycle:1,fee:0.07,pending:null,events:[],log:[]};
   Promise.all([db.doc("accounts/acct-soxl").set(inf),db.doc("accounts/acct-vr1").set(vr)]).then(function(){ return linkAccount(inf); }).then(function(){ toast("계좌 두 개를 불러왔어요"+(trk.meta?" (SOXL은 예전 트래커 기록으로 이어받음)":"")+". 값이 다르면 상태 수정에서 고치세요."); });
 }
 document.addEventListener("click", function(ev){
@@ -1576,7 +1575,7 @@ document.addEventListener("submit", function(ev){
     var patch={name:$("e-name").value.trim()||a.name};
     var numKeys = a.type==="VR" ? ["V","pool","qty","G","band","contrib","startWeek","cycleUsed","invested","cycle","fee"] : ["principal","cash","qty","avg","T","basePct","fee","bigMult","revDay"];
     numKeys.forEach(function(k){ var v=num("e-"+k); if(v!==undefined) patch[k]=v; });
-    if(a.type==="VR"){ patch.nextUpdate=$("e-nextUpdate").value||null; patch.vrType=$("e-vrType").value; patch.orderType=$("e-orderType").value;
+    if(a.type==="VR"){ patch.nextUpdate=$("e-nextUpdate").value||null; patch.vrType=$("e-vrType").value;
       // 이번 사이클 한도를 수정값으로 다시 잡는다: (지금 Pool + 이번 사이클에 쓴 돈) = 사이클 시작 Pool
       var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
@@ -1604,7 +1603,7 @@ document.addEventListener("submit", function(ev){
     } else {
       var V=parseFloat($("n-V").value), pool=parseFloat($("n-pool").value);
       if(!(V>0)||!(pool>=0)){ toast("시작 V와 Pool을 넣어주세요."); return; }
-      Object.assign(base,{V:V,pool:pool,qty:parseInt($("n-qty").value,10)||0,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:pool+(parseInt($("n-qty").value,10)||0)*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:1,orderType:"LIMIT"});
+      Object.assign(base,{V:V,pool:pool,qty:parseInt($("n-qty").value,10)||0,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:pool+(parseInt($("n-qty").value,10)||0)*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:1});
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
     db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}]); render(); });
