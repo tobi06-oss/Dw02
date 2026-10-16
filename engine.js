@@ -355,9 +355,26 @@
     return { next: s, E: E, growth: growth, contrib: sign * contrib };
   }
 
+  /* ---------------- 주문 상태 (탭 배지·9시 알림 공통) ---------------- */
+
+  // 무매는 다음 장 주문을 아직 안 넣었을 때, VR은 2주 주문일(V 갱신 후 새 표)에 아직 안 넣었을 때
+  function orderStatus(a, bars) {
+    if (!bars || !bars.length) return null;
+    if (a.type === "VR") {
+      var vp = vrPlan(a, bars), pendBlock = a.pending && a.nextUpdate && a.pending.session <= a.nextUpdate;
+      if (vp && vp.due && !pendBlock) return { cls: "warn", txt: "V 갱신 필요" };
+      if (a.cycleOrdered !== true) return { cls: "todo", txt: "주문 전" };
+      return null;
+    }
+    var p = infPlan(a, bars); if (!p || !p.orders.length) return null;
+    if (a.pending && a.pending.session === p.session) return null;
+    if (a.pending && bars.some(function (b) { return b.d === a.pending.session; })) return { cls: "warn", txt: "체결 확인" };
+    return { cls: "todo", txt: "주문 전" };
+  }
+
   var api = { r2: r2, f2: f2, nextSession: nextSession, addDays: addDays, starPct: starPct,
     infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll,
-    vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT };
+    vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Engine = api;
 })(this);
