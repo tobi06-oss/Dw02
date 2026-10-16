@@ -1,0 +1,31 @@
+name: 밤 9시 주문 알림
+
+on:
+  schedule:
+    # 한국시간 월~금 21:00 (UTC 12:00). GitHub 예약 실행은 몇 분~수십 분 늦게 돌 수 있습니다.
+    - cron: "0 12 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "주문 여부와 상관없이 테스트 알림 보내기"
+        type: boolean
+        default: true
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 패키지 설치
+        working-directory: scripts
+        run: npm install --no-audit --no-fund
+      - name: 주문 안 넣은 계좌 확인 후 알림
+        working-directory: scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test && '1' || '0' }}
+        run: node order-reminder.mjs
