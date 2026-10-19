@@ -371,11 +371,16 @@ svg.chart2 .vr-pool{fill:var(--vr-pool);opacity:.55}
 .vr-mix{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:10px 0 4px;background:var(--surface-2)}
 .vr-mix i{background:var(--vr-e);opacity:.85} .vr-mix b{background:var(--vr-pool)}
 .vr-mix-l{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-2);font-family:var(--mono)}
+.vm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.vm-k{font-size:11.5px;color:var(--ink-2)} .vm-v{font-size:13px;font-weight:600;margin-top:2px}
+.vm-v .muted{font-weight:400;font-size:11.5px}
+.vm-bar{height:6px;border-radius:3px;background:var(--surface-2);margin-top:5px;overflow:hidden} .vm-bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+@media (max-width:600px){ .vm-grid{grid-template-columns:1fr} }
 details.vr-hist{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
 details.vr-hist summary{cursor:pointer;font-size:13px;color:var(--ink-2)}
 table.log.vrh{min-width:0} table.log.vrh td{font-family:var(--mono)} table.log.vrh tr.live td{color:var(--ink-2);font-style:italic}
 table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
-@media (max-width:600px){ table.log.vrh th:nth-child(2),table.log.vrh td:nth-child(2){display:none} table.log.vrh th,table.log.vrh td{padding:6px 5px} }
+@media (max-width:600px){ table.log.vrh th:nth-child(2),table.log.vrh td:nth-child(2),table.log.vrh th:nth-child(7),table.log.vrh td:nth-child(7){display:none} table.log.vrh th,table.log.vrh td{padding:6px 5px} }
 </style>
 </head>
 <body>
@@ -701,7 +706,34 @@ function renderVR(a){
 function vrRows(a, plan){
   var band=a.band||0.15, h=E.vrHistory(a).slice(), lb=lastBar(a.ticker);
   if(plan&&plan.E!=null) h.push({c:a.cycle||1, d:lb?lb.d:null, close:lb?lb.c:null, qty:a.qty, E:plan.E, V:a.V, min:a.V*(1-band), max:a.V*(1+band), pool:a.pool, invested:a.invested, live:true});
+  // 회차별 매수·매도 주수: 체결 기록을 V 갱신일로 나눠 센다 (직전 갱신일 다음 날 ~ 그 회차 마감일)
+  var fills=(a.log||[]).filter(function(l){ return l.side==="BUY"||l.side==="SELL"; });
+  h=h.map(function(r,i){
+    var from=i?h[i-1].d:null, to=r.live?null:r.d, b=0, sl=0;
+    fills.forEach(function(l){ if((from==null||l.d>from)&&(to==null||l.d<=to)){ if(l.side==="BUY") b+=l.q; else sl+=l.q; } });
+    return Object.assign({},r,{buyQ:b,sellQ:sl});
+  });
   return h;
+}
+// 지표: 거치식 전환 진행률, 다음 Pool 한도 변경·G 올릴 시점, 추가 투입 신호
+function vrMetrics(a, plan, tot){
+  var out=[], cyc=a.cycle||1, wk=function(c){ return (a.startWeek||0)+(c-1)*2; };
+  var startOf=function(c){ return a.nextUpdate?E.addDays(a.nextUpdate,(c-cyc-1)*14):null; };
+  var when=function(c){ var d=startOf(c); return c+'회차'+(d?' ('+d.slice(2).replace(/-/g,".")+')':'')+' · '+(c-cyc)+'회차 남음'; };
+  if((a.vrType||"INSTALLMENT")==="INSTALLMENT"&&a.contrib){
+    var goal=a.contrib*260, p=Math.min(1,tot/goal);
+    out.push('<div class="vm"><div class="vm-k">거치식 전환까지 <span class="muted">(계좌총액 = 적립금 × 260)</span></div><div class="vm-v num">'+Math.round(p*100)+'% <span class="muted">'+usd(tot,0)+' / '+usd(goal,0)+'</span></div><div class="vm-bar"><i style="width:'+(p*100)+'%"></i></div></div>');
+    var curP=E.vrLimitPct(a,cyc), nc=null;
+    for(var c=cyc+1;c<cyc+400;c++){ if(E.vrLimitPct(a,c)<curP){ nc=c; break; } }
+    if(nc) out.push('<div class="vm"><div class="vm-k">Pool 매수 한도 '+curP+'% → '+E.vrLimitPct(a,nc)+'%</div><div class="vm-v">'+when(nc)+'</div></div>');
+  }
+  var yr=function(c){ return Math.floor(Math.max(0,wk(c)-1)/52); }, ng=null; for(var g=cyc+1;g<cyc+60;g++){ if(yr(g)>yr(cyc)){ ng=g; break; } }
+  if(ng) out.push('<div class="vm"><div class="vm-k">G '+(a.G||10)+' → '+((a.G||10)+1)+' 올릴 때 <span class="muted">(1년마다, 상태 수정에서)</span></div><div class="vm-v">'+when(ng)+'</div></div>');
+  if(plan&&plan.E!=null){
+    var low=plan.E<a.V;
+    out.push('<div class="vm"><div class="vm-k">추가 투입 신호 <span class="muted">(E가 V보다 낮을 때)</span></div><div class="vm-v'+(low?' up':'')+'">'+(low?'켜짐 · E가 V보다 '+usd(a.V-plan.E,0)+' 낮아요':'꺼짐 · E가 V보다 '+usd(plan.E-a.V,0)+' 높아요')+'</div></div>');
+  }
+  return out.length?'<div class="vm-grid">'+out.join("")+'</div>':'';
 }
 function vrRecords(a, plan){
   var rows=vrRows(a,plan); if(!rows.length) return "";
@@ -712,16 +744,16 @@ function vrRecords(a, plan){
     (cyc!=null?'<div class="delta '+signCls(cyc)+'">'+usdS(cyc)+'<span>'+cur.c+'회차 손익 (적립 제외)</span></div>':'')+
     (cur.invested?'<div class="delta '+signCls(tot-cur.invested)+'">'+pct(tot/cur.invested-1)+'<span>투입원금 '+usd(cur.invested,0)+' 대비</span></div>':'')+'</div>'+
     '<div class="vr-mix" role="img" aria-label="'+esc(a.ticker)+' '+Math.round(sp*100)+'%, Pool '+Math.round((1-sp)*100)+'%"><i style="width:'+(sp*100)+'%"></i><b style="width:'+((1-sp)*100)+'%"></b></div>'+
-    '<div class="vr-mix-l"><span>'+esc(a.ticker)+' '+usd(cur.E,0)+' · '+Math.round(sp*100)+'%</span><span>Pool '+usd(cur.pool,0)+' · '+Math.round((1-sp)*100)+'%</span></div>';
+    '<div class="vr-mix-l"><span>'+esc(a.ticker)+' '+usd(cur.E,0)+' · '+Math.round(sp*100)+'%</span><span>Pool '+usd(cur.pool,0)+' · '+Math.round((1-sp)*100)+'%</span></div>'+vrMetrics(a,plan,tot);
   var legend='<div class="legend"><span><i class="lk" style="background:var(--vr-e)"></i>평가금 E</span><span><i class="lk" style="background:var(--vr-inv)"></i>투입원금</span><span><i class="lk band"></i>V 밴드</span><span><i class="ld" style="background:var(--vr-pool);border-radius:2px"></i>Pool</span></div>';
   var past=rows.filter(function(r){return !r.live;}).length;
   var body=rows.slice().reverse().map(function(r){
-    return '<tr'+(r.live?' class="live"':'')+'><td>'+r.c+' · '+(r.live?'진행 중':mdLabel(r.d))+'</td><td>'+n2(r.close)+'</td><td>'+r.qty+'</td><td class="'+(r.E<r.min?'up':(r.E>r.max?'down':''))+'">'+usd(r.E,0)+'</td><td>'+usd(r.V,0)+'</td><td>'+usd(r.pool,0)+'</td><td>'+usd(r.E+r.pool,0)+'</td></tr>';
+    return '<tr'+(r.live?' class="live"':'')+'><td>'+r.c+' · '+(r.live?'진행 중':mdLabel(r.d))+'</td><td>'+n2(r.close)+'</td><td>'+r.qty+'</td><td class="'+(r.E<r.min?'up':(r.E>r.max?'down':''))+'">'+usd(r.E,0)+'</td><td>'+usd(r.V,0)+'</td><td>'+usd(r.pool,0)+'</td><td>'+usd(r.E+r.pool,0)+'</td><td>'+((r.buyQ||r.sellQ)?(r.buyQ?'<span class="up">+'+r.buyQ+'</span>':'')+(r.buyQ&&r.sellQ?' ':'')+(r.sellQ?'<span class="down">−'+r.sellQ+'</span>':''):'<span class="muted">-</span>')+'</td></tr>';
   }).join("");
   return '<section class="panel"><div class="panel-head"><h2>회차 추이</h2>'+(past?'<button type="button" class="export-btn" data-act="vr-csv">CSV로 저장</button>':'')+'</div>'+hero+
     '<div class="chart-sub"></div>'+legend+vrChart(rows)+
-    '<details class="vr-hist"><summary>회차 기록 ('+rows.length+')</summary><div class="tablewrap"><table class="log vrh"><thead><tr><th>회차 · 마감</th><th>종가</th><th>수량</th><th>E</th><th>V</th><th>Pool</th><th>E+Pool</th></tr></thead><tbody>'+body+'</tbody></table></div>'+
-    '<div class="hint">E가 밴드 아래면 빨강, 위면 파랑으로 표시해요. Pool은 회차 마감 시점(적립 전) 값이에요.</div></details></section>';
+    '<details class="vr-hist"><summary>회차 기록 ('+rows.length+')</summary><div class="tablewrap"><table class="log vrh"><thead><tr><th>회차 · 마감</th><th>종가</th><th>수량</th><th>E</th><th>V</th><th>Pool</th><th>E+Pool</th><th>매매</th></tr></thead><tbody>'+body+'</tbody></table></div>'+
+    '<div class="hint">E가 밴드 아래면 빨강, 위면 파랑으로 표시해요. Pool은 회차 마감 시점(적립 전) 값이고, 매매는 그 회차에 산(+)·판(−) 주수예요.</div></details></section>';
 }
 function vrChart(rows){
   var wh=chartWH(), W=wh[0], H=W<720?220:250, padL=6, padR=W<720?48:60, padT=12, padB=28, pw=W-padL-padR, ph=H-padT-padB, n=rows.length;
@@ -1573,7 +1605,7 @@ document.addEventListener("click", function(ev){
     if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true; }
     save(a,pp).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
   } else if(act==="vr-csv"){
-    downloadCSV("VR_"+a.name+"_회차기록_"+todayKR(),["회차","마감일","종가","수량","평가금E","V","최소밴드","최대밴드","Pool(적립 전)","다음 회차 Pool","투입원금","다음 V"],E.vrHistory(a).map(function(r){return [r.c,r.d,r.close,r.qty,r.E,r.V,r.min,r.max,r.pool,r.poolNext,r.invested,r.Vnext];}));
+    downloadCSV("VR_"+a.name+"_회차기록_"+todayKR(),["회차","마감일","종가","수량","평가금E","V","최소밴드","최대밴드","Pool(적립 전)","다음 회차 Pool","투입원금","다음 V","매수 주수","매도 주수"],vrRows(a,null).map(function(r){return [r.c,r.d,r.close,r.qty,r.E,r.V,r.min,r.max,r.pool,r.poolNext,r.invested,r.Vnext,r.buyQ,r.sellQ];}));
   } else if(act==="copy"){
     var txt=copyText(a);
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){toast("주문을 복사했어요.");},function(){toast("복사가 막혀 있어요. 주문표를 길게 눌러 복사하세요.");}); }
