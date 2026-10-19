@@ -1,4 +1,4 @@
-// 본장이 열리고 조금 뒤(뉴욕 9:40~11:00) 돌면서, 오늘 장에 넣어 둔 무매 LOC 매수가가 본장 시가보다
+// 본장이 열리고 조금 뒤(뉴욕 9:32쯤~11:00) 돌면서, 오늘 장에 넣어 둔 무매 LOC 매수가가 본장 시가보다
 // 거부 한도(계좌 rejectPct, 기본 20%) 넘게 높으면 폰으로 알립니다. 주간장에 넣은 LOC는 본장 시작 때 거래소로 넘어가며
 // 그때 가격으로 다시 거부될 수 있습니다 (2026-10-19 메리츠: 현재가 101.2에서 122는 거부, 120은 접수).
 // 같은 장은 계좌마다 한 번만 보냅니다 (users/{uid}/settings/push.openCheckSent[계좌 id] = 장 날짜).
@@ -31,8 +31,8 @@ async function openPrice(t) {
 
 async function main() {
   const now = nyNow();
-  // 서머타임·표준시 두 cron 중 본장 시작 10~90분 뒤에 걸리는 쪽만 실행 (예약 실행이 늦게 돌 수 있어 넉넉히. 두 번 걸려도 openCheckSent로 한 번만 보냄)
-  if (!FORCE && (now.minutes < 9 * 60 + 40 || now.minutes > 11 * 60)) { console.log(`뉴욕 ${Math.floor(now.minutes / 60)}:${String(now.minutes % 60).padStart(2, "0")}, 확인 시간 아님`); return; }
+  // 서머타임·표준시 두 cron 중 본장 시작 1~90분 뒤에 걸리는 쪽만 실행 (예약 실행이 늦게 돌 수 있어 넉넉히. 두 번 걸려도 openCheckSent로 한 번만 보냄)
+  if (!FORCE && (now.minutes < 9 * 60 + 31 || now.minutes > 11 * 60)) { console.log(`뉴욕 ${Math.floor(now.minutes / 60)}:${String(now.minutes % 60).padStart(2, "0")}, 확인 시간 아님`); return; }
 
   const db = initDb();
   const byUser = await tokensByUser(db);
