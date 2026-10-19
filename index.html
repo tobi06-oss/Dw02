@@ -161,6 +161,9 @@ details.panel[open]>summary{margin-bottom:12px}
 .ord .bigalt{grid-column:1 / 4;font-size:12px;color:var(--ink-2);text-align:right;font-family:var(--mono);margin-top:2px}
 .ord .bigalt .tag{font-family:inherit;font-size:10px;padding:1px 7px;margin-right:2px}
 .chip.big{box-shadow:inset 0 0 0 1px var(--ok)}
+.bigedit{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin-top:8px;font-size:12px;color:var(--ink-3)}
+.bigedit b{font-family:var(--mono);color:var(--ink-2)}
+.bigedit .btn{padding:4px 10px;font-size:12px}
 .ladder{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line-2)}
 .ladder .lt{font-size:12px;color:var(--ink-3);margin-bottom:6px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -589,9 +592,12 @@ function renderFillConfirm(a,p,bar){
       '</div>';
   }).join("");
   var n=fills.filter(function(f){return f.filled;}).length;
+  var miss=E.bigMisses(p.orders,bar), missQ=miss.reduce(function(s,o){return s+o.qty;},0);
+  var missHtml=miss.length?'<div class="bd" style="color:var(--danger)">큰수 때문에 못 산 매수가 있어요: '+esc(miss.map(function(o){return o.label+" "+o.qty+"주 (원래 "+usd(o.orig)+")";}).join(", "))+'. 종가 '+usd(bar.c)+'가 큰수 '+usd(miss[0].price)+'보다 높고 원래 매수가 이하라, 원래 가격에 걸었다면 '+missQ+'주가 체결됐을 거예요. 실제로 산 게 아니면 체크하지 마세요.</div>':'';
   return '<div class="banner ok"><div class="row spread"><div class="bt">'+dlabel(p.session)+' 체결 확인</div><div class="small num">종가 '+usd(bar.c)+' · 고가 '+usd(bar.h)+'</div></div>'+
     '<div class="bd">종가 기준으로 '+n+'건 체결로 판정했어요. 실제 체결과 다르면 체크와 가격·수량을 고친 뒤 반영하세요.'+
       (p.orders.some(function(o){return o.ext;})?(bar.xh!=null?' 지정가매도는 프리·애프터장 고가 '+usd(bar.xh)+'까지 보고 판정했어요.':' 지정가매도는 프리·애프터장에서도 체결될 수 있는데, 이 날은 시간외 시세가 없어 본장 고가로만 판정했어요.'):'')+'</div>'+
+    missHtml+
     '<div class="fills">'+rows+'</div>'+
     '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="apply-fills">계좌에 반영</button><button class="btn ghost" data-act="cancel-pending">이 날 체결 없음</button></div></div>';
 }
@@ -608,6 +614,17 @@ function ordRow(o){
   return '<div class="ord">'+tagOf(o)+'<div class="lab">'+esc(o.label)+'</div><div class="pq">'+(px!=null?n2(px):"MOC")+' <span>× '+o.qty+'</span></div>'+
     '<div class="amt">'+amt+'</div>'+
     (o.big?'<div class="bigalt"><span class="tag big">큰수 LOC</span> <b>'+n2(o.price)+'</b> × '+o.qty+' · '+usd(o.price*o.qty)+'</div>':'')+'</div>';
+}
+
+// 큰수 가격은 그날 장에 한해 직접 고칠 수 있다 (주간장 시세가 올라 원래 매수가에 더 가깝게 걸 수 있을 때 등). 주문을 넣은 뒤에는 못 고친다.
+function bigEdit(a,plan){
+  var any=plan.orders.some(function(o){return o.big;});
+  if(!any&&plan.bigManual==null) return "";
+  var placed=a.pending&&a.pending.session===plan.session;
+  var cur=plan.bigManual!=null?plan.bigManual:plan.bigAuto;
+  return '<div class="bigedit"><span class="tag big">큰수</span> <b>'+n2(cur)+'</b>'+
+    (plan.bigManual!=null?'<span>직접 수정 · 자동 '+n2(plan.bigAuto)+'</span>':'<span>자동 (전일 종가 +'+(a.bigPct!=null?a.bigPct:15)+'%)</span>')+
+    (placed?'':'<button type="button" class="btn" data-act="big-edit">수정</button>'+(plan.bigManual!=null?'<button type="button" class="btn ghost" data-act="big-reset">자동으로</button>':''))+'</div>';
 }
 
 // VR은 2주 회차마다 기간 예약주문을 한 번만 넣는다. 그 뒤로는 같은 주문이 유지된다고 보고 매일 체결만 확인한다.
@@ -661,6 +678,7 @@ function renderINF(a){
   var ladBig=lad.filter(function(o){return o.big;});
   if(lad.length) buyHtml+='<div class="ladder"><div class="lt">크게 하락할 때 대비 · 1주씩 LOC</div><div class="chips">'+lad.map(function(o){return '<span class="chip'+(o.big?' big':'')+'">'+n2(o.big?o.orig:o.price)+'</span>';}).join("")+'</div>'+
     (ladBig.length?'<div class="lt" style="margin:6px 0 0">큰수 적용 시 테두리 표시 '+ladBig.length+'개는 큰수 '+n2(ladBig[0].price)+'로 걸어요</div>':'')+'</div>';
+  buyHtml+=bigEdit(a,plan);
   var sellHtml=sells.map(ordRow).join("");
   var lk=a.linked==="tracker", hasRec=lk&&!!trk.meta;
   var missing = lk&&trk.metaLoaded&&!trk.meta ? '<div class="banner warn"><div class="bt">기록 사이클이 없어요</div><div class="bd">원화 기록·매매내역을 담을 사이클을 새로 만듭니다. 지금까지 반영한 체결은 매매내역으로 옮겨져요.</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">사이클 새로 만들기</button></div></div>' : "";
@@ -1598,7 +1616,18 @@ document.addEventListener("click", function(ev){
   if(recAct(act,b,a)) return;
   var snapA=function(){ var c=JSON.parse(JSON.stringify(a)); delete c._plan; return c; };
   var undoSet=function(label,prev){ pushUndo(label,[{p:"accounts/"+prev.id,d:prev}]); };
-  if(act==="place"){
+  if(act==="big-edit"||act==="big-reset"){
+    var bp=a._plan; if(!bp) return;
+    var cur=bp.bigManual!=null?bp.bigManual:bp.bigAuto, nv=null;
+    if(act==="big-edit"){
+      var inp=window.prompt(dlabel(bp.session)+" 큰수 가격 ($)\n자동 값은 "+n2(bp.bigAuto)+"예요. 비우면 자동으로 돌아가요.", n2(cur));
+      if(inp===null) return;
+      inp=String(inp).replace(/[$,\s]/g,"");
+      if(inp!==""){ nv=Math.round(parseFloat(inp)*100)/100; if(!(nv>0)){ toast("가격을 숫자로 넣어주세요."); return; } }
+    }
+    var prevB=snapA();
+    save(a,{bigOv:nv?{session:bp.session,price:nv}:null}).then(function(){ toast(nv?"큰수를 "+n2(nv)+"로 바꿨어요.":"큰수를 자동 값으로 돌렸어요."); undoSet("큰수 가격 변경",prevB); render(); });
+  } else if(act==="place"){
     var p=a._plan, prevP=snapA();
     var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
     var pp={pending:{session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()}, events:[]};

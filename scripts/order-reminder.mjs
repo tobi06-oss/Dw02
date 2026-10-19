@@ -3,8 +3,8 @@
 // "주문 전" 판정은 앱 탭 배지와 같은 engine.js orderStatus를 씁니다.
 // 알림 받을 기기는 앱의 "주문 알림" 패널에서 켜면 users/{uid}/pushTokens/{id}에 저장됩니다.
 // 실행: FIREBASE_SERVICE_ACCOUNT='<서비스 계정 JSON>' node order-reminder.mjs   (TEST=1이면 주문 여부와 상관없이 테스트 알림)
-import admin from "firebase-admin";
 import { createRequire } from "node:module";
+import { initDb, tokensByUser, sharedPrices, userAccounts, mergeBars, sendPush } from "./common.mjs";
 
 const E = createRequire(import.meta.url)("../engine.js");
 const TEST = process.env.TEST === "1";
@@ -15,51 +15,28 @@ const US_HOLIDAYS = new Set([
   "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
 ]);
 
-const toArr = (b) => (Array.isArray(b) ? b : b.xh != null ? [b.d, b.o, b.h, b.l, b.c, b.xh, b.xl] : [b.d, b.o, b.h, b.l, b.c]);
-// 앱의 mergeBars와 같음: 공용 종가 + 내가 직접 넣은 종가(우선)
-function mergeBars(g, m) {
-  const map = new Map();
-  (g?.bars || []).map(toArr).forEach((b) => map.set(b[0], b));
-  (m?.bars || []).map(toArr).forEach((b) => map.set(b[0], b));
-  return [...map.values()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-150)
-    .map((b) => ({ d: b[0], o: b[1], h: b[2], l: b[3], c: b[4], xh: b.length > 5 ? b[5] : null, xl: b.length > 6 ? b[6] : null }));
-}
-
 // 한국 시각의 오늘 날짜(= 오늘 밤 열리는 미국장 날짜)와 HH:MM
 const kstNow = () => { const iso = new Date(Date.now() + 9 * 3600e3).toISOString(); return { date: iso.slice(0, 10), hm: iso.slice(11, 16) }; };
 const DEFAULT_TIME = "21:00";
 
 async function main() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT 비밀값이 없습니다.");
-  admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
-  const db = admin.firestore();
+  const db = initDb();
 
   const { date: session, hm } = kstNow();
   const dow = new Date(session + "T12:00:00Z").getUTCDay();
   if (!TEST && (dow === 0 || dow === 6 || US_HOLIDAYS.has(session))) { console.log(`${session}: 미국장 휴장, 알림 없음`); return; }
 
-  const tokSnap = await db.collectionGroup("pushTokens").get();
-  if (tokSnap.empty) { console.log("알림을 켠 기기가 없습니다. 앱에서 '주문 알림'을 켜세요."); return; }
-  const byUser = new Map();
-  tokSnap.docs.forEach((d) => {
-    const uid = d.ref.parent.parent.id, t = d.get("token");
-    if (t) (byUser.get(uid) || byUser.set(uid, []).get(uid)).push({ ref: d.ref, token: t });
-  });
+  const byUser = await tokensByUser(db);
+  if (!byUser.size) { console.log("알림을 켠 기기가 없습니다. 앱에서 '주문 알림'을 켜세요."); return; }
 
-  const shared = {};
-  (await db.collection("prices").get()).docs.forEach((d) => (shared[d.id] = d.data()));
+  const shared = await sharedPrices(db);
 
   for (const [uid, toks] of byUser) {
     const setRef = db.collection("users").doc(uid).collection("settings").doc("push");
     const set = (await setRef.get()).data() || {};
     const at = /^\d\d:\d\d$/.test(set.time || "") ? set.time : DEFAULT_TIME;
     if (!TEST && (hm < at || set.lastSent === session)) { console.log(`${uid.slice(0, 6)}…: 알림 ${at}, ${set.lastSent === session ? "오늘 이미 보냄" : "아직 시간 전"}`); continue; }
-    const manual = {};
-    (await db.collection("users").doc(uid).collection("manualPrices").get()).docs.forEach((d) => (manual[d.id] = d.data()));
-    const accts = (await db.collection("users").doc(uid).collection("accounts").get()).docs
-      .map((d) => ({ ...d.data(), id: d.id }))
-      .sort((a, b) => (a.order || 0) - (b.order || 0) || (a.createdAt || 0) - (b.createdAt || 0));
+    const { accts, manual } = await userAccounts(db, uid);
     const todo = [];
     for (const a of accts) {
       const st = E.orderStatus(a, mergeBars(shared[a.ticker], manual[a.ticker]));
@@ -71,21 +48,8 @@ async function main() {
 
     const title = TEST ? "테스트 알림" : "아직 주문 안 넣은 계좌가 있어요";
     const body = TEST ? `알림이 잘 옵니다. 지금 상태: ${todo.join(", ") || "모두 주문함"}` : todo.join(" · ");
-    const res = await admin.messaging().sendEachForMulticast({
-      tokens: toks.map((t) => t.token),
-      data: { title, body, tag: "order-reminder" },
-      // 장 마감(한국시간 새벽 5~6시)이 지나면 의미가 없으니 8시간 안에 못 받으면 버립니다.
-      webpush: { headers: { Urgency: "high", TTL: String(8 * 3600) } },
-    });
-    for (let i = 0; i < res.responses.length; i++) {
-      const r = res.responses[i];
-      if (r.success) continue;
-      const code = r.error?.code || "";
-      console.warn(`  보내기 실패: ${code} ${r.error?.message || ""}`);
-      // 앱을 지웠거나 알림을 끈 기기는 목록에서 뺀다
-      if (code === "messaging/registration-token-not-registered" || code === "messaging/invalid-registration-token") await toks[i].ref.delete();
-    }
-    console.log(`  보냄 ${res.successCount}/${toks.length}`);
+    // 장 마감(한국시간 새벽 5~6시)이 지나면 의미가 없으니 8시간 안에 못 받으면 버립니다.
+    await sendPush(toks, { title, body, tag: "order-reminder", ttlHours: 8 });
   }
 }
 
