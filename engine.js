@@ -50,15 +50,18 @@
   // 큰수 매수: 매수가가 현재가와 너무 멀면 증권사가 주문을 거부하므로, 현재가 +15% 쯤의 '큰 수'에
   // 그보다 위 가격의 매수 수량을 모두 합쳐 건다 (라오어 <큰수 매수> 글, 엑셀 기준 15%). 그 아래 사다리는 그대로.
   // 매도는 가격을 바꾸지 않는다. 거부되면 걸지 않는 것이 규칙이다 (매수매도거부 글).
+  // a.bigOv = {session, price}: 그날 장에 한해 사용자가 직접 정한 큰수 가격 (예: 주간장 시세가 올라 더 높게 걸 수 있을 때)
   function applyBig(p, c0, a) {
     var pct = a.bigPct != null ? a.bigPct : 15;
     var bigP = f2(c0 * (1 + pct / 100)), moved = 0;
+    p.bigAuto = bigP;
+    if (a.bigOv && a.bigOv.session === p.session && a.bigOv.price > 0) { bigP = r2(a.bigOv.price); p.bigManual = bigP; }
     p.orders.forEach(function (o) {
       if (o.side === "BUY" && o.type === "LOC" && o.price > bigP) {
         o.orig = o.price; o.price = bigP; o.big = true; moved += o.qty;
       }
     });
-    if (moved) p.notes.push("매수가가 현재가보다 " + pct + "% 넘게 높아, 그 위 매수 " + moved + "주를 큰수 $" + bigP.toFixed(2) + "에 모았습니다. 같은 가격 주문은 합쳐서 " + moved + "주로 넣으세요.");
+    if (moved) p.notes.push((p.bigManual != null ? "직접 정한 큰수 $" + bigP.toFixed(2) + "보다 높은 매수 " : "매수가가 현재가보다 " + pct + "% 넘게 높아, 그 위 매수 ") + moved + "주를 큰수 $" + bigP.toFixed(2) + "에 모았습니다. 같은 가격 주문은 합쳐서 " + moved + "주로 넣으세요.");
     var rejLim = (a.rejectPct != null ? a.rejectPct : 20) / 100;
     var far = p.orders.filter(function (o) { return o.side === "SELL" && o.price != null && o.price > c0 * (1 + rejLim); });
     if (far.length) p.notes.push(far.map(function (o) { return o.label; }).join(", ") + " 가격이 현재가보다 " + Math.round(rejLim * 100) + "% 넘게 높아 증권사가 거부할 수 있습니다. 거부되면 걸지 마세요. 가격을 낮춰 걸면 안 됩니다.");
@@ -175,6 +178,15 @@
       return lo <= o.price + EPS ? { px: bar.o <= o.price ? bar.o : o.price } : null;
     }
     return null;
+  }
+
+  // 큰수로 낮춰 건 탓에 못 산 매수: 종가가 큰수 가격보다 높고 원래 매수가 이하로 끝난 주문
+  // (원래 가격에 걸었다면 LOC로 종가에 체결됐을 주문)
+  function bigMisses(orders, bar) {
+    if (!bar || !orders) return [];
+    return orders.filter(function (o) {
+      return o.side === "BUY" && o.big && o.orig != null && bar.c > o.price + EPS && bar.c <= o.orig + EPS;
+    });
   }
 
   function judgeAll(orders, bar) {
@@ -392,7 +404,7 @@
   }
 
   var api = { r2: r2, f2: f2, nextSession: nextSession, addDays: addDays, starPct: starPct,
-    infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll,
+    infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll, bigMisses: bigMisses,
     vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, vrHistory: vrHistory, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Engine = api;
