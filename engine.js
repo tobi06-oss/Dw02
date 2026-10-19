@@ -189,6 +189,12 @@
     });
   }
 
+  // 매수가가 기준가(본장 시가 등)보다 거부 한도(rejectPct, 기본 20%) 넘게 높은 LOC 매수: 증권사가 거부했을 수 있다
+  function rejectRisk(orders, px, a) {
+    var lim = 1 + ((a && a.rejectPct != null) ? a.rejectPct : 20) / 100;
+    return (orders || []).filter(function (o) { return o.side === "BUY" && o.type === "LOC" && o.price > px * lim + EPS; });
+  }
+
   function judgeAll(orders, bar) {
     return orders.map(function (o) {
       var j = judge(o, bar);
@@ -404,7 +410,7 @@
   }
 
   var api = { r2: r2, f2: f2, nextSession: nextSession, addDays: addDays, starPct: starPct,
-    infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll, bigMisses: bigMisses,
+    infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll, bigMisses: bigMisses, rejectRisk: rejectRisk,
     vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, vrHistory: vrHistory, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Engine = api;

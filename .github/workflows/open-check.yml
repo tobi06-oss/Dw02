@@ -1,0 +1,27 @@
+name: 본장 시작 거부 확인
+
+on:
+  schedule:
+    # 뉴욕 9:32 (본장 시작 2분 뒤): 서머타임이면 13:32 UTC, 표준시면 14:32 UTC. 스크립트가 뉴욕 9:31~11:00에 걸린 쪽만 실행합니다.
+    # GitHub 예약 실행은 몇 분~수십 분 늦게 돌 수 있습니다.
+    - cron: "32 13,14 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 패키지 설치
+        working-directory: scripts
+        run: npm install --no-audit --no-fund
+      - name: 시가 대비 매수가 확인 후 알림
+        working-directory: scripts
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+        run: node open-check.mjs
