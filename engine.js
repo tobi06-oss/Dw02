@@ -352,7 +352,26 @@
     s.cycleUsed = 0;
     s.nextUpdate = addDays(a.nextUpdate || date, 14);
     s.lastRoll = { d: date, close: close, E: r2(E), Vprev: a.V, Vnext: s.V };
+    s.hist = vrHistory(a).concat([histRow(a, a.cycle || 1, date, close, a.qty, E, a.V, a.pool, s.pool, a.invested, s.V)]);
     return { next: s, E: E, growth: growth, contrib: sign * contrib };
+  }
+
+  // 회차 기록 한 줄: 그 회차의 V·밴드와 마감 시점의 E·Pool (Pool은 적립 전, poolNext는 적립 후 다음 회차 시작 Pool)
+  function histRow(a, c, d, close, qty, E, V, pool, poolNext, invested, Vnext) {
+    var band = a.band || 0.15;
+    return { c: c, d: d, close: close, qty: qty, E: r2(E), V: V, min: r2(V * (1 - band)), max: r2(V * (1 + band)),
+      pool: r2(pool), poolNext: r2(poolNext), invested: invested == null ? null : r2(invested), Vnext: Vnext };
+  }
+
+  // 지난 회차 기록. 이 기능 전에 갱신한 계좌는 마지막 V 갱신(lastRoll)에서 직전 회차 한 줄을 되살린다
+  function vrHistory(a) {
+    if (a.hist && a.hist.length) return a.hist;
+    var r = a.lastRoll;
+    if (!r || r.Vprev == null || r.Vnext == null || !r.close) return [];
+    var G = a.G || 10, sign = a.vrType === "WITHDRAWAL" ? -1 : (a.vrType === "LUMPSUM" ? 0 : 1), contrib = sign * (a.contrib || 0);
+    var poolEnd = G * (r.Vnext - r.Vprev - (r.E - r.Vprev) / (2 * Math.sqrt(G)) - contrib);
+    var inv = a.invested == null ? null : a.invested - (sign > 0 ? contrib : 0);
+    return [histRow(a, (a.cycle || 2) - 1, r.d, r.close, Math.round(r.E / r.close), r.E, r.Vprev, poolEnd, poolEnd + contrib, inv, r.Vnext)];
   }
 
   /* ---------------- 주문 상태 (탭 배지·9시 알림 공통) ---------------- */
@@ -374,7 +393,7 @@
 
   var api = { r2: r2, f2: f2, nextSession: nextSession, addDays: addDays, starPct: starPct,
     infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll,
-    vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
+    vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, vrHistory: vrHistory, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Engine = api;
 })(this);

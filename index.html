@@ -234,9 +234,9 @@ table.log tbody tr:hover{background:var(--surface-2)}
 
 /* ---- 기록(예전 트래커에서 옮겨 온 부분) ---- */
 :root{ --text:var(--ink); --text-dim:var(--ink-2); --text-faint:var(--ink-3); --border:var(--line);
-  --positive:var(--buy); --positive-soft:var(--buy-soft); --negative:var(--sell); --negative-soft:var(--sell-soft); --avgprice:#B8860B; }
-@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --avgprice:#E0B84D; } }
-:root[data-theme="dark"]{ --avgprice:#E0B84D; }
+  --positive:var(--buy); --positive-soft:var(--buy-soft); --negative:var(--sell); --negative-soft:var(--sell-soft); --avgprice:#B8860B; --vr-e:#FF4D63; --vr-inv:#3B8CFF; --vr-pool:var(--ok); }
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --avgprice:#E0B84D; --vr-e:#FF6B7E; --vr-inv:#5EA2FF; } }
+:root[data-theme="dark"]{ --avgprice:#E0B84D; --vr-e:#FF6B7E; --vr-inv:#5EA2FF; }
 .rec-title{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin-bottom:12px}
 .a-label{font-weight:600;font-size:15px}
 .a-period{font-size:11.5px;color:var(--ink-2);font-family:var(--mono)}
@@ -364,6 +364,18 @@ svg.chart2 .pre{fill:var(--surface-2);opacity:.7}
 .legend .lk{display:inline-block;width:14px;height:2px;border-radius:1px}
 .legend .lk.dash{background:repeating-linear-gradient(90deg,var(--avgprice) 0 4px,transparent 4px 7px)}
 .legend .ld{display:inline-block;width:9px;height:9px;border-radius:50%}
+.legend .lk.band{height:9px;background:var(--line-2);opacity:.7}
+svg.chart2 .vr-band{fill:var(--line-2);opacity:.45}
+svg.chart2 .vr-v{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3}
+svg.chart2 .vr-pool{fill:var(--vr-pool);opacity:.55}
+.vr-mix{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:10px 0 4px;background:var(--surface-2)}
+.vr-mix i{background:var(--vr-e);opacity:.85} .vr-mix b{background:var(--vr-pool)}
+.vr-mix-l{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-2);font-family:var(--mono)}
+details.vr-hist{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+details.vr-hist summary{cursor:pointer;font-size:13px;color:var(--ink-2)}
+table.log.vrh{min-width:0} table.log.vrh td{font-family:var(--mono)} table.log.vrh tr.live td{color:var(--ink-2);font-style:italic}
+table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
+@media (max-width:600px){ table.log.vrh th:nth-child(2),table.log.vrh td:nth-child(2){display:none} table.log.vrh th,table.log.vrh td{padding:6px 5px} }
 </style>
 </head>
 <body>
@@ -681,7 +693,61 @@ function renderVR(a){
   var buyHtml=vt(plan.buys), sellHtml=vt(plan.sells);
   var notes=plan.notes.slice();
   notes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
-  return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+undoPanel()+editorVR(a)+logPanel(a);
+  return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+vrRecords(a,plan)+undoPanel()+editorVR(a)+logPanel(a);
+}
+
+/* ---------- VR 회차 기록: 요약 · 추이 차트 · 표 ---------- */
+// 지난 회차 + 진행 중인 이번 회차(실시간 E, 지금 V·밴드·Pool)
+function vrRows(a, plan){
+  var band=a.band||0.15, h=E.vrHistory(a).slice(), lb=lastBar(a.ticker);
+  if(plan&&plan.E!=null) h.push({c:a.cycle||1, d:lb?lb.d:null, close:lb?lb.c:null, qty:a.qty, E:plan.E, V:a.V, min:a.V*(1-band), max:a.V*(1+band), pool:a.pool, invested:a.invested, live:true});
+  return h;
+}
+function vrRecords(a, plan){
+  var rows=vrRows(a,plan); if(!rows.length) return "";
+  var cur=rows[rows.length-1], prev=rows.length>1?rows[rows.length-2]:null, tot=cur.E+cur.pool;
+  var cyc=prev&&prev.poolNext!=null ? tot-(prev.E+prev.poolNext) : null;
+  var sp=tot?cur.E/tot:0;
+  var hero='<div class="chart-hero"><div><div class="k">총자산 (평가금 E + Pool)</div><div class="big num">'+usd(tot)+'</div></div>'+
+    (cyc!=null?'<div class="delta '+signCls(cyc)+'">'+usdS(cyc)+'<span>'+cur.c+'회차 손익 (적립 제외)</span></div>':'')+
+    (cur.invested?'<div class="delta '+signCls(tot-cur.invested)+'">'+pct(tot/cur.invested-1)+'<span>투입원금 '+usd(cur.invested,0)+' 대비</span></div>':'')+'</div>'+
+    '<div class="vr-mix" role="img" aria-label="'+esc(a.ticker)+' '+Math.round(sp*100)+'%, Pool '+Math.round((1-sp)*100)+'%"><i style="width:'+(sp*100)+'%"></i><b style="width:'+((1-sp)*100)+'%"></b></div>'+
+    '<div class="vr-mix-l"><span>'+esc(a.ticker)+' '+usd(cur.E,0)+' · '+Math.round(sp*100)+'%</span><span>Pool '+usd(cur.pool,0)+' · '+Math.round((1-sp)*100)+'%</span></div>';
+  var legend='<div class="legend"><span><i class="lk" style="background:var(--vr-e)"></i>평가금 E</span><span><i class="lk" style="background:var(--vr-inv)"></i>투입원금</span><span><i class="lk band"></i>V 밴드</span><span><i class="ld" style="background:var(--vr-pool);border-radius:2px"></i>Pool</span></div>';
+  var past=rows.filter(function(r){return !r.live;}).length;
+  var body=rows.slice().reverse().map(function(r){
+    return '<tr'+(r.live?' class="live"':'')+'><td>'+r.c+' · '+(r.live?'진행 중':mdLabel(r.d))+'</td><td>'+n2(r.close)+'</td><td>'+r.qty+'</td><td class="'+(r.E<r.min?'up':(r.E>r.max?'down':''))+'">'+usd(r.E,0)+'</td><td>'+usd(r.V,0)+'</td><td>'+usd(r.pool,0)+'</td><td>'+usd(r.E+r.pool,0)+'</td></tr>';
+  }).join("");
+  return '<section class="panel"><div class="panel-head"><h2>회차 추이</h2>'+(past?'<button type="button" class="export-btn" data-act="vr-csv">CSV로 저장</button>':'')+'</div>'+hero+
+    '<div class="chart-sub"></div>'+legend+vrChart(rows)+
+    '<details class="vr-hist"><summary>회차 기록 ('+rows.length+')</summary><div class="tablewrap"><table class="log vrh"><thead><tr><th>회차 · 마감</th><th>종가</th><th>수량</th><th>E</th><th>V</th><th>Pool</th><th>E+Pool</th></tr></thead><tbody>'+body+'</tbody></table></div>'+
+    '<div class="hint">E가 밴드 아래면 빨강, 위면 파랑으로 표시해요. Pool은 회차 마감 시점(적립 전) 값이에요.</div></details></section>';
+}
+function vrChart(rows){
+  var wh=chartWH(), W=wh[0], H=W<720?220:250, padL=6, padR=W<720?48:60, padT=12, padB=28, pw=W-padL-padR, ph=H-padT-padB, n=rows.length;
+  var hi=0; rows.forEach(function(r){ hi=Math.max(hi,r.max,r.E,r.invested||0,r.pool); }); hi*=1.06;
+  var x=function(i){ return padL+(n===1?pw/2:i/(n-1)*pw); }, y=function(v){ return padT+ph-v/hi*ph; };
+  var id="c"+(++chartSeq), o="", xs=rows.map(function(r,i){return x(i);});
+  niceTicks(0,hi,4).forEach(function(t){ var gy=y(t); o+='<line x1="'+padL+'" x2="'+(padL+pw)+'" y1="'+gy+'" y2="'+gy+'" class="gl"/><text x="'+(W-4)+'" y="'+(gy+4)+'" text-anchor="end" class="ax">$'+(t>=1000?(t/1000).toFixed(t%1000?1:0)+'k':t.toFixed(0))+'</text>'; });
+  var bw=Math.max(3,Math.min(18,pw/Math.max(n,2)*0.5));
+  rows.forEach(function(r,i){ o+='<rect x="'+(xs[i]-bw/2)+'" y="'+y(r.pool)+'" width="'+bw+'" height="'+(y(0)-y(r.pool))+'" rx="2" class="vr-pool"/>'; });
+  var line=function(f){ return rows.map(function(r,i){ return (i?"L":"M")+xs[i]+","+y(f(r)); }).join(" "); };
+  if(n>1){
+    o+='<path d="'+line(function(r){return r.max;})+' '+rows.slice().reverse().map(function(r,j){ return "L"+xs[n-1-j]+","+y(r.min); }).join(" ")+' Z" class="vr-band"/>';
+    o+='<path d="'+line(function(r){return r.V;})+'" class="ln vr-v"/>';
+    if(rows.every(function(r){return r.invested!=null;})) o+='<path d="'+line(function(r){return r.invested;})+'" class="ln" stroke="var(--vr-inv)"/>';
+    o+='<path d="'+line(function(r){return r.E;})+'" class="ln" stroke="var(--vr-e)"/>';
+  } else {
+    o+='<line x1="'+(xs[0]-14)+'" x2="'+(xs[0]+14)+'" y1="'+y(rows[0].min)+'" y2="'+y(rows[0].min)+'" class="ln vr-v"/><line x1="'+(xs[0]-14)+'" x2="'+(xs[0]+14)+'" y1="'+y(rows[0].max)+'" y2="'+y(rows[0].max)+'" class="ln vr-v"/>';
+  }
+  rows.forEach(function(r,i){ var out=r.E<r.min||r.E>r.max; o+='<circle cx="'+xs[i]+'" cy="'+y(r.E)+'" r="'+(out?5:(r.live?4.5:3))+'" class="dot" fill="var(--vr-e)"'+(r.live?' fill-opacity=".55"':'')+'/>'; });
+  rows.forEach(function(r,i){ if(n<=12||i===0||i===n-1||r.c%5===0) o+='<text x="'+xs[i]+'" y="'+(H-8)+'" text-anchor="'+(i===0&&n>1?"start":(i===n-1&&n>1?"end":"middle"))+'" class="ax">'+r.c+(r.live?'(진행)':'')+'</text>'; });
+  o+='<line class="xh" y1="'+padT+'" y2="'+(padT+ph)+'" x1="0" x2="0" visibility="hidden"/><circle class="xd" r="5" fill="var(--vr-e)" visibility="hidden"/>';
+  chartReg[id]={W:W, xs:xs, ys:rows.map(function(r){return y(r.E);}), tips:rows.map(function(r){
+    return { t:r.c+"회차 · "+(r.live?"진행 중 ("+(r.d?mdLabel(r.d)+" 종가":"-")+")":mdLabel(r.d)+" 마감"),
+      rows:[["평가금 E","var(--vr-e)",usd(r.E)],["V","",usd(r.V)],["밴드","",usd(r.min,0)+" ~ "+usd(r.max,0)],["Pool","var(--vr-pool)",usd(r.pool)]].concat(r.invested!=null?[["투입원금","var(--vr-inv)",usd(r.invested)]]:[]) };
+  })};
+  return chartShell(id,'<svg class="chart2" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="VR 회차별 평가금, V 밴드, 투입원금, Pool 추이">'+o+'</svg>',W,H);
 }
 
 function stat(k,v){ return '<div class="stat"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>'; }
@@ -1506,6 +1572,8 @@ document.addEventListener("click", function(ev){
     var pp={pending:{session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()}, events:[]};
     if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true; }
     save(a,pp).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
+  } else if(act==="vr-csv"){
+    downloadCSV("VR_"+a.name+"_회차기록_"+todayKR(),["회차","마감일","종가","수량","평가금E","V","최소밴드","최대밴드","Pool(적립 전)","다음 회차 Pool","투입원금","다음 V"],E.vrHistory(a).map(function(r){return [r.c,r.d,r.close,r.qty,r.E,r.V,r.min,r.max,r.pool,r.poolNext,r.invested,r.Vnext];}));
   } else if(act==="copy"){
     var txt=copyText(a);
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){toast("주문을 복사했어요.");},function(){toast("복사가 막혀 있어요. 주문표를 길게 눌러 복사하세요.");}); }
@@ -1550,7 +1618,7 @@ document.addEventListener("click", function(ev){
     var rb=barsUpTo(a.ticker,a.nextUpdate); rb=rb[rb.length-1]||lastBar(a.ticker);
     var r=E.vrRoll(a,rb.c,rb.d), nx=r.next, prevR=snapA();
     var note={d:rb.d,side:"NOTE",text:(a.cycle||1)+"회차 마감: V "+usd(a.V)+" → "+usd(nx.V)+", Pool "+usd(nx.pool)+" (E "+usd(r.E)+")"};
-    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,cycleOrdered:false,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요."); undoSet((a.cycle||1)+"회차 V 갱신",prevR); render();});
+    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,hist:nx.hist,cycleOrdered:false,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요."); undoSet((a.cycle||1)+"회차 V 갱신",prevR); render();});
   } else if(act==="del"){
     if(b.getAttribute("data-armed")!=="1"){ b.setAttribute("data-armed","1"); b.textContent="한 번 더 누르면 삭제됩니다"; return; }
     var prevD=snapA();
