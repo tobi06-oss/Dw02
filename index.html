@@ -580,8 +580,9 @@ function banners(a){
 }
 
 function renderFillConfirm(a,p,bar){
-  var fills = fillEdits[a.id] && fillEdits[a.id].session===p.session ? fillEdits[a.id].fills : E.judgeAll(p.orders, bar);
-  fillEdits[a.id] = {session:p.session, fills:fills};
+  var fe = fillEdits[a.id] && fillEdits[a.id].session===p.session ? fillEdits[a.id] : {session:p.session, fills:E.judgeAll(p.orders, bar)};
+  fillEdits[a.id] = fe;
+  var fills = fe.fills;
   var rows = fills.map(function(f,i){
     var o=f.order;
     return '<div class="fill'+(f.filled?" on":"")+'">'+
@@ -594,8 +595,14 @@ function renderFillConfirm(a,p,bar){
   var n=fills.filter(function(f){return f.filled;}).length;
   var miss=E.bigMisses(p.orders,bar), missQ=miss.reduce(function(s,o){return s+o.qty;},0);
   var missHtml=miss.length?'<div class="bd" style="color:var(--danger)">큰수 때문에 못 산 매수가 있어요: '+esc(miss.map(function(o){return o.label+" "+o.qty+"주 (원래 "+usd(o.orig)+")";}).join(", "))+'. 종가 '+usd(bar.c)+'가 큰수 '+usd(miss[0].price)+'보다 높고 원래 매수가 이하라, 원래 가격에 걸었다면 '+missQ+'주가 체결됐을 거예요. 실제로 산 게 아니면 체크하지 마세요.</div>':'';
-  return '<div class="banner ok"><div class="row spread"><div class="bt">'+dlabel(p.session)+' 체결 확인</div><div class="small num">종가 '+usd(bar.c)+' · 고가 '+usd(bar.h)+'</div></div>'+
-    '<div class="bd">종가 기준으로 '+n+'건 체결로 판정했어요. 실제 체결과 다르면 체크와 가격·수량을 고친 뒤 반영하세요.'+
+  var head='<div class="row spread"><div class="bt">'+dlabel(p.session)+' 체결 확인</div><div class="small num">종가 '+usd(bar.c)+' · 고가 '+usd(bar.h)+'</div></div>';
+  // 판정된 체결이 없으면 주문 줄을 다 펼치지 않고, 실제로 체결된 게 있을 때만 직접 입력을 열게 한다
+  if(!n && !miss.length && !fe.manual)
+    return '<div class="banner ok">'+head+
+      '<div class="bd">종가 기준으로 체결된 주문이 없어요.</div>'+
+      '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="apply-fills">체결 없음으로 반영</button><button class="btn" data-act="fills-manual">체결 직접 입력</button></div></div>';
+  return '<div class="banner ok">'+head+
+    '<div class="bd">'+(n?'종가 기준으로 '+n+'건 체결로 판정했어요. 실제 체결과 다르면 체크와 가격·수량을 고친 뒤 반영하세요.':'실제로 체결된 주문을 체크하고 가격·수량을 고친 뒤 반영하세요.')+
       (p.orders.some(function(o){return o.ext;})?(bar.xh!=null?' 지정가매도는 프리·애프터장 고가 '+usd(bar.xh)+'까지 보고 판정했어요.':' 지정가매도는 프리·애프터장에서도 체결될 수 있는데, 이 날은 시간외 시세가 없어 본장 고가로만 판정했어요.'):'')+'</div>'+
     missHtml+
     '<div class="fills">'+rows+'</div>'+
@@ -1639,6 +1646,9 @@ document.addEventListener("click", function(ev){
     var txt=copyText(a);
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){toast("주문을 복사했어요.");},function(){toast("복사가 막혀 있어요. 주문표를 길게 눌러 복사하세요.");}); }
     else toast("복사가 막혀 있어요.");
+  } else if(act==="fills-manual"){
+    if(fillEdits[a.id]) fillEdits[a.id].manual=true;
+    render();
   } else if(act==="cancel-pending"){
     delete fillEdits[a.id];
     var prevC=snapA(), lbl=a.pending?dlabel(a.pending.session)+" 주문 기록 취소":"주문 기록 취소";
