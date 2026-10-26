@@ -432,6 +432,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="field vr-only" hidden><label for="n-V">시작 V ($)</label><input id="n-V" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-pool">Pool ($)</label><input id="n-pool" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-qty">보유 수량</label><input id="n-qty" type="number" step="1" inputmode="numeric" value="0"></div>
+      <div class="field vr-only" hidden><label for="n-avg">평단 ($, 보유 있을 때)</label><input id="n-avg" type="number" step="0.0001" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-contrib">2주 적립금 ($)</label><input id="n-contrib" type="number" step="0.01" value="150"></div>
       <div class="field vr-only" hidden><label for="n-next">다음 V 갱신일</label><input id="n-next" type="date"></div>
       <div class="field" style="align-self:end"><button class="btn primary" type="submit">계좌 만들기</button></div>
@@ -718,7 +719,7 @@ function renderVR(a){
       '<div class="bandz" style="left:'+X(plan.min)+'%;width:'+(X(plan.max)-X(plan.min))+'%"></div>'+
       '<div class="vt" style="left:'+X(a.V)+'%"></div><div class="et" style="left:'+X(plan.E)+'%" title="E"></div>'+
       '<span class="gl" style="left:'+X(plan.min)+'%">'+usd(plan.min,0)+'</span><span class="gl" style="left:'+X(a.V)+'%">V '+usd(a.V,0)+'</span><span class="gl" style="left:'+X(plan.max)+'%">'+usd(plan.max,0)+'</span></div>'+
-    '<div class="stats" style="margin-top:14px">'+stat("V",usd(a.V))+stat("평가금 E",usd(plan.E))+stat("Pool",usd(a.pool))+stat("이번 사이클 매수 한도 "+plan.limitPct+"%",usd(plan.limit)+' <span class="small muted">/ '+usd(plan.cap)+'</span>')+stat("보유",a.qty+"주")+stat("다음 V 갱신",a.nextUpdate?dlabel(a.nextUpdate):"-")+'</div></section>';
+    '<div class="stats" style="margin-top:14px">'+stat("V",usd(a.V))+stat("평가금 E",usd(plan.E))+stat("Pool",usd(a.pool))+stat("이번 사이클 매수 한도 "+plan.limitPct+"%",usd(plan.limit)+' <span class="small muted">/ '+usd(plan.cap)+'</span>')+stat("보유 · 평단",a.qty+"주"+'<div class="small muted">'+(a.avg&&a.qty?'평단 '+usd(a.avg)+' <span class="'+signCls(lb.c-a.avg)+'">'+pct(lb.c/a.avg-1)+'</span>':'평단 미입력 (상태 수정)')+'</div>')+stat("다음 V 갱신",a.nextUpdate?dlabel(a.nextUpdate):"-")+'</div></section>';
   var vt=function(list){ return list.length?'<table class="vtable">'+list.map(function(o,i){return '<tr><td class="idx">'+(i+1)+'</td><td class="r"><b>'+n2(o.price)+'</b> × 1</td><td class="r muted">Pool '+usd(o.left)+'</td></tr>';}).join("")+'</table>':''; };
   var buyHtml=vt(plan.buys), sellHtml=vt(plan.sells);
   var notes=plan.notes.slice();
@@ -826,7 +827,7 @@ function editorINF(a){
 }
 function editorVR(a){
   return '<details class="panel" id="ed-'+esc(a.id)+'"><summary>상태 수정</summary><form class="form" data-form="edit">'+
-    fld("e-name","이름",a.name,"text")+fld("e-V","V ($)",a.V,"number","0.01")+fld("e-pool","Pool ($)",a.pool,"number","0.01")+fld("e-qty","보유 수량",a.qty,"number","1")+
+    fld("e-name","이름",a.name,"text")+fld("e-V","V ($)",a.V,"number","0.01")+fld("e-pool","Pool ($)",a.pool,"number","0.01")+fld("e-qty","보유 수량",a.qty,"number","1")+fld("e-avg","평단 ($)",a.avg,"number","0.0001")+
     fld("e-G","G",a.G,"number","1")+fld("e-band","밴드 (0.15 = ±15%)",a.band,"number","0.01")+fld("e-contrib","2주 적립금 ($)",a.contrib,"number","0.01")+
     fld("e-startWeek","시작 주차 (1회차가 몇 주차였는지)",a.startWeek||0,"number","1")+fld("e-cycleUsed","이번 사이클 매수에 쓴 돈 ($)",a.cycleUsed||0,"number","0.01")+fld("e-invested","누적 투자금 ($)",a.invested,"number","0.01")+fld("e-nextUpdate","다음 V 갱신일",a.nextUpdate,"date")+
     fld("e-cycle","회차",a.cycle,"number","1")+fld("e-fee","수수료 %",a.fee,"number","0.01")+
@@ -1664,7 +1665,7 @@ document.addEventListener("click", function(ev){
     var fills=fe.fills;
     var res = a.type==="VR" ? E.vrApply(a,fills,bar) : E.infApply(a,fills,bar);
     var n=res.next, patch={};
-    var keys = a.type==="VR" ? ["qty","pool","cycleCap","cycleUsed"] : ["T","cash","qty","avg","mode","revDay","realized","cycle","principal","aside"];
+    var keys = a.type==="VR" ? ["qty","avg","pool","cycleCap","cycleUsed"] : ["T","cash","qty","avg","mode","revDay","realized","cycle","principal","aside"];
     keys.forEach(function(k){ patch[k]= n[k]===undefined?null:n[k]; });
     patch.pending=a.type==="VR"?vrCarry(a,n,p2.session):null;
     patch.events=res.events;
@@ -1712,11 +1713,11 @@ document.addEventListener("submit", function(ev){
     var a=accounts[selected]; if(!a) return;
     var num=function(id){ var e=$(id); if(!e) return undefined; var v=e.value; return v===""?null:parseFloat(v); };
     var patch={name:$("e-name").value.trim()||a.name};
-    var numKeys = a.type==="VR" ? ["V","pool","qty","G","band","contrib","startWeek","cycleUsed","invested","cycle","fee"] : ["principal","cash","qty","avg","T","basePct","fee","bigMult","revDay"];
+    var numKeys = a.type==="VR" ? ["V","pool","qty","avg","G","band","contrib","startWeek","cycleUsed","invested","cycle","fee"] : ["principal","cash","qty","avg","T","basePct","fee","bigMult","revDay"];
     numKeys.forEach(function(k){ var v=num("e-"+k); if(v!==undefined) patch[k]=v; });
     if(a.type==="VR"){ patch.nextUpdate=$("e-nextUpdate").value||null; patch.vrType=$("e-vrType").value;
       // 이번 사이클 한도를 수정값으로 다시 잡는다: (지금 Pool + 이번 사이클에 쓴 돈) = 사이클 시작 Pool
-      var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); }
+      var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); if(patch.qty===0) patch.avg=null; }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
     var note={d:new Date().toISOString().slice(0,10),side:"NOTE",text:"상태를 직접 수정했어요."};
     patch.log=[note].concat(a.log||[]).slice(0,400);
@@ -1742,7 +1743,7 @@ document.addEventListener("submit", function(ev){
     } else {
       var V=parseFloat($("n-V").value), pool=parseFloat($("n-pool").value);
       if(!(V>0)||!(pool>=0)){ toast("시작 V와 Pool을 넣어주세요."); return; }
-      Object.assign(base,{V:V,pool:pool,qty:parseInt($("n-qty").value,10)||0,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:pool+(parseInt($("n-qty").value,10)||0)*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:1});
+      Object.assign(base,{V:V,pool:pool,qty:parseInt($("n-qty").value,10)||0,avg:(parseInt($("n-qty").value,10)||0)>0&&parseFloat($("n-avg").value)>0?parseFloat($("n-avg").value):null,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:pool+(parseInt($("n-qty").value,10)||0)*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:1});
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
     db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}]); render(); });

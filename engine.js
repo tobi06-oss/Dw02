@@ -340,15 +340,20 @@
     if (s.cycleCap == null) s.cycleCap = r2(((a.pool || 0) + (a.cycleUsed || 0)) * vrLimitPct(a) / 100);
     fills.filter(function (f) { return f.filled && f.qty > 0 && f.px > 0; }).forEach(function (f) {
       if (f.order.side === "BUY") {
+        // 평단: 무매와 같이 수수료 빼고 체결가로 가중평균. 기존 보유분 평단을 모르면(null) 계산하지 않는다
+        if (s.qty === 0) s.avg = f.px;
+        else if (s.avg != null) s.avg = (s.avg * s.qty + f.px * f.qty) / (s.qty + f.qty);
         s.qty += f.qty; s.pool -= f.px * f.qty * (1 + fee);
         s.cycleUsed = r2((s.cycleUsed || 0) + f.px * f.qty * (1 + fee));
       } else {
         var q = Math.min(f.qty, s.qty);
         s.qty -= q; s.pool += f.px * q * (1 - fee);
+        if (s.qty === 0) s.avg = null;
       }
       log.push({ d: bar.d, side: f.order.side, kind: f.order.kind, px: f.px, q: f.qty });
     });
     s.pool = r2(s.pool);
+    if (s.avg != null) s.avg = Math.round(s.avg * 10000) / 10000;
     return { next: s, log: log, events: [] };
   }
 
