@@ -475,7 +475,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 (function(){
 "use strict";
 var E = window.Engine;
-var db = null, loaded = false, accounts = {}, prices = {}, selected = null, fillEdits = {};
+var db = null, loaded = false, accounts = {}, prices = {}, selected = null, fillEdits = {}, backdateOpen = {};
 try { selected = localStorage.getItem("desk.sel"); } catch(e) {}
 
 var $ = function(id){ return document.getElementById(id); };
@@ -574,7 +574,7 @@ function banners(a){
       var stale = lb && lb.d > p.session;
       out+='<div class="banner '+(stale?"warn":"info")+'"><div class="bt">'+(stale?dlabel(p.session)+" 거래 기록이 없어요":dlabel(p.session)+" 체결 대기 중")+'</div>'+
         '<div class="bd">'+(stale?"휴장일이었거나 종가가 빠졌어요. 휴장일이면 건너뛰고, 거래가 있었다면 아래에서 그날 종가를 입력하세요.":"주문을 넣었다고 기록해 두었어요. 미국장 마감 후 종가가 들어오면 체결을 자동으로 판정합니다.")+'</div>'+
-        '<div class="actions" style="margin-top:0"><button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button></div></div>';
+        '<div class="actions" style="margin-top:0"><button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button>'+(a.type==="INF"?'<button class="btn ghost" data-act="backdate">주문 날짜 바꾸기</button>':'')+'</div></div>';
     }
   }
   return out;
@@ -636,6 +636,30 @@ function bigEdit(a,plan){
 }
 
 // VR은 2주 회차마다 기간 예약주문을 한 번만 넣는다. 그 뒤로는 같은 주문이 유지된다고 보고 매일 체결만 확인한다.
+/* ----- 주문 날짜 고치기: "주문 넣었어요"를 장이 끝난 뒤에 눌러 다음 날로 기록됐을 때 ----- */
+function lastFillDay(a){
+  var m=a.lastFill||"";
+  (a.log||[]).forEach(function(l){ if((l.side==="BUY"||l.side==="SELL")&&l.d>m) m=l.d; });
+  return m;
+}
+function backdateDays(a, plan){
+  var last=lastFillDay(a), b=bars(a.ticker), ds=[];
+  for(var i=1;i<b.length;i++) if(b[i].d>last) ds.push(b[i].d);
+  ds=ds.slice(-5);
+  if(plan&&ds.indexOf(plan.session)<0) ds.push(plan.session);
+  return ds.reverse();
+}
+function backdatePanel(a, plan){
+  if(!backdateOpen[a.id]||!plan) return "";
+  var ds=backdateDays(a,plan), cur=a.pending&&a.pending.session;
+  var def=ds.filter(function(d){ return d!==cur&&d!==plan.session; })[0]||ds[0];
+  var opts=ds.map(function(d){ return '<option value="'+d+'"'+(d===def?" selected":"")+'>'+dlabel(d)+(barOn(a.ticker,d)?" · 종가 나옴":" · 아직 장 전")+(d===cur?" (지금 기록)":"")+'</option>'; }).join("");
+  return '<div class="banner info"><div class="bt">실제로 주문 넣은 날 고르기</div>'+
+    '<div class="bd">"주문 넣었어요"를 늦게 눌러 날짜가 밀렸을 때 쓰세요. 고른 날의 전날 종가로 그날 주문표를 다시 만들고, 이미 종가가 나온 날이면 바로 체결을 판정해요. 체결을 반영한 뒤에는 다음 날 주문표가 새 상태로 다시 계산돼요.</div>'+
+    '<div class="field" style="max-width:260px"><label for="bd-day">주문 넣은 미국장 날짜</label><select id="bd-day">'+opts+'</select></div>'+
+    '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="backdate-save">이 날 주문으로 기록</button><button class="btn ghost" data-act="backdate-close">닫기</button></div></div>';
+}
+
 function vrOrdered(a){ return a.type==="VR" && a.cycleOrdered===true; }
 function vrCarry(a, st, fromD){
   if(!vrOrdered(a) || !a.nextUpdate) return null;
@@ -657,7 +681,7 @@ function slip(a, plan, buyHtml, sellHtml, notes){
     '<div class="col sell"><h3>매도</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
     (vrLock?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
-    '<div class="actions">'+(placed||vrLock?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+'<button class="btn" data-act="copy">주문 복사</button></div></section>';
+    '<div class="actions">'+(placed||vrLock?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+'<button class="btn" data-act="copy">주문 복사</button>'+(a.type==="INF"&&!a.pending?'<button class="btn ghost" data-act="backdate">지난 날 주문 기록</button>':'')+'</div></section>';
 }
 
 function renderINF(a){
@@ -690,7 +714,7 @@ function renderINF(a){
   var sellHtml=sells.map(ordRow).join("");
   var lk=a.linked==="tracker", hasRec=lk&&!!trk.meta;
   var missing = lk&&trk.metaLoaded&&!trk.meta ? '<div class="banner warn"><div class="bt">기록 사이클이 없어요</div><div class="bd">원화 기록·매매내역을 담을 사이클을 새로 만듭니다. 지금까지 반영한 체결은 매매내역으로 옮겨져요.</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">사이클 새로 만들기</button></div></div>' : "";
-  return banners(a)+linkBanner(a)+missing+(hasRec?recHead(a):"")+hero+slip(a,plan,buyHtml,sellHtml,plan.notes)+undoPanel()+
+  return banners(a)+backdatePanel(a,plan)+linkBanner(a)+missing+(hasRec?recHead(a):"")+hero+slip(a,plan,buyHtml,sellHtml,plan.notes)+undoPanel()+
     (hasRec?amountForm(a)+tradeForm(a)+tradeLog(a)+recCharts(a):"")+editorINF(a)+(lk?(hasRec?dangerZone():"")+archiveSection():logPanel(a));
 }
 
@@ -1641,6 +1665,23 @@ document.addEventListener("click", function(ev){
     var pp={pending:{session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()}, events:[]};
     if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true; }
     save(a,pp).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
+  } else if(act==="backdate"||act==="backdate-close"){
+    backdateOpen[a.id]=act==="backdate";
+    render();
+  } else if(act==="backdate-save"){
+    var sel=$("bd-day"), d=sel&&sel.value; if(!d) return;
+    var allB=bars(a.ticker), base=allB.filter(function(x){ return x.d<d; });
+    if(!base.length){ toast("그날 전 종가가 없어 주문표를 만들 수 없어요."); return; }
+    var bp2=E.infPlan(a,base); if(!bp2) return;
+    var ords=bp2.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
+    var prevBd=snapA(), hasBar=!!barOn(a.ticker,d);
+    delete fillEdits[a.id];
+    b.disabled=true;
+    save(a,{pending:{session:d,basis:base[base.length-1].d,orders:ords,placedAt:Date.now()},events:[]}).then(function(){
+      backdateOpen[a.id]=false;
+      toast(dlabel(d)+" 주문으로 기록했어요."+(hasBar?" 위에서 체결을 확인하세요.":""));
+      undoSet(dlabel(d)+" 주문 넣음 (날짜 고침)",prevBd); render();
+    }).catch(function(e){ console.error(e); toast("기록하지 못했어요."); b.disabled=false; });
   } else if(act==="vr-csv"){
     downloadCSV("VR_"+a.name+"_회차기록_"+todayKR(),["회차","마감일","종가","수량","평가금E","V","최소밴드","최대밴드","Pool(적립 전)","다음 회차 Pool","투입원금","다음 V","매수 주수","매도 주수"],vrRows(a,null).map(function(r){return [r.c,r.d,r.close,r.qty,r.E,r.V,r.min,r.max,r.pool,r.poolNext,r.invested,r.Vnext,r.buyQ,r.sellQ];}));
   } else if(act==="copy"){
@@ -1668,6 +1709,7 @@ document.addEventListener("click", function(ev){
     var keys = a.type==="VR" ? ["qty","avg","pool","cycleCap","cycleUsed"] : ["T","cash","qty","avg","mode","revDay","realized","cycle","principal","aside"];
     keys.forEach(function(k){ patch[k]= n[k]===undefined?null:n[k]; });
     patch.pending=a.type==="VR"?vrCarry(a,n,p2.session):null;
+    if(a.type!=="VR") patch.lastFill=bar.d;
     patch.events=res.events;
     patch.log=res.log.slice().reverse().concat(a.log||[]).slice(0,400);
     b.disabled=true;
