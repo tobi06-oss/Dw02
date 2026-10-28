@@ -571,10 +571,11 @@ function banners(a){
     if(bar){ out+=renderFillConfirm(a,p,bar); }
     else {
       var lb=lastBar(a.ticker);
-      var stale = lb && lb.d > p.session;
+      var stale = lb && lb.d > p.session, past = stale ? null : pastPlan(a);
       out+='<div class="banner '+(stale?"warn":"info")+'"><div class="bt">'+(stale?dlabel(p.session)+" 거래 기록이 없어요":dlabel(p.session)+" 체결 대기 중")+'</div>'+
         '<div class="bd">'+(stale?"휴장일이었거나 종가가 빠졌어요. 휴장일이면 건너뛰고, 거래가 있었다면 아래에서 그날 종가를 입력하세요.":"주문을 넣었다고 기록해 두었어요. 미국장 마감 후 종가가 들어오면 체결을 자동으로 판정합니다.")+'</div>'+
-        '<div class="actions" style="margin-top:0"><button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button></div></div>';
+        (past?'<div class="bd">'+dlabel(past.session)+' 장 마감 뒤에 눌러서 다음 장 주문으로 기록됐다면, 아래 버튼으로 '+dlabel(past.session)+' 주문표로 바꿔 그날 종가로 체결을 확인하세요.</div>':'')+
+        '<div class="actions" style="margin-top:0">'+(past?'<button class="btn primary" data-act="place-past">'+dlabel(past.session)+' 주문이었어요</button>':'')+'<button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button></div></div>';
     }
   }
   return out;
@@ -645,10 +646,29 @@ function vrCarry(a, st, fromD){
   return {session:ns,basis:fromD,orders:orders,placedAt:Date.now(),carried:true};
 }
 
+// 지난 장 주문을 장 마감 뒤에 기록할 때: 마지막 종가가 나온 날의 주문표를 그 전날 종가 기준으로 다시 만든다.
+// 무매만. 그 날을 이미 반영했거나 건너뛴 계좌면 null.
+function pastPlan(a){
+  if(a.type!=="INF") return null;
+  var b=bars(a.ticker); if(b.length<2) return null;
+  var d=b[b.length-1].d;
+  if(a.lastSession&&a.lastSession>=d) return null;
+  if((a.log||[]).some(function(l){ return l.d>=d; })) return null;
+  var p=E.infPlan(a,b.slice(0,-1));
+  if(!p||!p.orders.length) return null;
+  p.session=d;
+  return p;
+}
+function pendingOf(p){
+  var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
+  return {session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()};
+}
+
 function slip(a, plan, buyHtml, sellHtml, notes){
   var placed = a.pending && a.pending.session===plan.session;
   var carried = placed && a.pending.carried;
   var vrLock = a.type==="VR" && !placed && (vrOrdered(a) || plan.due);
+  var past = !placed && !a.pending ? pastPlan(a) : null;
   var vrMsg = plan.due ? "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요." : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(a.nextUpdate):"-")+") 후에 넣어요.";
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
     '<div class="when">'+dlabel(plan.session)+' 미국장 주문</div></div>'+
@@ -657,7 +677,8 @@ function slip(a, plan, buyHtml, sellHtml, notes){
     '<div class="col sell"><h3>매도</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
     (vrLock?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
-    '<div class="actions">'+(placed||vrLock?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+'<button class="btn" data-act="copy">주문 복사</button></div></section>';
+    '<div class="actions">'+(placed||vrLock?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+'<button class="btn" data-act="copy">주문 복사</button>'+(past?'<button class="btn ghost" data-act="place-past">'+dlabel(past.session)+' 주문으로 기록</button>':'')+'</div>'+
+    (past?'<div class="small muted" style="margin-top:6px">'+dlabel(past.session)+' 주문을 넣고 기록을 못 했다면 "'+dlabel(past.session)+' 주문으로 기록"을 누르세요. 그날 주문표로 기록하고 바로 체결을 확인해요.</div>':'')+'</section>';
 }
 
 function renderINF(a){
@@ -1637,10 +1658,14 @@ document.addEventListener("click", function(ev){
     save(a,{bigOv:nv?{session:bp.session,price:nv}:null}).then(function(){ toast(nv?"큰수를 "+n2(nv)+"로 바꿨어요.":"큰수를 자동 값으로 돌렸어요."); undoSet("큰수 가격 변경",prevB); render(); });
   } else if(act==="place"){
     var p=a._plan, prevP=snapA();
-    var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
-    var pp={pending:{session:p.session,basis:p.basis.d,orders:orders,placedAt:Date.now()}, events:[]};
+    var pp={pending:pendingOf(p), events:[]};
     if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true; }
     save(a,pp).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
+  } else if(act==="place-past"){
+    // 대기 중인 다음 장 기록이 있으면 그것을 지난 장 주문표로 바꾼다 (이미 종가가 나온 기록은 건드리지 않음)
+    var ps=pastPlan(a); if(!ps||(a.pending&&barOn(a.ticker,a.pending.session))) return;
+    var prevS=snapA(); delete fillEdits[a.id];
+    save(a,{pending:pendingOf(ps),events:[]}).then(function(){ toast(dlabel(ps.session)+" 주문으로 기록했어요. 그날 종가로 체결을 확인하세요."); undoSet(dlabel(ps.session)+" 주문 넣음 (마감 후 기록)",prevS); render(); });
   } else if(act==="vr-csv"){
     downloadCSV("VR_"+a.name+"_회차기록_"+todayKR(),["회차","마감일","종가","수량","평가금E","V","최소밴드","최대밴드","Pool(적립 전)","다음 회차 Pool","투입원금","다음 V","매수 주수","매도 주수"],vrRows(a,null).map(function(r){return [r.c,r.d,r.close,r.qty,r.E,r.V,r.min,r.max,r.pool,r.poolNext,r.invested,r.Vnext,r.buyQ,r.sellQ];}));
   } else if(act==="copy"){
@@ -1653,7 +1678,8 @@ document.addEventListener("click", function(ev){
   } else if(act==="cancel-pending"){
     delete fillEdits[a.id];
     var prevC=snapA(), lbl=a.pending?dlabel(a.pending.session)+" 주문 기록 취소":"주문 기록 취소";
-    var cp={pending:null};
+    var cp={pending:null}, lbC=lastBar(a.ticker);
+    if(a.type==="INF"&&a.pending&&lbC&&lbC.d>=a.pending.session) cp.lastSession=a.pending.session;
     if(a.type==="VR"&&a.pending){
       var waiting=!barOn(a.ticker,a.pending.session);
       if(a.pending.cycleOrder&&waiting&&!(lastBar(a.ticker)&&lastBar(a.ticker).d>a.pending.session)) cp.cycleOrdered=false;
@@ -1668,6 +1694,7 @@ document.addEventListener("click", function(ev){
     var keys = a.type==="VR" ? ["qty","avg","pool","cycleCap","cycleUsed"] : ["T","cash","qty","avg","mode","revDay","realized","cycle","principal","aside"];
     keys.forEach(function(k){ patch[k]= n[k]===undefined?null:n[k]; });
     patch.pending=a.type==="VR"?vrCarry(a,n,p2.session):null;
+    if(a.type==="INF") patch.lastSession=p2.session;
     patch.events=res.events;
     patch.log=res.log.slice().reverse().concat(a.log||[]).slice(0,400);
     b.disabled=true;
