@@ -957,16 +957,36 @@ function curDoc(path){
 function snap(paths){ return paths.map(function(p){ return {p:p, d:curDoc(p)}; }); }
 // 작업 직전(d)과 직후(a) 상태를 같이 저장해 두고, 되돌릴 때는 "그 작업이 바꾼 부분만" 되돌린다.
 // 그 부분을 나중 작업이 다시 바꿨으면(충돌) 확인창을 띄운다.
+// 실행취소 목록은 무매와 VR을 따로 둔다: 계좌 문서는 그 계좌 유형, 원화 기록(cycle·entries·cycles)은 무매
+function undoKind(u){
+  if(u.kind) return u.kind;
+  var k=null;
+  (u.ops||[]).forEach(function(o){
+    if(k) return;
+    var sp=o.p.split("/");
+    if(sp[0]!=="accounts"){ k="INF"; return; }
+    var doc=o.d||o.a||accounts[sp[1]];
+    if(doc&&doc.type) k=doc.type==="VR"?"VR":"INF";
+  });
+  return k||"INF";
+}
+function curKind(){ var a=selected?accounts[selected]:null; return a&&a.type==="VR"?"VR":"INF"; }
+// 그 유형 계좌가 하나도 없으면(예: 하나뿐인 VR 계좌를 지운 직후) 되살릴 수 있게 어느 탭에서나 보여준다
+function kindStack(){
+  var k=curKind(), has={};
+  Object.keys(accounts).forEach(function(id){ has[accounts[id].type==="VR"?"VR":"INF"]=1; });
+  return undoStack.filter(function(u){ var uk=undoKind(u); return uk===k||!has[uk]; });
+}
 function pushUndo(label, ops){
   if(!db||!ops||!ops.length) return;
   var id="u"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), t=Date.now();
-  var local={id:id,label:label,time:t,ops:ops}; undoStack.push(local);
+  var local={id:id,label:label,time:t,ops:ops}; local.kind=undoKind(local); undoStack.push(local);
   Promise.all(ops.map(function(o){ return db.doc(o.p).get(); })).then(function(afters){
     var item={label:label,time:t,ops:ops.map(function(o,i){ return {p:o.p, d:o.d, a:afters[i]==null?null:afters[i]}; })};
-    local.ops=item.ops;
+    item.kind=undoKind({ops:item.ops}); local.ops=item.ops; local.kind=item.kind;
     return db.doc("undo/"+id).set(item);
   }).catch(function(e){ console.error("undo save",e); });
-  var old=undoStack.slice().sort(function(a,b){return a.time-b.time;});
+  var old=undoStack.filter(function(u){ return undoKind(u)===local.kind; }).sort(function(a,b){return a.time-b.time;});
   while(old.length>UNDO_MAX){ var o=old.shift(); undoStack=undoStack.filter(function(u){return u.id!==o.id;}); db.doc("undo/"+o.id).delete(); }
 }
 function normJ(x){ if(Array.isArray(x)) return x.map(normJ); if(x&&typeof x==="object"){ var o={}; Object.keys(x).sort().forEach(function(k){ if(x[k]!==undefined) o[k]=normJ(x[k]); }); return o; } return x===undefined?null:x; }
@@ -1042,18 +1062,18 @@ function runUndo(u){
 }
 function undoFab(){
   var el=$("undo-fab"); if(!el) return;
-  var u=undoStack.slice().sort(function(a,b){return a.time-b.time;}).pop();
+  var u=kindStack().sort(function(a,b){return a.time-b.time;}).pop();
   if(!u||!db){ el.hidden=true; return; }
   el.hidden=false; el.setAttribute("data-id",u.id); el.disabled=false;
   el.innerHTML='↶ 실행취소 <span>'+esc(u.label)+'</span>';
 }
 function undoPanel(){
-  if(!undoStack.length) return "";
-  var list=undoStack.slice().sort(function(a,b){return b.time-a.time;});
-  return '<details class="panel" id="undo-panel"><summary>실행취소 ('+list.length+')</summary>'+list.map(function(u){
+  var list=kindStack().sort(function(a,b){return b.time-a.time;});
+  if(!list.length) return "";
+  return '<details class="panel" id="undo-panel"><summary>'+(curKind()==="VR"?"VR":"무매")+' 실행취소 ('+list.length+')</summary>'+list.map(function(u){
     var d=new Date(u.time), t=(d.getMonth()+1)+"/"+d.getDate()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<div class="undo-row"><span class="l">'+esc(u.label)+'<span class="tm">'+t+'</span></span><button type="button" class="undo-btn" data-act="undo" data-id="'+esc(u.id)+'">실행취소</button></div>';
-  }).join("")+'<div class="hint">아무 항목이나 골라서 그 작업이 바꾼 부분만 되돌릴 수 있어요. 그 부분을 나중 작업이 다시 바꿨으면 확인창이 떠요. 최근 '+UNDO_MAX+'개까지 남고 창을 닫아도 유지됩니다.</div></details>';
+  }).join("")+'<div class="hint">아무 항목이나 골라서 그 작업이 바꾼 부분만 되돌릴 수 있어요. 그 부분을 나중 작업이 다시 바꿨으면 확인창이 떠요. 무매와 VR은 목록이 따로이고, 각각 최근 '+UNDO_MAX+'개까지 남고 창을 닫아도 유지됩니다.</div></details>';
 }
 
 /* ----- 차트 (SVG 문자열) ----- */
