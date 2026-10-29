@@ -317,7 +317,7 @@ table.log.entries,table.log.trades,.archive-body table.log{min-width:0}
 .placed-x:hover{color:var(--ink)}
 .undo-btn{background:var(--accent-soft);color:var(--accent);border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:700;white-space:nowrap}
 .danger-zone{border-color:var(--danger-soft)}
-.danger-zone h2{color:var(--danger)}
+details.danger-zone>summary,details.danger-zone>summary::before{color:var(--danger)}
 .danger-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .danger-title{font-size:13px;font-weight:600}
 .danger-desc{font-size:11.5px;color:var(--ink-3);margin-top:2px;max-width:440px}
@@ -712,7 +712,7 @@ function renderINF(a){
   var lk=a.linked==="tracker", hasRec=lk&&!!trk.meta;
   var missing = lk&&trk.metaLoaded&&!trk.meta ? '<div class="banner warn"><div class="bt">기록 사이클이 없어요</div><div class="bd">원화 기록·매매내역을 담을 사이클을 새로 만듭니다. 지금까지 반영한 체결은 매매내역으로 옮겨져요.</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">사이클 새로 만들기</button></div></div>' : "";
   return banners(a)+linkBanner(a)+missing+(hasRec?recHead(a):"")+hero+slip(a,plan,buyHtml,sellHtml,plan.notes)+undoPanel()+
-    (hasRec?amountForm(a)+tradeForm(a)+tradeLog(a)+recCharts(a):"")+editorINF(a)+(lk?(hasRec?dangerZone():"")+archiveSection():logPanel(a));
+    (hasRec?amountForm(a)+tradeForm(a)+tradeLog(a)+recCharts(a):"")+editorINF(a)+(lk?archiveSection()+(hasRec?dangerZone():""):logPanel(a));
 }
 
 function renderVR(a){
@@ -982,12 +982,46 @@ function pushUndo(label, ops){
   var id="u"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), t=Date.now();
   var local={id:id,label:label,time:t,ops:ops}; local.kind=undoKind(local); undoStack.push(local);
   Promise.all(ops.map(function(o){ return db.doc(o.p).get(); })).then(function(afters){
-    var item={label:label,time:t,ops:ops.map(function(o,i){ return {p:o.p, d:o.d, a:afters[i]==null?null:afters[i]}; })};
-    item.kind=undoKind({ops:item.ops}); local.ops=item.ops; local.kind=item.kind;
+    var full=ops.map(function(o,i){ return {p:o.p, d:o.d, a:afters[i]==null?null:afters[i]}; });
+    // 유형은 줄이기 전 문서로 판단한다 (줄인 문서에는 type이 빠질 수 있음)
+    var item={label:label,time:t,slim:true,kind:undoKind({ops:full}),ops:full.map(slimOp)};
+    local.ops=item.ops; local.kind=item.kind;
     return db.doc("undo/"+id).set(item);
   }).catch(function(e){ console.error("undo save",e); });
   var old=undoStack.filter(function(u){ return undoKind(u)===local.kind; }).sort(function(a,b){return a.time-b.time;});
   while(old.length>UNDO_MAX){ var o=old.shift(); undoStack=undoStack.filter(function(u){return u.id!==o.id;}); db.doc("undo/"+o.id).delete(); }
+}
+// 실행취소 기록에는 작업 전후로 달라진 필드만 남긴다. 매매 기록(log) 같은 큰 목록을 통째로 두 벌씩 저장하면
+// 실행취소 문서가 커져서 앱을 열 때마다 내려받는 양이 많아진다. 같은 필드는 planOp에서 어차피 건너뛴다.
+function slimOp(o){
+  if(!o.d||!o.a||typeof o.d!=="object"||typeof o.a!=="object") return o;
+  var d={}, a={};
+  Object.keys(o.d).concat(Object.keys(o.a)).forEach(function(k){
+    if(k in d||k in a||same(o.d[k],o.a[k])) return;
+    var bv=o.d[k], av=o.a[k];
+    // 목록은 mergeList가 항목 단위로 비교하므로, 전후가 똑같은 항목은 빼도 결과가 같다
+    if(Array.isArray(bv)&&Array.isArray(av)){
+      var bk={}, ak={};
+      bv.forEach(function(x){ bk[itemKey(x)]=x; }); av.forEach(function(x){ ak[itemKey(x)]=x; });
+      var keep=function(other){ return function(x){ var y=other[itemKey(x)]; return !(y!==undefined&&same(x,y)); }; };
+      if(Object.keys(bk).length===bv.length&&Object.keys(ak).length===av.length){ bv=bv.filter(keep(ak)); av=av.filter(keep(bk)); }
+    }
+    if(bv!==undefined) d[k]=bv;
+    if(av!==undefined) a[k]=av;
+  });
+  return {p:o.p, d:d, a:a, slim:true};
+}
+// 예전에 통째로 저장된 실행취소 기록을 한 번씩 줄여서 다시 저장한다
+var undoSlimmed={};
+function slimOldUndo(list){
+  if(!db) return;
+  list.forEach(function(u){
+    if(u.slim||undoSlimmed[u.id]||!u.ops.every(function(o){ return o.a!==undefined; })) return;
+    undoSlimmed[u.id]=1;
+    var item={label:u.label,time:u.time,slim:true,kind:undoKind(u),ops:u.ops.map(slimOp)};
+    Object.keys(u).forEach(function(k){ if(k!=="id"&&!(k in item)) item[k]=u[k]; });
+    db.doc("undo/"+u.id).set(item).catch(function(e){ console.error("undo slim",e); });
+  });
 }
 function normJ(x){ if(Array.isArray(x)) return x.map(normJ); if(x&&typeof x==="object"){ var o={}; Object.keys(x).sort().forEach(function(k){ if(x[k]!==undefined) o[k]=normJ(x[k]); }); return o; } return x===undefined?null:x; }
 function same(a,b){ return JSON.stringify(normJ(a))===JSON.stringify(normJ(b)); }
@@ -1016,7 +1050,7 @@ function planOp(op, cur, skipKeys){
   if(!b&&!a) return {kind:"none",conflict:false};
   if(!b) return {kind:"delete", conflict: !!cur && !same(cur,a)};
   if(!a) return {kind:"set", data:b, conflict: !!cur};
-  if(!cur) return {kind:"set", data:b, conflict:true};
+  if(!cur) return op.slim ? {kind:"none", conflict:true} : {kind:"set", data:b, conflict:true};
   var patch={}, conflict=false, changed=false, keys={};
   Object.keys(b).concat(Object.keys(a)).forEach(function(k){ keys[k]=1; });
   Object.keys(keys).forEach(function(k){
@@ -1387,8 +1421,8 @@ function recCharts(a){
 }
 function dangerZone(){
   var on=armed["cycle"];
-  return '<section class="panel danger-zone"><h2>위험 구역</h2><div class="danger-row"><div><div class="danger-title">현재 사이클 기록 지우기</div><div class="danger-desc">이 사이클의 원화 기록과 매매내역을 모두 지우고, 계좌를 원금 그대로 T 0부터 다시 시작합니다. 지운 직후에는 실행취소로 되돌릴 수 있어요.</div></div>'+
-    '<button type="button" class="btn danger" data-act="rec-del-cycle">'+(on?"정말 지울까요? 한 번 더":"사이클 기록 지우기")+'</button></div></section>';
+  return '<details class="panel danger-zone" id="danger-zone"><summary>위험 구역</summary><div class="danger-row"><div><div class="danger-title">현재 사이클 기록 지우기</div><div class="danger-desc">이 사이클의 원화 기록과 매매내역을 모두 지우고, 계좌를 원금 그대로 T 0부터 다시 시작합니다. 지운 직후에는 실행취소로 되돌릴 수 있어요.</div></div>'+
+    '<button type="button" class="btn danger" data-act="rec-del-cycle">'+(on?"정말 지울까요? 한 번 더":"사이클 기록 지우기")+'</button></div></details>';
 }
 function archiveSection(){
   var cs=trk.cycles;
@@ -1829,24 +1863,27 @@ $("n-type").addEventListener("change", function(){
 
 /* ---------- boot ---------- */
 render();
+// 앱을 열 때 Firestore 응답이 여러 개 연달아 오므로, 같은 프레임 안의 다시 그리기는 한 번으로 묶는다
+var renderQueued=false;
+function renderSoon(){ if(renderQueued) return; renderQueued=true; requestAnimationFrame(function(){ renderQueued=false; render(); }); }
 window.DeskApp = {
   start: function(adapter){
     db=adapter; loaded=false; accounts={}; prices={};
     trk={meta:null,metaLoaded:false,entries:[],entriesLoaded:false,cycles:[],migrated:false}; undoStack=[]; rf.aDate=rf.tDate=todayKR(); rf.editTrade=rf.editEntry=rf.inline=null;
     render();
-    db.doc("cycle/current").onSnapshot(function(s){ trk.meta=s.exists?s.data():null; trk.metaLoaded=true; if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); render(); }, function(e){ console.error("cycle",e); });
-    db.collection("entries").onSnapshot(function(s){ trk.entries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; if(trk.metaLoaded) maybeMigrate(); render(); }, function(e){ console.error("entries",e); });
-    db.collection("undo").onSnapshot(function(s){ undoStack=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).filter(function(u){ return u.ops&&u.ops.length; }); render(); }, function(e){ console.error("undo",e); });
-    db.collection("cycles").onSnapshot(function(s){ trk.cyclesLoaded=true; trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); render(); }, function(e){ console.error("cycles",e); });
+    db.doc("cycle/current").onSnapshot(function(s){ trk.meta=s.exists?s.data():null; trk.metaLoaded=true; if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); renderSoon(); }, function(e){ console.error("cycle",e); });
+    db.collection("entries").onSnapshot(function(s){ trk.entries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; if(trk.metaLoaded) maybeMigrate(); renderSoon(); }, function(e){ console.error("entries",e); });
+    db.collection("undo").onSnapshot(function(s){ undoStack=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).filter(function(u){ return u.ops&&u.ops.length; }); slimOldUndo(undoStack); renderSoon(); }, function(e){ console.error("undo",e); });
+    db.collection("cycles").onSnapshot(function(s){ trk.cyclesLoaded=true; trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); renderSoon(); }, function(e){ console.error("cycles",e); });
     db.collection("accounts").onSnapshot(function(snap){
       var next={};
       snap.docs.forEach(function(doc){ var v=JSON.parse(JSON.stringify(doc.data())); v.id=doc.id; next[doc.id]=v; });
-      accounts=next; loaded=true; $("offline").hidden=true; render();
+      accounts=next; loaded=true; $("offline").hidden=true; renderSoon();
     }, function(){ $("offline").hidden=false; });
     db.collection("prices").onSnapshot(function(snap){
       var next={};
       snap.docs.forEach(function(doc){ next[doc.id]=doc.data(); });
-      prices=next; render();
+      prices=next; renderSoon();
     }, function(){ $("offline").hidden=false; });
   },
   stop: function(){ if(db&&db.stop) db.stop(); db=null; accounts={}; prices={}; loaded=false; }
@@ -1857,13 +1894,13 @@ window.DeskApp = {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-import { getMessaging, getToken, deleteToken, isSupported as pushSupported } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { FIREBASE_CONFIG, VAPID_KEY } from "./firebase-config.js";
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
-const fs = initializeFirestore(app, { ignoreUndefinedProperties: true });
+// 기기에 받아 둔 데이터로 먼저 화면을 그리고, 서버와는 뒤에서 맞춘다 (앱을 열 때마다 전부 다시 받지 않도록)
+const fs = initializeFirestore(app, { ignoreUndefinedProperties: true, localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
 const $ = (id) => document.getElementById(id);
 
 // Firestore에는 봉을 {d,o,h,l,c} 객체로 저장하고(배열 안 배열 금지), 화면에는 [d,o,h,l,c] 배열로 넘깁니다.
@@ -1955,7 +1992,8 @@ onAuthStateChanged(auth, (user) => {
   $("app-body").hidden = !on;
   $("userbar").hidden = !on;
   if (on) { $("user-email").textContent = user.email; window.DeskApp.start(makeAdapter(user.uid)); }
-  pushRefresh(user);
+  // 알림 토큰 갱신은 화면이 뜬 뒤에 한다
+  setTimeout(() => { if (auth.currentUser === user) pushRefresh(user); }, user ? 4000 : 0);
 });
 
 /* ---------- 주문 알림 (웹 푸시) ---------- */
@@ -1975,16 +2013,18 @@ $("push-time").addEventListener("change", async () => {
   catch (e) { console.error("push time", e); $("push-status").textContent = "알림 시간을 저장하지 못했어요: " + (e.message || e.code || e); }
 });
 // 이 기기의 푸시 토큰을 users/{uid}/pushTokens/{토큰 해시}에 저장하면 GitHub Actions(order-reminder)가 보냅니다.
+// 알림 모듈은 필요할 때만 불러온다 (앱 첫 로딩에서 빼기)
+const fcm = () => import("https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging.js");
 const pushId = async (t) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)))].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
 function pushUI(msg, onBtn, offBtn) { $("push-status").textContent = msg; $("push-on").hidden = !onBtn; $("push-off").hidden = !offBtn; }
 async function pushReady() {
   if (!VAPID_KEY) return "설정이 아직 안 됐어요. firebase-config.js에 웹 푸시 키(VAPID)를 넣어야 합니다.";
-  if (!("serviceWorker" in navigator) || !("Notification" in window) || !(await pushSupported().catch(() => false)))
+  if (!("serviceWorker" in navigator) || !("Notification" in window) || !(await fcm().then((m) => m.isSupported()).catch(() => false)))
     return /iPhone|iPad/.test(navigator.userAgent) ? "아이폰은 사파리 공유 버튼 > 홈 화면에 추가로 설치한 앱에서 열어야 알림을 켤 수 있어요." : "이 브라우저는 푸시 알림을 지원하지 않아요.";
   return null;
 }
 async function pushSave(user) {
-  const reg = await navigator.serviceWorker.ready;
+  const { getMessaging, getToken } = await fcm(), reg = await navigator.serviceWorker.ready;
   const token = await getToken(getMessaging(app), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
   if (!token) throw new Error("토큰을 받지 못했어요");
   await setDoc(doc(fs, "users", user.uid, "pushTokens", await pushId(token)), { token, device: navigator.userAgent.slice(0, 160), updatedAt: new Date().toISOString() });
@@ -2015,6 +2055,7 @@ $("push-on").addEventListener("click", async () => {
 $("push-off").addEventListener("click", async () => {
   const user = auth.currentUser; if (!user) return;
   try {
+    const { getMessaging, getToken, deleteToken } = await fcm();
     const m = getMessaging(app), reg = await navigator.serviceWorker.ready;
     const token = await getToken(m, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg }).catch(() => null);
     if (token) await deleteDoc(doc(fs, "users", user.uid, "pushTokens", await pushId(token)));
