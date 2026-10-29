@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: "30 22 * * 1-5"
     - cron: "30 23 * * 1-5"
+    # GitHub 예약 실행은 가끔 늦거나 건너뛰므로 다음 날 새벽(UTC)에 몇 번 더 돌린다. 이미 받은 날은 덮어써도 값이 같다.
+    - cron: "17 1 * * 2-6"
+    - cron: "47 2 * * 2-6"
+    - cron: "17 5 * * 2-6"
   workflow_dispatch: {}
 
 jobs:
