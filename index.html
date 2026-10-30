@@ -625,12 +625,12 @@ function ordRow(o){
     (o.big?'<div class="bigalt"><span class="tag big">큰수 LOC</span> <b>'+n2(o.price)+'</b> × '+o.qty+' · '+usd(o.price*o.qty)+'</div>':'')+'</div>';
 }
 
-// 큰수는 기본으로 전일 종가 +15%. 종가 뒤 시간외·주간장 시세가 크게 움직이면 그날 장에 한해 시세를 입력해 큰수를 다시 계산한다.
+// 큰수는 기본으로 전일 종가 +25% (계좌 bigPct). 종가 뒤 시간외·주간장 시세가 크게 움직이면 그날 장에 한해 시세를 입력해 큰수를 다시 계산한다.
 // 옮길 주문이 없어도 줄을 늘 보여서 입력할 수 있게 한다. 주문을 넣은 뒤에는 못 고친다.
 function bigEdit(a,plan){
   if(plan.bigAuto==null||!plan.orders.some(function(o){return o.side==="BUY"&&o.type==="LOC";})) return "";
   var placed=a.pending&&a.pending.session===plan.session;
-  var pct=a.bigPct!=null?a.bigPct:15;
+  var pct=E.bigPctOf(a);
   var cur=plan.bigManual!=null?plan.bigManual:plan.bigAuto;
   var desc=plan.bigPx!=null?'시세 '+n2(plan.bigPx)+' +'+pct+'% · 자동 '+n2(plan.bigAuto)
     :plan.bigManual!=null?'직접 수정 · 자동 '+n2(plan.bigAuto)
@@ -840,7 +840,7 @@ function editorINF(a){
   return '<details class="panel" id="ed-'+esc(a.id)+'"><summary>상태 수정</summary><form class="form" data-form="edit">'+
     fld("e-name","이름",a.name,"text")+fld("e-principal","원금 ($)",a.principal,"number","0.01")+ro(fld("e-cash","잔금 ($)",a.cash,"number","0.01"))+
     ro(fld("e-qty","보유 수량",a.qty,"number","1"))+ro(fld("e-avg","평단 ($)",a.avg,"number","0.0001"))+fld("e-T","T",a.T,"number","any")+
-    fld("e-basePct","매도 기준 %",a.basePct,"number","0.1")+fld("e-fee","수수료 %",a.fee,"number","0.01")+fld("e-bigMult","처음매수 큰수 배율",a.bigMult||1.12,"number","0.01")+
+    fld("e-basePct","매도 기준 %",a.basePct,"number","0.1")+fld("e-fee","수수료 %",a.fee,"number","0.01")+fld("e-bigMult","처음매수 큰수 배율",a.bigMult||1.12,"number","0.01")+fld("e-bigPct","큰수 % (기준가 대비)",E.bigPctOf(a),"number","1")+fld("e-rejectPct","매수 거부 한도 %",E.rejectPctOf(a),"number","1")+
     '<div class="field"><label for="e-mode">모드</label><select id="e-mode"><option value="NORMAL"'+(a.mode!=="REVERSE"?" selected":"")+'>일반모드</option><option value="REVERSE"'+(a.mode==="REVERSE"?" selected":"")+'>리버스모드</option></select></div>'+
     fld("e-revDay","리버스 경과일 (첫날=0)",a.revDay||0,"number","1")+
     '<div class="field"><label for="e-compound">사이클 종료 후</label><select id="e-compound"><option value="1"'+(a.compound!==false?" selected":"")+'>복리 (수익 포함)</option><option value="0"'+(a.compound===false?" selected":"")+'>단리 (원금 유지)</option></select></div>'+
@@ -1704,7 +1704,7 @@ document.addEventListener("click", function(ev){
   var undoSet=function(label,prev){ pushUndo(label,[{p:"accounts/"+prev.id,d:prev}]); };
   if(act==="big-edit"||act==="big-reset"){
     var bp=a._plan; if(!bp) return;
-    var nv=null, pct=a.bigPct!=null?a.bigPct:15;
+    var nv=null, pct=E.bigPctOf(a);
     if(act==="big-edit"){
       var inp=window.prompt(a.ticker+" 지금 시세 ($)\n전일 종가는 "+n2(bp.basis.c)+"예요. 입력한 시세 +"+pct+"%로 "+dlabel(bp.session)+" 큰수를 다시 계산해요. 비우면 자동으로 돌아가요.", bp.bigPx!=null?n2(bp.bigPx):"");
       if(inp===null) return;
@@ -1797,7 +1797,7 @@ document.addEventListener("submit", function(ev){
     var a=accounts[selected]; if(!a) return;
     var num=function(id){ var e=$(id); if(!e) return undefined; var v=e.value; return v===""?null:parseFloat(v); };
     var patch={name:$("e-name").value.trim()||a.name};
-    var numKeys = a.type==="VR" ? ["V","pool","qty","avg","G","band","contrib","startWeek","cycleUsed","invested","cycle","fee"] : ["principal","cash","qty","avg","T","basePct","fee","bigMult","revDay"];
+    var numKeys = a.type==="VR" ? ["V","pool","qty","avg","G","band","contrib","startWeek","cycleUsed","invested","cycle","fee"] : ["principal","cash","qty","avg","T","basePct","fee","bigMult","bigPct","rejectPct","revDay"];
     numKeys.forEach(function(k){ var v=num("e-"+k); if(v!==undefined) patch[k]=v; });
     if(a.type==="VR"){ patch.nextUpdate=$("e-nextUpdate").value||null; patch.vrType=$("e-vrType").value;
       // 이번 사이클 한도를 수정값으로 다시 잡는다: (지금 Pool + 이번 사이클에 쓴 돈) = 사이클 시작 Pool

@@ -1,5 +1,5 @@
 // 본장이 열리고 조금 뒤(뉴욕 9:32쯤~11:00) 돌면서, 오늘 장에 넣어 둔 무매 LOC 매수가가 본장 시가보다
-// 거부 한도(계좌 rejectPct, 기본 20%) 넘게 높으면 폰으로 알립니다. 주간장에 넣은 LOC는 본장 시작 때 거래소로 넘어가며
+// 거부 한도(계좌 rejectPct, 기본 30%) 넘게 높으면 폰으로 알립니다. 주간장에 넣은 LOC는 본장 시작 때 거래소로 넘어가며
 // 그때 가격으로 다시 거부될 수 있습니다 (2026-10-19 메리츠: 현재가 101.2에서 122는 거부, 120은 접수).
 // 같은 장은 계좌마다 한 번만 보냅니다 (users/{uid}/settings/push.openCheckSent[계좌 id] = 장 날짜).
 // 실행: FIREBASE_SERVICE_ACCOUNT='<서비스 계정 JSON>' node open-check.mjs   (FORCE=1이면 시간 확인 생략)
@@ -56,7 +56,7 @@ async function main() {
       const risk = E.rejectRisk(p.orders, q.open, a);
       console.log(`${a.name || a.ticker}: 시가 ${n2(q.open)}, 위험 ${risk.length}건`);
       if (!risk.length) continue;
-      const lim = a.rejectPct != null ? a.rejectPct : 20;
+      const lim = E.rejectPctOf(a);
       lines.push(`${a.name || a.ticker} 시가 $${n2(q.open)}${q.last ? `(지금 $${n2(q.last)})` : ""}: ${risk.map((o) => `${o.label} $${n2(o.price)}`).join(", ")}가 시가 +${lim}% 넘어 거부됐을 수 있어요. 주문 상태를 확인하고 거부됐으면 $${n2(q.open * (1 + (lim - 1) / 100))} 이하로 다시 거세요`);
       mark[a.id] = p.session;
     }
