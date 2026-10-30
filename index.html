@@ -626,10 +626,13 @@ function ordRow(o){
 }
 
 // 큰수는 기본으로 전일 종가 +25% (계좌 bigPct). 종가 뒤 시간외·주간장 시세가 크게 움직이면 그날 장에 한해 시세를 입력해 큰수를 다시 계산한다.
-// 옮길 주문이 없어도 줄을 늘 보여서 입력할 수 있게 한다. 주문을 넣은 뒤에는 못 고친다.
+// 큰수 줄은 큰수로 옮긴 주문이 있거나 시세를 입력했을 때만 보인다. 평소엔 작은 "시간외 급락 시 시세 입력" 버튼만 둔다.
+// 주문을 넣은 뒤에는 못 고친다.
 function bigEdit(a,plan){
   if(plan.bigAuto==null||!plan.orders.some(function(o){return o.side==="BUY"&&o.type==="LOC";})) return "";
   var placed=a.pending&&a.pending.session===plan.session;
+  if(!plan.orders.some(function(o){return o.big;})&&plan.bigManual==null)
+    return placed?"":'<div class="bigedit"><button type="button" class="btn ghost" data-act="big-edit">시간외 급락 시 시세 입력</button></div>';
   var pct=E.bigPctOf(a);
   var cur=plan.bigManual!=null?plan.bigManual:plan.bigAuto;
   var desc=plan.bigPx!=null?'시세 '+n2(plan.bigPx)+' +'+pct+'% · 자동 '+n2(plan.bigAuto)
