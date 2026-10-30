@@ -625,15 +625,18 @@ function ordRow(o){
     (o.big?'<div class="bigalt"><span class="tag big">큰수 LOC</span> <b>'+n2(o.price)+'</b> × '+o.qty+' · '+usd(o.price*o.qty)+'</div>':'')+'</div>';
 }
 
-// 큰수 가격은 그날 장에 한해 직접 고칠 수 있다 (주간장 시세가 올라 원래 매수가에 더 가깝게 걸 수 있을 때 등). 주문을 넣은 뒤에는 못 고친다.
+// 큰수는 기본으로 전일 종가 +15%. 종가 뒤 시간외·주간장 시세가 크게 움직이면 그날 장에 한해 시세를 입력해 큰수를 다시 계산한다.
+// 옮길 주문이 없어도 줄을 늘 보여서 입력할 수 있게 한다. 주문을 넣은 뒤에는 못 고친다.
 function bigEdit(a,plan){
-  var any=plan.orders.some(function(o){return o.big;});
-  if(!any&&plan.bigManual==null) return "";
+  if(plan.bigAuto==null||!plan.orders.some(function(o){return o.side==="BUY"&&o.type==="LOC";})) return "";
   var placed=a.pending&&a.pending.session===plan.session;
+  var pct=a.bigPct!=null?a.bigPct:15;
   var cur=plan.bigManual!=null?plan.bigManual:plan.bigAuto;
-  return '<div class="bigedit"><span class="tag big">큰수</span> <b>'+n2(cur)+'</b>'+
-    (plan.bigManual!=null?'<span>직접 수정 · 자동 '+n2(plan.bigAuto)+'</span>':'<span>자동 (전일 종가 +'+(a.bigPct!=null?a.bigPct:15)+'%)</span>')+
-    (placed?'':'<button type="button" class="btn" data-act="big-edit">수정</button>'+(plan.bigManual!=null?'<button type="button" class="btn ghost" data-act="big-reset">자동으로</button>':''))+'</div>';
+  var desc=plan.bigPx!=null?'시세 '+n2(plan.bigPx)+' +'+pct+'% · 자동 '+n2(plan.bigAuto)
+    :plan.bigManual!=null?'직접 수정 · 자동 '+n2(plan.bigAuto)
+    :'자동 (전일 종가 '+n2(plan.basis.c)+' +'+pct+'%)';
+  return '<div class="bigedit"><span class="tag big">큰수</span> <b>'+n2(cur)+'</b><span>'+desc+'</span>'+
+    (placed?'':'<button type="button" class="btn" data-act="big-edit">'+(plan.bigManual!=null?'시세 수정':'시세 입력')+'</button>'+(plan.bigManual!=null?'<button type="button" class="btn ghost" data-act="big-reset">자동으로</button>':''))+'</div>';
 }
 
 // VR은 2주 회차마다 기간 예약주문을 한 번만 넣는다. 그 뒤로는 같은 주문이 유지된다고 보고 매일 체결만 확인한다.
@@ -1701,15 +1704,15 @@ document.addEventListener("click", function(ev){
   var undoSet=function(label,prev){ pushUndo(label,[{p:"accounts/"+prev.id,d:prev}]); };
   if(act==="big-edit"||act==="big-reset"){
     var bp=a._plan; if(!bp) return;
-    var cur=bp.bigManual!=null?bp.bigManual:bp.bigAuto, nv=null;
+    var nv=null, pct=a.bigPct!=null?a.bigPct:15;
     if(act==="big-edit"){
-      var inp=window.prompt(dlabel(bp.session)+" 큰수 가격 ($)\n자동 값은 "+n2(bp.bigAuto)+"예요. 비우면 자동으로 돌아가요.", n2(cur));
+      var inp=window.prompt(a.ticker+" 지금 시세 ($)\n전일 종가는 "+n2(bp.basis.c)+"예요. 입력한 시세 +"+pct+"%로 "+dlabel(bp.session)+" 큰수를 다시 계산해요. 비우면 자동으로 돌아가요.", bp.bigPx!=null?n2(bp.bigPx):"");
       if(inp===null) return;
       inp=String(inp).replace(/[$,\s]/g,"");
       if(inp!==""){ nv=Math.round(parseFloat(inp)*100)/100; if(!(nv>0)){ toast("가격을 숫자로 넣어주세요."); return; } }
     }
     var prevB=snapA();
-    save(a,{bigOv:nv?{session:bp.session,price:nv}:null}).then(function(){ toast(nv?"큰수를 "+n2(nv)+"로 바꿨어요.":"큰수를 자동 값으로 돌렸어요."); undoSet("큰수 가격 변경",prevB); render(); });
+    save(a,{bigOv:nv?{session:bp.session,px:nv}:null}).then(function(){ toast(nv?"시세 "+n2(nv)+" 기준으로 큰수를 "+n2(Math.floor(nv*(100+pct)+1e-6)/100)+"로 바꿨어요.":"큰수를 자동 값으로 돌렸어요."); undoSet("큰수 가격 변경",prevB); render(); });
   } else if(act==="place"){
     var p=a._plan, prevP=snapA();
     var pp={pending:pendingOf(p), events:[]};
