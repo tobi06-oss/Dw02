@@ -539,7 +539,15 @@ function renderTabs(){
   $("tabs").innerHTML=html;
 }
 
+// 화면을 그리다 오류가 나면 예전 화면이 그대로 남아 엉뚱한 안내가 보인다. 대신 오류와 새로고침 버튼을 보여준다.
 function render(){
+  try { renderView(); }
+  catch(e){
+    console.error("render",e);
+    $("view").innerHTML='<div class="panel"><div class="empty">화면을 그리다 오류가 났어요. 새 버전이 막 배포됐다면 새로고침하면 대부분 해결돼요.<br><small>'+esc(String(e&&e.message||e))+'</small></div><div class="actions"><button class="btn primary" type="button" onclick="location.reload()">새로고침</button></div></div>';
+  }
+}
+function renderView(){
   renderTickers(); renderTabs(); undoFab();
   var a = selected ? accounts[selected] : null;
   var v = $("view"); chartReg={}; chartSeq=0;
