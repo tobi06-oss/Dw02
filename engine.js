@@ -50,18 +50,23 @@
   // 큰수 매수: 매수가가 현재가와 너무 멀면 증권사가 주문을 거부하므로, 현재가 +15% 쯤의 '큰 수'에
   // 그보다 위 가격의 매수 수량을 모두 합쳐 건다 (라오어 <큰수 매수> 글, 엑셀 기준 15%). 그 아래 사다리는 그대로.
   // 매도는 가격을 바꾸지 않는다. 메리츠는 현재가보다 훨씬 높은 매도도 거부하지 않으므로 경고하지 않는다 (Dw 확인 2026-10-20).
-  // a.bigOv = {session, price}: 그날 장에 한해 사용자가 직접 정한 큰수 가격 (예: 주간장 시세가 올라 더 높게 걸 수 있을 때)
+  // 큰수 기준가는 주문 시점의 시세다. 종가 뒤 시간외·주간장에서 크게 움직이면 증권사는 그 시세로 거부 여부를 따지므로
+  // 전일 종가 대신 그 시세를 쓴다. 지금은 사용자가 입력하고, 자동화 때는 서버가 증권사 현재가로 같은 값을 넣는다.
+  // a.bigOv = {session, px}: 그날 장에 한해 입력한 시세 → 큰수 = 시세 × (1 + bigPct)
+  // a.bigOv = {session, price}: (이전 방식) 큰수 가격 자체를 직접 정한 값. 남아 있는 기록을 위해 계속 읽는다.
   function applyBig(p, c0, a) {
     var pct = a.bigPct != null ? a.bigPct : 15;
     var bigP = f2(c0 * (1 + pct / 100)), moved = 0;
     p.bigAuto = bigP;
-    if (a.bigOv && a.bigOv.session === p.session && a.bigOv.price > 0) { bigP = r2(a.bigOv.price); p.bigManual = bigP; }
+    var ov = a.bigOv && a.bigOv.session === p.session ? a.bigOv : null;
+    if (ov && ov.px > 0) { p.bigPx = r2(ov.px); bigP = f2(p.bigPx * (1 + pct / 100)); p.bigManual = bigP; }
+    else if (ov && ov.price > 0) { bigP = r2(ov.price); p.bigManual = bigP; }
     p.orders.forEach(function (o) {
       if (o.side === "BUY" && o.type === "LOC" && o.price > bigP) {
         o.orig = o.price; o.price = bigP; o.big = true; moved += o.qty;
       }
     });
-    if (moved) p.notes.push((p.bigManual != null ? "직접 정한 큰수 $" + bigP.toFixed(2) + "보다 높은 매수 " : "매수가가 현재가보다 " + pct + "% 넘게 높아, 그 위 매수 ") + moved + "주를 큰수 $" + bigP.toFixed(2) + "에 모았습니다. 같은 가격 주문은 합쳐서 " + moved + "주로 넣으세요.");
+    if (moved) p.notes.push((p.bigPx != null ? "매수가가 입력한 시세 $" + p.bigPx.toFixed(2) + "보다 " + pct + "% 넘게 높아, 그 위 매수 " : p.bigManual != null ? "직접 정한 큰수 $" + bigP.toFixed(2) + "보다 높은 매수 " : "매수가가 현재가보다 " + pct + "% 넘게 높아, 그 위 매수 ") + moved + "주를 큰수 $" + bigP.toFixed(2) + "에 모았습니다. 같은 가격 주문은 합쳐서 " + moved + "주로 넣으세요.");
     return p;
   }
 
