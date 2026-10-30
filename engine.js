@@ -45,6 +45,8 @@
     }
     return out;
   }
+  // a.ladMore = {session, n}: 그날 장에 한해 사다리를 n칸 더 낸다 (화면의 + 버튼, 3칸씩)
+  function ladMoreOf(a, p) { return a.ladMore && a.ladMore.session === p.session && a.ladMore.n > 0 ? a.ladMore.n : 0; }
   function lowestBuy(orders) {
     var m = null;
     orders.forEach(function (o) { if (o.side === "BUY" && o.price != null) { var v = o.orig != null ? o.orig : o.price; if (m == null || v < m) m = v; } });
@@ -112,7 +114,7 @@
       }
       if (sq > 0) p.orders.push({ side: "SELL", kind: "rev-sell", type: "LOC", price: p.sellP, qty: sq, label: "별지점 위 매도 (1/" + div + ")" });
       p.orders.push({ side: "BUY", kind: "rev-buy", type: "LOC", price: p.buyP, qty: bq, label: "쿼터매수 (잔금/4)" });
-      p.orders = p.orders.concat(ladder(bud, bq, floorPrice, 8, lowestBuy(p.orders)));
+      p.orders = p.orders.concat(ladder(bud, bq, floorPrice, 8 + ladMoreOf(a, p), lowestBuy(p.orders)));
       p.notes.push("별지점 = 직전 5거래일 종가 평균. 종가가 $" + p.exitPrice.toFixed(2) + "(평단 −" + base + "%)를 넘으면 일반모드로 돌아갑니다.");
       return applyBig(p, c0, a);
     }
@@ -126,7 +128,7 @@
       var big = f2(c0 * (a.bigMult || 1.12));
       var fq = Math.floor(budget / big);
       if (fq > 0) p.orders.push({ side: "BUY", kind: "first", type: "LOC", price: big, qty: fq, label: "처음매수 (큰수)" });
-      p.orders = p.orders.concat(ladder(budget, fq, floorPrice, 10, lowestBuy(p.orders)));
+      p.orders = p.orders.concat(ladder(budget, fq, floorPrice, 10 + ladMoreOf(a, p), lowestBuy(p.orders)));
       p.notes.push("처음매수는 전일 종가보다 " + Math.round(((a.bigMult || 1.12) - 1) * 100) + "% 높은 가격으로 LOC를 걸어 사실상 무조건 매수합니다.");
       return applyBig(p, c0, a);
     }
@@ -156,7 +158,7 @@
       if (qf > 0) p.orders.push({ side: "BUY", kind: "star-full", type: "LOC", price: p.buyP, qty: qf, label: "별지점 전체" });
       Q = qf;
     }
-    p.orders = p.orders.concat(ladder(budget, Q, floorPrice, 10, lowestBuy(p.orders)));
+    p.orders = p.orders.concat(ladder(budget, Q, floorPrice, 10 + ladMoreOf(a, p), lowestBuy(p.orders)));
 
     var quarter = Math.floor(qty / 4), rest = qty - quarter;
     var target = r2(avg * (1 + base / 100));
