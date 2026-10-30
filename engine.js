@@ -7,6 +7,10 @@
   "use strict";
 
   var EPS = 1e-9;
+  // 메리츠 매수 거부 한도는 현재가 +30% (Dw 확인 2026-10-30, 전에는 약 20%). 큰수는 거기서 5% 여유를 둔다. 계좌별 bigPct/rejectPct로 바꿀 수 있다.
+  var BIG_PCT = 25, REJECT_PCT = 30;
+  function bigPctOf(a) { return a && a.bigPct != null ? a.bigPct : BIG_PCT; }
+  function rejectPctOf(a) { return a && a.rejectPct != null ? a.rejectPct : REJECT_PCT; }
   function r2(x) { return Math.round((x + (x >= 0 ? EPS : -EPS)) * 100) / 100; }
   function f2(x) { return Math.floor(x * 100 + EPS) / 100; }
   function c2(x) { return Math.ceil(x * 100 - EPS) / 100; }
@@ -47,15 +51,15 @@
     return m;
   }
 
-  // 큰수 매수: 매수가가 현재가와 너무 멀면 증권사가 주문을 거부하므로, 현재가 +15% 쯤의 '큰 수'에
-  // 그보다 위 가격의 매수 수량을 모두 합쳐 건다 (라오어 <큰수 매수> 글, 엑셀 기준 15%). 그 아래 사다리는 그대로.
+  // 큰수 매수: 매수가가 현재가와 너무 멀면 증권사가 주문을 거부하므로, 현재가 +25% 쯤의 '큰 수'에
+  // 그보다 위 가격의 매수 수량을 모두 합쳐 건다 (라오어 <큰수 매수> 글은 15%, 메리츠 한도가 30%로 늘어 25%). 그 아래 사다리는 그대로.
   // 매도는 가격을 바꾸지 않는다. 메리츠는 현재가보다 훨씬 높은 매도도 거부하지 않으므로 경고하지 않는다 (Dw 확인 2026-10-20).
   // 큰수 기준가는 주문 시점의 시세다. 종가 뒤 시간외·주간장에서 크게 움직이면 증권사는 그 시세로 거부 여부를 따지므로
   // 전일 종가 대신 그 시세를 쓴다. 지금은 사용자가 입력하고, 자동화 때는 서버가 증권사 현재가로 같은 값을 넣는다.
   // a.bigOv = {session, px}: 그날 장에 한해 입력한 시세 → 큰수 = 시세 × (1 + bigPct)
   // a.bigOv = {session, price}: (이전 방식) 큰수 가격 자체를 직접 정한 값. 남아 있는 기록을 위해 계속 읽는다.
   function applyBig(p, c0, a) {
-    var pct = a.bigPct != null ? a.bigPct : 15;
+    var pct = bigPctOf(a);
     var bigP = f2(c0 * (1 + pct / 100)), moved = 0;
     p.bigAuto = bigP;
     var ov = a.bigOv && a.bigOv.session === p.session ? a.bigOv : null;
@@ -191,9 +195,9 @@
     });
   }
 
-  // 매수가가 기준가(본장 시가 등)보다 거부 한도(rejectPct, 기본 20%) 넘게 높은 LOC 매수: 증권사가 거부했을 수 있다
+  // 매수가가 기준가(본장 시가 등)보다 거부 한도(rejectPct, 기본 30%) 넘게 높은 LOC 매수: 증권사가 거부했을 수 있다
   function rejectRisk(orders, px, a) {
-    var lim = 1 + ((a && a.rejectPct != null) ? a.rejectPct : 20) / 100;
+    var lim = 1 + rejectPctOf(a) / 100;
     return (orders || []).filter(function (o) { return o.side === "BUY" && o.type === "LOC" && o.price > px * lim + EPS; });
   }
 
@@ -417,7 +421,7 @@
   }
 
   var api = { r2: r2, f2: f2, nextSession: nextSession, addDays: addDays, starPct: starPct,
-    infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll, bigMisses: bigMisses, rejectRisk: rejectRisk,
+    infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll, bigMisses: bigMisses, rejectRisk: rejectRisk, bigPctOf: bigPctOf, rejectPctOf: rejectPctOf,
     vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, vrHistory: vrHistory, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Engine = api;
