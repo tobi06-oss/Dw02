@@ -182,8 +182,9 @@
       // VR은 본장 기준이다 (예약매수 초과체결 글).
       var hi = o.ext && bar.xh != null ? Math.max(bar.h, bar.xh) : bar.h;
       var lo = o.ext && bar.xl != null ? Math.min(bar.l, bar.xl) : bar.l;
-      if (o.side === "SELL") return hi >= o.price - EPS ? { px: bar.o >= o.price ? bar.o : o.price } : null;
-      return lo <= o.price + EPS ? { px: bar.o <= o.price ? bar.o : o.price } : null;
+      // 시가가 이미 지정가를 넘어서 열리면(매수: 시가 < 지정가, 매도: 시가 > 지정가) 지정가가 아니라 시가로 체결된다. at: "open"으로 표시
+      if (o.side === "SELL") return hi >= o.price - EPS ? (bar.o > o.price + EPS ? { px: bar.o, at: "open" } : { px: o.price }) : null;
+      return lo <= o.price + EPS ? (bar.o < o.price - EPS ? { px: bar.o, at: "open" } : { px: o.price }) : null;
     }
     return null;
   }
@@ -206,7 +207,7 @@
   function judgeAll(orders, bar) {
     return orders.map(function (o) {
       var j = judge(o, bar);
-      return { order: o, filled: !!j, px: j ? j.px : null, qty: o.qty };
+      return { order: o, filled: !!j, px: j ? j.px : null, at: j && j.at ? j.at : null, qty: o.qty };
     });
   }
 

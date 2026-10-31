@@ -153,7 +153,7 @@ details.panel[open]>summary{margin-bottom:12px}
 .ord:last-of-type{border-bottom:none}
 .tag{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--surface);white-space:nowrap}
 .col.buy .tag{color:var(--buy)} .col.sell .tag{color:var(--sell)}
-.tag.moc{color:var(--danger)!important} .tag.big{color:var(--ok)!important}
+.tag.moc{color:var(--danger)!important} .tag.big{color:var(--ok)!important} .tag.open{color:var(--price)!important;border:1px solid var(--line)}
 .ord .lab{font-size:12.5px;color:var(--ink-2)}
 .ord .pq{font-family:var(--mono);font-weight:700;font-size:16px;text-align:right;white-space:nowrap}
 .ord .pq span{color:var(--ink-2);font-weight:500}
@@ -599,24 +599,29 @@ function renderFillConfirm(a,p,bar){
     var o=f.order;
     return '<div class="fill'+(f.filled?" on":"")+'">'+
       '<input type="checkbox" id="fc-'+i+'" data-fi="'+i+'" data-f="filled" '+(f.filled?"checked":"")+' aria-label="체결 여부">'+
-      '<label class="fl" for="fc-'+i+'"><b class="'+(o.side==="BUY"?"up":"down")+'">'+(o.side==="BUY"?"매수":"매도")+'</b> '+esc(o.label)+' <span class="muted num">'+(o.price!=null?usd(o.price):"MOC")+' × '+o.qty+'</span></label>'+
+      '<label class="fl" for="fc-'+i+'"><b class="'+(o.side==="BUY"?"up":"down")+'">'+(o.side==="BUY"?"매수":"매도")+'</b> '+esc(o.label)+' <span class="muted num">'+(o.price!=null?usd(o.price):"MOC")+' × '+o.qty+'</span>'+
+        (f.at==="open"?' <span class="tag open">시가 체결</span><span class="small muted num"> 시가 '+usd(bar.o)+' · 지정가 '+usd(o.price)+'</span>':'')+'</label>'+
       '<input type="number" step="0.01" id="fp-'+i+'" data-fi="'+i+'" data-f="px" value="'+(f.px!=null?f.px:bar.c)+'" aria-label="체결가">'+
       '<input type="number" step="1" id="fq-'+i+'" data-fi="'+i+'" data-f="qty" value="'+f.qty+'" aria-label="수량" style="width:64px">'+
       '</div>';
   }).join("");
   var n=fills.filter(function(f){return f.filled;}).length;
+  var openN=fills.filter(function(f){return f.filled&&f.at==="open";}).length, closeN=n-openN;
+  var basis=openN&&closeN?"종가·시가 기준으로":openN?"시가 기준으로":"종가 기준으로";
+  var hasLimit=p.orders.some(function(o){return o.type==="LIMIT";});
+  var openHtml=openN?'<div class="bd">시가가 지정가보다 유리하게(매수는 낮게, 매도는 높게) 열려 '+openN+'건은 지정가 대신 시가 '+usd(bar.o)+'로 체결된 것으로 잡았어요. 시가는 시세 사이트 값이라 증권사 체결가와 몇 센트 다를 수 있으니, 체결 내역과 비교해 다르면 가격을 고쳐 주세요.</div>':'';
   var miss=E.bigMisses(p.orders,bar), missQ=miss.reduce(function(s,o){return s+o.qty;},0);
   var missHtml=miss.length?'<div class="bd" style="color:var(--danger)">큰수 때문에 못 산 매수가 있어요: '+esc(miss.map(function(o){return o.label+" "+o.qty+"주 (원래 "+usd(o.orig)+")";}).join(", "))+'. 종가 '+usd(bar.c)+'가 큰수 '+usd(miss[0].price)+'보다 높고 원래 매수가 이하라, 원래 가격에 걸었다면 '+missQ+'주가 체결됐을 거예요. 실제로 산 게 아니면 체크하지 마세요.</div>':'';
-  var head='<div class="row spread"><div class="bt">'+dlabel(p.session)+' 체결 확인</div><div class="small num">종가 '+usd(bar.c)+' · 고가 '+usd(bar.h)+'</div></div>';
+  var head='<div class="row spread"><div class="bt">'+dlabel(p.session)+' 체결 확인</div><div class="small num">'+(hasLimit&&bar.o!=null?'시가 '+usd(bar.o)+' · ':'')+'종가 '+usd(bar.c)+' · 고가 '+usd(bar.h)+'</div></div>';
   // 판정된 체결이 없으면 주문 줄을 다 펼치지 않고, 실제로 체결된 게 있을 때만 직접 입력을 열게 한다
   if(!n && !miss.length && !fe.manual)
     return '<div class="banner ok">'+head+
-      '<div class="bd">종가 기준으로 체결된 주문이 없어요.</div>'+
+      '<div class="bd">'+(hasLimit?"시세 기준으로":"종가 기준으로")+' 체결된 주문이 없어요.</div>'+
       '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="apply-fills">체결 없음으로 반영</button><button class="btn" data-act="fills-manual">체결 직접 입력</button></div></div>';
   return '<div class="banner ok">'+head+
-    '<div class="bd">'+(n?'종가 기준으로 '+n+'건 체결로 판정했어요. 실제 체결과 다르면 체크와 가격·수량을 고친 뒤 반영하세요.':'실제로 체결된 주문을 체크하고 가격·수량을 고친 뒤 반영하세요.')+
+    '<div class="bd">'+(n?basis+' '+n+'건 체결로 판정했어요. 실제 체결과 다르면 체크와 가격·수량을 고친 뒤 반영하세요.':'실제로 체결된 주문을 체크하고 가격·수량을 고친 뒤 반영하세요.')+
       (p.orders.some(function(o){return o.ext;})?(bar.xh!=null?' 지정가매도는 프리·애프터장 고가 '+usd(bar.xh)+'까지 보고 판정했어요.':' 지정가매도는 프리·애프터장에서도 체결될 수 있는데, 이 날은 시간외 시세가 없어 본장 고가로만 판정했어요.'):'')+'</div>'+
-    missHtml+
+    openHtml+missHtml+
     '<div class="fills">'+rows+'</div>'+
     '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="apply-fills">계좌에 반영</button><button class="btn ghost" data-act="cancel-pending">이 날 체결 없음</button></div></div>';
 }
