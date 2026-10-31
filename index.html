@@ -1916,6 +1916,18 @@ document.addEventListener("change", function(ev){
   el.closest(".fill").classList.toggle("on", f.filled);
 });
 
+var EDIT_LABEL={qty:["보유","주"],avg:["평단","$"],pool:["Pool","$"],cash:["잔금","$"],V:["V","$"],cycleUsed:["이번 회차 쓴 돈","$"],invested:["투자","$"],principal:["원금","$"],T:["T",""],cycle:["회차",""],G:["G",""],band:["밴드",""],contrib:["적립금","$"],startWeek:["시작 주차",""],fee:["수수료","%"],basePct:["기준%",""],bigMult:["큰수 배수",""],bigPct:["큰수 %",""],rejectPct:["거부 한도 %",""],revDay:["리버스 일차",""],nextUpdate:["다음 V 갱신",""],vrType:["방식",""],mode:["모드",""],compound:["복리",""],name:["이름",""]};
+function editDiffText(a, patch){
+  var fmt=function(v,u){ if(v==null||v==="") return "-"; if(typeof v==="number"){ if(u==="$") return "$"+n2(v); if(u==="주") return v+"주"; return String(+v.toFixed(4))+(u==="%"?"%":""); } if(typeof v==="boolean") return v?"예":"아니오"; return {INSTALLMENT:"적립식",LUMPSUM:"거치식",WITHDRAWAL:"인출식",NORMAL:"일반",REVERSE:"리버스"}[v]||String(v); };
+  var ch=Object.keys(EDIT_LABEL).filter(function(k){
+    if(!(k in patch)) return false; var x=a[k], y=patch[k];
+    // 예전 계좌에 없던 필드가 기본값으로 채워지는 건 바뀐 게 아니다
+    if(x==null&&(y===0||y===false||y===true||y==="INSTALLMENT"||y==="NORMAL")) return false;
+    if(typeof x==="number"&&typeof y==="number") return Math.abs(x-y)>1e-6;
+    return (x==null?null:x)!==(y==null?null:y);
+  }).map(function(k){ var L=EDIT_LABEL[k]; return L[0]+" "+fmt(a[k],L[1])+"→"+fmt(patch[k],L[1]); });
+  return "상태를 직접 수정했어요"+(ch.length?": "+ch.join(", "):" (바뀐 값 없음).");
+}
 document.addEventListener("submit", function(ev){
   var f=ev.target; ev.preventDefault();
   if(f.getAttribute("data-form")==="amount"){ saveAmount(); return; }
@@ -1929,8 +1941,6 @@ document.addEventListener("submit", function(ev){
       // 이번 사이클 한도를 수정값으로 다시 잡는다: (지금 Pool + 이번 사이클에 쓴 돈) = 사이클 시작 Pool
       var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); if(patch.qty===0) patch.avg=null; }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
-    var note={d:new Date().toISOString().slice(0,10),side:"NOTE",text:"상태를 직접 수정했어요."};
-    patch.log=[note].concat(a.log||[]).slice(0,400);
     var pre=Promise.resolve(), prevA=JSON.parse(JSON.stringify(a)); delete prevA._plan;
     if(a.type==="INF"&&a.linked==="tracker"&&trk.meta){
       delete patch.qty; delete patch.cash; delete patch.avg;
@@ -1941,6 +1951,8 @@ document.addEventListener("submit", function(ev){
       var prevMeta=curDoc("cycle/current");
       pre=db.doc("cycle/current").update(mp).then(function(){ pushUndo("상태 수정",[{p:"cycle/current",d:prevMeta},{p:"accounts/"+a.id,d:prevA}]); });
     } else pushUndo("상태 수정",[{p:"accounts/"+a.id,d:prevA}]);
+    // 무엇이 바뀌었는지 기타 기록에 남긴다 (예: 보유 42→43주). 매매 없이 숫자만 바뀐 걸 나중에 추적할 수 있게
+    patch.log=[{d:new Date().toISOString().slice(0,10),side:"NOTE",text:editDiffText(a,patch)}].concat(a.log||[]).slice(0,400);
     pre.then(function(){ return save(a,patch); }).then(function(){ toast("저장했어요."); render(); });
   } else if(f.id==="add-form"){
     var type=$("n-type").value, tk=$("n-ticker").value, name=$("n-name").value.trim();
