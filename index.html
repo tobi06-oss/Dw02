@@ -764,7 +764,7 @@ function renderVR(a){
   var buyHtml=vt(plan.buys), sellHtml=vt(plan.sells);
   var notes=plan.notes.slice();
   notes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
-  return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+vrRecords(a,plan)+undoPanel()+editorVR(a)+logPanel(a);
+  return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+vrRecords(a,plan)+undoPanel()+editorVR(a)+vrManual(a)+logPanel(a);
 }
 
 /* ---------- VR 회차 기록: 요약 · 추이 차트 · 표 ---------- */
@@ -876,12 +876,53 @@ function editorVR(a){
     '<div class="hint">매수점 = V×(1−밴드) ÷ 보유수량, 매도점 = V×(1+밴드) ÷ 보유수량으로 1주씩 계산합니다. V는 2주마다 "V 갱신"으로 바뀝니다. Pool 매수 한도는 사이클마다 적립 후 Pool 기준으로 정해지고, 적립식은 75%에서 26주마다 5%씩 줄어 10%까지 내려갑니다 (거치식 50%, 인출식 10%). G가 오르는 시점(예: 53주차 +1)은 직접 수정하세요.</div>'+
     '<div class="actions"><button class="btn danger" data-act="del">이 계좌 삭제</button></div></details>';
 }
+/* ---------- VR 지난 체결 직접 입력 ----------
+   주문표·체결 확인을 거치지 않은 체결(기록을 빠뜨린 날, 예약주문이 시가에 체결된 날 등)을 날짜를 골라 넣는다.
+   보유·평단·Pool은 그대로 vrApply로 계산하고, 지난 회차 날짜면 이번 회차 매수 한도(cycleUsed)는 건드리지 않는다. */
+var vmf = { d:null, px:"", q:"" };
+function vrManual(a){
+  var lb=lastBar(a.ticker); if(!vmf.d) vmf.d=lb?lb.d:todayKR();
+  var bar=barOn(a.ticker,vmf.d), lr=a.lastRoll&&a.lastRoll.d;
+  var info = bar ? dlabel(vmf.d)+' 시가 '+usd(bar.o)+' · 고가 '+usd(bar.h)+' · 저가 '+usd(bar.l)+' · 종가 '+usd(bar.c)
+    : dlabel(vmf.d)+' 시세가 없어요 (휴장일이거나 너무 예전 날짜)';
+  var prevCyc = lr && vmf.d<=lr;
+  var dateF='<div class="field"><label for="vm-date">체결일 (미국)</label><div class="date-field-wrap"><input type="date" id="vm-date" value="'+esc(vmf.d)+'" max="'+todayKR()+'" required><div class="date-stepper-btns"><button type="button" data-act="vm-date" data-d="1" aria-label="하루 뒤" tabindex="-1">▲</button><button type="button" data-act="vm-date" data-d="-1" aria-label="하루 전" tabindex="-1">▼</button></div></div></div>';
+  return '<details class="panel" id="vm-'+esc(a.id)+'"><summary>지난 체결 직접 입력</summary><div class="entry" style="margin-top:12px">'+dateF+
+    '<div class="field"><label for="vm-px">체결가 ($)</label><input type="number" id="vm-px" step="0.01" inputmode="decimal" placeholder="-" value="'+esc(vmf.px)+'"></div>'+
+    '<div class="field"><label for="vm-q">수량</label><input type="number" id="vm-q" step="1" min="1" inputmode="numeric" placeholder="-" value="'+esc(vmf.q)+'"></div></div>'+
+    '<div class="small muted num" style="margin-top:8px">'+esc(info)+(prevCyc?' · 지난 회차 날짜라 이번 회차 매수 한도에는 넣지 않아요':'')+'</div>'+
+    '<div class="quick-actions"><button type="button" class="quick-buy" data-act="vm-buy">매수 기록</button><button type="button" class="quick-sell" data-act="vm-sell">매도 기록</button></div>'+
+    '<div class="hint">주문표의 체결 확인으로 반영하지 못한 체결을 날짜를 골라 넣어요. 저장하면 보유·평단·Pool이 바로 바뀌고 체결 기록에 "직접"으로 남아요. 아직 체결 확인이 남은 날은 위 체결 확인에서 가격·수량을 고쳐 반영하세요. 잘못 넣었으면 실행취소로 되돌리면 돼요. 지난 회차 날짜를 넣어도 이미 마감된 회차 기록(마감 E·V)은 바뀌지 않아요.</div></details>';
+}
+function vrManualSave(a, side, b){
+  var d=vmf.d, px=parseFloat(vmf.px), q=Math.abs(parseInt(vmf.q,10)||0);
+  if(!d||!(px>0)||!q){ toast("체결일·체결가·수량을 넣어주세요."); return; }
+  if(d>todayKR()){ toast("앞으로의 날짜는 넣을 수 없어요."); return; }
+  if(a.pending&&d>=a.pending.session){ toast(dlabel(a.pending.session)+" 이후 체결은 위 체결 확인에서 반영하세요."); return; }
+  if(side==="SELL"&&q>(a.qty||0)){ toast("보유 수량("+(a.qty||0)+"주)보다 많이 팔 수 없어요."); return; }
+  var res=E.vrApply(a,[{order:{side:side,kind:side==="BUY"?"vr-buy":"vr-sell"},filled:true,px:px,qty:q}],{d:d}), n=res.next;
+  var patch={qty:n.qty,avg:n.avg==null?null:n.avg,pool:n.pool,cycleCap:n.cycleCap,cycleUsed:n.cycleUsed==null?0:n.cycleUsed};
+  // 지난 회차(마지막 V 갱신일 이전) 체결은 이번 회차 한도와 상관없다
+  if(a.lastRoll&&a.lastRoll.d&&d<=a.lastRoll.d) patch.cycleUsed=a.cycleUsed||0;
+  // 회차 주문을 유지 중이면 바뀐 보유수량으로 다음 장 주문표를 다시 만든다
+  if(a.pending&&a.pending.carried){ patch.pending=vrCarry(a,patch,a.pending.basis); delete fillEdits[a.id]; }
+  var l=Object.assign({},res.log[0],{manual:true}), log=(a.log||[]).slice(), i=0;
+  while(i<log.length&&log[i].d>d) i++;
+  log.splice(i,0,l); patch.log=log.slice(0,400);
+  var prev=JSON.parse(JSON.stringify(a)); delete prev._plan;
+  b.disabled=true;
+  save(a,patch).then(function(){
+    toast(dlabel(d)+" "+(side==="BUY"?"매수":"매도")+" "+q+"주 @ "+usd(px)+"를 기록했어요.");
+    pushUndo(dlabel(d)+" "+(side==="BUY"?"매수":"매도")+" 직접 입력",[{p:"accounts/"+a.id,d:prev}]);
+    vmf.px=""; vmf.q=""; render();
+  }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); b.disabled=false; });
+}
 var KIND={first:"처음매수","star-half":"별지점 절반","avg-half":"평단 절반","star-full":"별지점 전체",ladder:"하락 대비",quarter:"쿼터매도",limit:"지정가매도","rev-moc":"리버스 MOC","rev-sell":"리버스 매도","rev-buy":"쿼터매수","vr-buy":"VR 매수","vr-sell":"VR 매도",roll:"V 갱신",edit:"상태 수정"};
 function logPanel(a){
   var log=a.log||[];
   var rows=log.slice(0,60).map(function(l){
     if(l.side==="NOTE") return '<tr><td>'+esc(l.d)+'</td><td>기록</td><td colspan="4" style="text-align:left">'+esc(l.text)+'</td></tr>';
-    return '<tr><td>'+esc(l.d)+'</td><td class="'+(l.side==="BUY"?"up":"down")+'">'+(l.side==="BUY"?"매수":"매도")+'</td><td>'+esc(KIND[l.kind]||l.kind)+'</td><td>'+n2(l.px)+'</td><td>'+l.q+'</td><td class="'+signCls(l.pnl)+'">'+(l.pnl!=null?usd(l.pnl):"")+'</td></tr>';
+    return '<tr><td>'+esc(l.d)+'</td><td class="'+(l.side==="BUY"?"up":"down")+'">'+(l.side==="BUY"?"매수":"매도")+'</td><td>'+esc(KIND[l.kind]||l.kind)+(l.manual?' <span class="muted">직접</span>':'')+'</td><td>'+n2(l.px)+'</td><td>'+l.q+'</td><td class="'+signCls(l.pnl)+'">'+(l.pnl!=null?usd(l.pnl):"")+'</td></tr>';
   }).join("");
   return '<details class="panel" id="lg-'+esc(a.id)+'"><summary>체결 기록 ('+log.length+')</summary>'+(rows?'<div class="tablewrap"><table class="log"><thead><tr><th>날짜</th><th>구분</th><th>종류</th><th>체결가</th><th>수량</th><th>실현손익</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div class="empty">아직 반영한 체결이 없습니다.</div>')+'</details>';
 }
@@ -1718,6 +1759,8 @@ document.addEventListener("click", function(ev){
   if(recAct(act,b,a)) return;
   var snapA=function(){ var c=JSON.parse(JSON.stringify(a)); delete c._plan; return c; };
   var undoSet=function(label,prev){ pushUndo(label,[{p:"accounts/"+prev.id,d:prev}]); };
+  if(act==="vm-date"){ var vb=new Date((vmf.d||todayKR())+"T12:00:00Z"); vb.setUTCDate(vb.getUTCDate()+(+b.getAttribute("data-d"))); var vd=vb.toISOString().slice(0,10); if(vd<=todayKR()) vmf.d=vd; render(); return; }
+  if(act==="vm-buy"||act==="vm-sell"){ if(a.type==="VR") vrManualSave(a,act==="vm-buy"?"BUY":"SELL",b); return; }
   if(act==="big-edit"||act==="big-reset"){
     var bp=a._plan; if(!bp) return;
     var nv=null, pct=E.bigPctOf(a);
@@ -1864,6 +1907,8 @@ document.addEventListener("submit", function(ev){
 document.addEventListener("input", function(ev){
   var m={"a-date":"aDate","a-amount":"aAmount","a-soxl":"aSoxl","t-date":"tDate","t-price":"tPrice","t-qty":"tQty"}, k=m[ev.target.id];
   if(k) rf[k]=ev.target.value;
+  var vk={"vm-px":"px","vm-q":"q"}[ev.target.id]; if(vk) vmf[vk]=ev.target.value;
+  if(ev.target.id==="vm-date"&&ev.target.value){ vmf.d=ev.target.value; render(); }
 });
 document.addEventListener("keydown", function(ev){
   if(ev.target.id!=="inline-edit") return;
