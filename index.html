@@ -278,6 +278,7 @@ form.entry>button.sub-btn{background:var(--surface-2);color:var(--ink-2);border:
 .quick-actions button{flex:1;border:none;border-radius:8px;padding:11px 14px;font-size:14px;font-weight:700;color:#fff}
 .quick-actions button:disabled{opacity:.5}
 .quick-buy{background:var(--buy)} .quick-sell{background:var(--sell)}
+table.log tr.editing td{background:var(--surface-2)}
 .quick-actions .sub-btn{flex:0 0 auto;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line);font-weight:600}
 .panel-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
 .panel-head h2{margin:0}
@@ -769,7 +770,7 @@ function renderVR(a){
   var buyHtml=vt(plan.buys), sellHtml=vt(plan.sells);
   var notes=plan.notes.slice();
   notes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
-  return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+vrRecords(a,plan)+undoPanel()+editorVR(a)+vrManual(a)+logPanel(a);
+  return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+undoPanel()+vrManual(a)+vrTradeLog(a)+vrRecords(a,plan)+editorVR(a)+vrNotes(a);
 }
 
 /* ---------- VR 회차 기록: 요약 · 추이 차트 · 표 ---------- */
@@ -884,43 +885,92 @@ function editorVR(a){
 /* ---------- VR 지난 체결 직접 입력 ----------
    주문표·체결 확인을 거치지 않은 체결(기록을 빠뜨린 날, 예약주문이 시가에 체결된 날 등)을 날짜를 골라 넣는다.
    보유·평단·Pool은 그대로 vrApply로 계산하고, 지난 회차 날짜면 이번 회차 매수 한도(cycleUsed)는 건드리지 않는다. */
-var vmf = { d:null, px:"", q:"" };
+/* ---------- VR 매수/매도 기록 · 매매내역 (무매 기록 화면과 같은 배치) ---------- */
+// vmf.edit: 수정 중인 매매내역 줄 {i: a.log 인덱스, side}. 저장하면 옛 체결을 되돌리고 새 값으로 다시 넣는다.
+var vmf = { d:null, px:"", q:"", edit:null };
+function vrLogAt(a, i){ var l=(a.log||[])[i]; return l&&(l.side==="BUY"||l.side==="SELL")?l:null; }
 function vrManual(a){
   var lb=lastBar(a.ticker); if(!vmf.d) vmf.d=lb?lb.d:todayKR();
+  if(vmf.edit&&!vrLogAt(a,vmf.edit.i)) vmf.edit=null;
   var bar=barOn(a.ticker,vmf.d), lr=a.lastRoll&&a.lastRoll.d;
   var info = bar ? dlabel(vmf.d)+' 시가 '+usd(bar.o)+' · 고가 '+usd(bar.h)+' · 저가 '+usd(bar.l)+' · 종가 '+usd(bar.c)
     : dlabel(vmf.d)+' 시세가 없어요 (휴장일이거나 너무 예전 날짜)';
-  var prevCyc = lr && vmf.d<=lr;
-  var dateF='<div class="field"><label for="vm-date">체결일 (미국)</label><div class="date-field-wrap"><input type="date" id="vm-date" value="'+esc(vmf.d)+'" max="'+todayKR()+'" required><div class="date-stepper-btns"><button type="button" data-act="vm-date" data-d="1" aria-label="하루 뒤" tabindex="-1">▲</button><button type="button" data-act="vm-date" data-d="-1" aria-label="하루 전" tabindex="-1">▼</button></div></div></div>';
-  return '<details class="panel" id="vm-'+esc(a.id)+'"><summary>지난 체결 직접 입력</summary><div class="entry" style="margin-top:12px">'+dateF+
+  var prevCyc = lr && vmf.d<=lr, ed=vmf.edit;
+  var dateF='<div class="field"><label for="vm-date">일시 (미국)</label><div class="date-field-wrap"><input type="date" id="vm-date" value="'+esc(vmf.d)+'" max="'+todayKR()+'" required><div class="date-stepper-btns"><button type="button" data-act="vm-date" data-d="1" aria-label="하루 뒤" tabindex="-1">▲</button><button type="button" data-act="vm-date" data-d="-1" aria-label="하루 전" tabindex="-1">▼</button></div></div></div>';
+  var btns = ed ? '<button type="button" class="'+(ed.side==="BUY"?"quick-buy":"quick-sell")+'" data-act="vm-update">'+(ed.side==="BUY"?"매수":"매도")+' 수정 저장</button><button type="button" class="sub-btn" data-act="vm-cancel">수정 취소</button>'
+    : '<button type="button" class="quick-buy" data-act="vm-buy">매수 완료</button><button type="button" class="quick-sell" data-act="vm-sell">매도 완료</button>';
+  return '<section class="panel" id="vm-'+esc(a.id)+'"><h2>매수/매도 기록 (달러)</h2><div class="entry">'+dateF+
     '<div class="field"><label for="vm-px">체결가 ($)</label><input type="number" id="vm-px" step="0.01" inputmode="decimal" placeholder="-" value="'+esc(vmf.px)+'"></div>'+
     '<div class="field"><label for="vm-q">수량</label><input type="number" id="vm-q" step="1" min="1" inputmode="numeric" placeholder="-" value="'+esc(vmf.q)+'"></div></div>'+
     '<div class="small muted num" style="margin-top:8px">'+esc(info)+(prevCyc?' · 지난 회차 날짜라 이번 회차 매수 한도에는 넣지 않아요':'')+'</div>'+
-    '<div class="quick-actions"><button type="button" class="quick-buy" data-act="vm-buy">매수 기록</button><button type="button" class="quick-sell" data-act="vm-sell">매도 기록</button></div>'+
-    '<div class="hint">주문표의 체결 확인으로 반영하지 못한 체결을 날짜를 골라 넣어요. 저장하면 보유·평단·Pool이 바로 바뀌고 체결 기록에 "직접"으로 남아요. 아직 체결 확인이 남은 날은 위 체결 확인에서 가격·수량을 고쳐 반영하세요. 잘못 넣었으면 실행취소로 되돌리면 돼요. 지난 회차 날짜를 넣어도 이미 마감된 회차 기록(마감 E·V)은 바뀌지 않아요.</div></details>';
+    '<div class="quick-actions">'+btns+'</div>'+
+    '<div class="hint">주문표대로 체결 반영을 누르면 매매내역에 자동으로 쌓입니다. 거기서 빠진 체결만 날짜를 골라 직접 넣으세요. 저장하면 보유·평단·Pool이 바로 바뀌어요. 매매내역의 수정·삭제도 보유·평단·Pool에 함께 반영되고, 잘못했으면 실행취소로 되돌리면 돼요. 이미 마감된 회차 기록(마감 E·V)은 바뀌지 않아요.</div></section>';
 }
-function vrManualSave(a, side, b){
-  var d=vmf.d, px=parseFloat(vmf.px), q=Math.abs(parseInt(vmf.q,10)||0);
-  if(!d||!(px>0)||!q){ toast("체결일·체결가·수량을 넣어주세요."); return; }
-  if(d>todayKR()){ toast("앞으로의 날짜는 넣을 수 없어요."); return; }
-  if(a.pending&&d>=a.pending.session){ toast(dlabel(a.pending.session)+" 이후 체결은 위 체결 확인에서 반영하세요."); return; }
-  if(side==="SELL"&&q>(a.qty||0)){ toast("보유 수량("+(a.qty||0)+"주)보다 많이 팔 수 없어요."); return; }
-  var res=E.vrApply(a,[{order:{side:side,kind:side==="BUY"?"vr-buy":"vr-sell"},filled:true,px:px,qty:q}],{d:d}), n=res.next;
-  var patch={qty:n.qty,avg:n.avg==null?null:n.avg,pool:n.pool,cycleCap:n.cycleCap,cycleUsed:n.cycleUsed==null?0:n.cycleUsed};
-  // 지난 회차(마지막 V 갱신일 이전) 체결은 이번 회차 한도와 상관없다
-  if(a.lastRoll&&a.lastRoll.d&&d<=a.lastRoll.d) patch.cycleUsed=a.cycleUsed||0;
+function vrTradeLog(a){
+  var log=a.log||[], fee=(a.fee||0)/100, n=0;
+  var body=log.map(function(l,i){
+    if(l.side!=="BUY"&&l.side!=="SELL") return "";
+    n++;
+    var del=armed["v:"+i], on=vmf.edit&&vmf.edit.i===i;
+    return '<tr'+(on?' class="editing"':'')+'><td>'+esc(l.d)+'</td><td class="'+(l.side==="BUY"?"up":"down")+'">'+(l.side==="BUY"?"매수":"매도")+'</td><td>'+esc(KIND[l.kind]||l.kind||"")+(l.manual?' <span class="muted">직접</span>':'')+'</td><td>$'+n2(l.px)+'</td><td>'+l.q+'</td><td>$'+n2(l.px*l.q)+'</td>'+
+      '<td><button type="button" class="del" data-act="vm-edit" data-i="'+i+'">수정</button> <button type="button" class="del'+(del?" confirming":"")+'" data-act="vm-del" data-i="'+i+'">'+(del?"한번더?":"삭제")+'</button></td></tr>';
+  }).join("");
+  return '<section class="panel"><h2>매매내역 ('+n+'건)</h2>'+
+    (body?'<div class="tablewrap"><table class="log trades"><thead><tr><th>일시</th><th>구분</th><th>종류</th><th>체결가</th><th>수량</th><th>금액</th><th></th></tr></thead><tbody>'+body+'</tbody></table></div>':'<div class="empty">아직 매매 기록이 없습니다.</div>')+'</section>';
+}
+// V 갱신·상태 수정 같은 매매 아닌 기록
+function vrNotes(a){
+  var rows=(a.log||[]).filter(function(l){return l.side==="NOTE";}).slice(0,60).map(function(l){ return '<tr><td>'+esc(l.d)+'</td><td style="text-align:left">'+esc(l.text)+'</td></tr>'; }).join("");
+  return '<details class="panel" id="lg-'+esc(a.id)+'"><summary>기타 기록 (V 갱신·상태 수정)</summary>'+(rows?'<div class="tablewrap"><table class="log"><thead><tr><th>날짜</th><th style="text-align:left">내용</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div class="empty">아직 기록이 없습니다.</div>')+'</details>';
+}
+// 계좌 상태 s에서 바뀐 필드만 patch로
+function vrPatchOf(s){ var p={qty:s.qty,avg:s.avg==null?null:s.avg,pool:s.pool,cycleUsed:s.cycleUsed==null?0:s.cycleUsed}; if(s.cycleCap!=null) p.cycleCap=s.cycleCap; return p; }
+function vrInsertLog(log, l){ var i=0; while(i<log.length&&log[i].d>l.d) i++; log.splice(i,0,l); return log; }
+function vrCommit(a, patch, log, label, msg, b){
   // 회차 주문을 유지 중이면 바뀐 보유수량으로 다음 장 주문표를 다시 만든다
   if(a.pending&&a.pending.carried){ patch.pending=vrCarry(a,patch,a.pending.basis); delete fillEdits[a.id]; }
-  var l=Object.assign({},res.log[0],{manual:true}), log=(a.log||[]).slice(), i=0;
-  while(i<log.length&&log[i].d>d) i++;
-  log.splice(i,0,l); patch.log=log.slice(0,400);
+  patch.log=log.slice(0,400);
   var prev=JSON.parse(JSON.stringify(a)); delete prev._plan;
-  b.disabled=true;
-  save(a,patch).then(function(){
-    toast(dlabel(d)+" "+(side==="BUY"?"매수":"매도")+" "+q+"주 @ "+usd(px)+"를 기록했어요.");
-    pushUndo(dlabel(d)+" "+(side==="BUY"?"매수":"매도")+" 직접 입력",[{p:"accounts/"+a.id,d:prev}]);
-    vmf.px=""; vmf.q=""; render();
-  }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); b.disabled=false; });
+  if(b) b.disabled=true;
+  return save(a,patch).then(function(){
+    toast(msg); pushUndo(label,[{p:"accounts/"+a.id,d:prev}]);
+    vmf.px=""; vmf.q=""; vmf.edit=null; render();
+  }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); if(b) b.disabled=false; });
+}
+// 새 체결(side, vmf 값)을 base 상태에 넣는다. 지난 회차 체결은 이번 회차 한도와 상관없다.
+function vrAddTo(a, base, side, d, px, q){
+  var res=E.vrApply(base,[{order:{side:side,kind:side==="BUY"?"vr-buy":"vr-sell"},filled:true,px:px,qty:q}],{d:d}), p=vrPatchOf(res.next);
+  if(a.lastRoll&&a.lastRoll.d&&d<=a.lastRoll.d) p.cycleUsed=base.cycleUsed||0;
+  return { patch:p, log:res.log[0] };
+}
+function vrFormVals(a, side, base){
+  var d=vmf.d, px=parseFloat(vmf.px), q=Math.abs(parseInt(vmf.q,10)||0);
+  if(!d||!(px>0)||!q){ toast("일시·체결가·수량을 넣어주세요."); return null; }
+  if(d>todayKR()){ toast("앞으로의 날짜는 넣을 수 없어요."); return null; }
+  if(a.pending&&d>=a.pending.session){ toast(dlabel(a.pending.session)+" 이후 체결은 위 체결 확인에서 반영하세요."); return null; }
+  if(side==="SELL"&&q>(base.qty||0)){ toast("보유 수량("+(base.qty||0)+"주)보다 많이 팔 수 없어요."); return null; }
+  return {d:d,px:px,q:q};
+}
+function vrManualSave(a, side, b){
+  var v=vrFormVals(a,side,a); if(!v) return;
+  var r=vrAddTo(a,a,side,v.d,v.px,v.q);
+  vrCommit(a, r.patch, vrInsertLog((a.log||[]).slice(), Object.assign({},r.log,{manual:true})),
+    dlabel(v.d)+" "+(side==="BUY"?"매수":"매도")+" 직접 입력", dlabel(v.d)+" "+(side==="BUY"?"매수":"매도")+" "+v.q+"주 @ "+usd(v.px)+"를 기록했어요.", b);
+}
+function vrTradeUpdate(a, b){
+  var ed=vmf.edit, old=ed&&vrLogAt(a,ed.i); if(!old){ vmf.edit=null; render(); return; }
+  var un=E.vrUnapply(a,old); if(un.error){ toast(un.error); return; }
+  var base=Object.assign({},a,un.next), v=vrFormVals(a,old.side,base); if(!v) return;
+  var r=vrAddTo(a,base,old.side,v.d,v.px,v.q), log=(a.log||[]).slice(); log.splice(ed.i,1);
+  var nl=Object.assign({},old,{d:v.d,px:v.px,q:v.q,edited:true});
+  vrCommit(a, r.patch, vrInsertLog(log,nl), dlabel(v.d)+" 거래 수정", "거래 기록을 수정했어요.", b);
+}
+function vrTradeDel(a, i, b){
+  var old=vrLogAt(a,i); if(!old) return;
+  var un=E.vrUnapply(a,old); if(un.error){ toast(un.error); return; }
+  var log=(a.log||[]).slice(); log.splice(i,1);
+  if(vmf.edit&&vmf.edit.i===i) vmf.edit=null;
+  vrCommit(a, vrPatchOf(un.next), log, dlabel(old.d)+" 거래 삭제", "거래 기록을 삭제했어요. 보유·평단·Pool도 되돌렸어요.", b);
 }
 var KIND={first:"처음매수","star-half":"별지점 절반","avg-half":"평단 절반","star-full":"별지점 전체",ladder:"하락 대비",quarter:"쿼터매도",limit:"지정가매도","rev-moc":"리버스 MOC","rev-sell":"리버스 매도","rev-buy":"쿼터매수","vr-buy":"VR 매수","vr-sell":"VR 매도",roll:"V 갱신",edit:"상태 수정"};
 function logPanel(a){
@@ -1766,6 +1816,14 @@ document.addEventListener("click", function(ev){
   var undoSet=function(label,prev){ pushUndo(label,[{p:"accounts/"+prev.id,d:prev}]); };
   if(act==="vm-date"){ var vb=new Date((vmf.d||todayKR())+"T12:00:00Z"); vb.setUTCDate(vb.getUTCDate()+(+b.getAttribute("data-d"))); var vd=vb.toISOString().slice(0,10); if(vd<=todayKR()) vmf.d=vd; render(); return; }
   if(act==="vm-buy"||act==="vm-sell"){ if(a.type==="VR") vrManualSave(a,act==="vm-buy"?"BUY":"SELL",b); return; }
+  if(a.type==="VR"&&act==="vm-edit"){ var vi=+b.getAttribute("data-i"), vl=vrLogAt(a,vi); if(!vl) return;
+    vmf.edit={i:vi,side:vl.side}; vmf.d=vl.d; vmf.px=String(vl.px); vmf.q=String(vl.q); render();
+    var vf=$("vm-px"); if(vf){ vf.scrollIntoView({behavior:"smooth",block:"center"}); vf.focus(); } return; }
+  if(a.type==="VR"&&act==="vm-cancel"){ vmf.edit=null; vmf.px=""; vmf.q=""; render(); return; }
+  if(a.type==="VR"&&act==="vm-update"){ vrTradeUpdate(a,b); return; }
+  if(a.type==="VR"&&act==="vm-del"){ var di=+b.getAttribute("data-i"), dk="v:"+di;
+    if(!armed[dk]){ Object.keys(armed).forEach(function(x){delete armed[x];}); armed[dk]=1; setTimeout(function(){ if(armed[dk]){ delete armed[dk]; render(); } },3000); render(); return; }
+    delete armed[dk]; vrTradeDel(a,di,b); return; }
   if(act==="big-edit"||act==="big-reset"){
     var bp=a._plan; if(!bp) return;
     var nv=null, pct=E.bigPctOf(a);

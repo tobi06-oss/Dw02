@@ -369,6 +369,24 @@
     return { next: s, log: log, events: [] };
   }
 
+  // 체결 기록 하나(l: {d, side, px, q})를 계좌에서 되돌린다 (매매내역 수정·삭제용).
+  // 매수를 빼면 평단을 가중평균 역산, 매도를 빼면 보유만 돌려놓는다. 지난 회차(lastRoll 이전) 체결은 이번 회차 한도(cycleUsed)에 손대지 않는다.
+  function vrUnapply(a, l) {
+    var s = clone(a), fee = (a.fee || 0) / 100, px = +l.px, q = +l.q || 0;
+    var cur = !(a.lastRoll && a.lastRoll.d && l.d <= a.lastRoll.d);
+    if (l.side === "BUY") {
+      if (q > (s.qty || 0)) return { error: "지금 보유(" + (s.qty || 0) + "주)보다 많은 매수라 되돌릴 수 없어요." };
+      var nq = s.qty - q;
+      if (nq === 0) s.avg = null;
+      else if (s.avg != null) { var na = (s.avg * s.qty - px * q) / nq; s.avg = na > 0 ? Math.round(na * 10000) / 10000 : null; }
+      s.qty = nq; s.pool = r2((s.pool || 0) + px * q * (1 + fee));
+      if (cur) s.cycleUsed = r2(Math.max(0, (s.cycleUsed || 0) - px * q * (1 + fee)));
+    } else if (l.side === "SELL") {
+      s.qty = (s.qty || 0) + q; s.pool = r2((s.pool || 0) - px * q * (1 - fee));
+    }
+    return { next: s };
+  }
+
   // 2주마다: 다음 V = 직전 V + Pool/G + (E − 직전 V) ÷ (2√G) ± 적립금
   function vrRoll(a, close, date) {
     var s = clone(a), G = a.G || 10;
@@ -425,7 +443,7 @@
 
   var api = { r2: r2, f2: f2, nextSession: nextSession, addDays: addDays, starPct: starPct,
     infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll, bigMisses: bigMisses, rejectRisk: rejectRisk, bigPctOf: bigPctOf, rejectPctOf: rejectPctOf,
-    vrPlan: vrPlan, vrApply: vrApply, vrRoll: vrRoll, vrHistory: vrHistory, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
+    vrPlan: vrPlan, vrApply: vrApply, vrUnapply: vrUnapply, vrRoll: vrRoll, vrHistory: vrHistory, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Engine = api;
 })(this);
