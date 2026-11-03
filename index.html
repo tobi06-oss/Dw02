@@ -166,6 +166,7 @@ details.panel[open]>summary{margin-bottom:12px}
 .bigedit{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin-top:8px;font-size:12px;color:var(--ink-3)}
 .bigedit b{font-family:var(--mono);color:var(--ink-2)}
 .bigedit .btn{padding:4px 10px;font-size:12px}
+.bigedit .bigbtns{display:flex;flex-wrap:wrap;gap:6px}
 .ladder{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line-2)}
 .ladder .lt{font-size:12px;color:var(--ink-3);margin-bottom:6px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -643,19 +644,22 @@ function ordRow(o){
 
 // 큰수는 기본으로 전일 종가 +25% (계좌 bigPct). 종가 뒤 시간외·주간장 시세가 크게 움직이면 그날 장에 한해 시세를 입력해 큰수를 다시 계산한다.
 // 큰수 줄은 큰수로 옮긴 주문이 있거나 시세를 입력했을 때만 보인다. 평소엔 작은 "시간외 급락 시 시세 입력" 버튼만 둔다.
+// "큰수 직접 입력"은 시세 계산 없이 큰수 가격 자체를 그날 장에 한해 정한다 (bigOv {session, price}). 둘 중 마지막에 넣은 값이 쓰인다.
 // 주문을 넣은 뒤에는 못 고친다.
 function bigEdit(a,plan){
   if(plan.bigAuto==null||!plan.orders.some(function(o){return o.side==="BUY"&&o.type==="LOC";})) return "";
   var placed=a.pending&&a.pending.session===plan.session;
   if(!plan.orders.some(function(o){return o.big;})&&plan.bigManual==null)
-    return placed?"":'<div class="bigedit"><button type="button" class="btn ghost" data-act="big-edit">시간외 급락 시 시세 입력</button></div>';
+    return placed?"":'<div class="bigedit"><span class="bigbtns"><button type="button" class="btn ghost" data-act="big-edit">시간외 급락 시 시세 입력</button><button type="button" class="btn ghost" data-act="big-price">큰수 직접 입력</button></span></div>';
   var pct=E.bigPctOf(a);
   var cur=plan.bigManual!=null?plan.bigManual:plan.bigAuto;
   var desc=plan.bigPx!=null?'시세 '+n2(plan.bigPx)+' +'+pct+'% · 자동 '+n2(plan.bigAuto)
-    :plan.bigManual!=null?'직접 수정 · 자동 '+n2(plan.bigAuto)
+    :plan.bigManual!=null?'직접 입력 · 자동 '+n2(plan.bigAuto)
     :'자동 (전일 종가 '+n2(plan.basis.c)+' +'+pct+'%)';
   return '<div class="bigedit"><span class="tag big">큰수</span> <b>'+n2(cur)+'</b><span>'+desc+'</span>'+
-    (placed?'':'<button type="button" class="btn" data-act="big-edit">'+(plan.bigManual!=null?'시세 수정':'시세 입력')+'</button>'+(plan.bigManual!=null?'<button type="button" class="btn ghost" data-act="big-reset">자동으로</button>':''))+'</div>';
+    (placed?'':'<span class="bigbtns"><button type="button" class="btn" data-act="big-edit">'+(plan.bigPx!=null?'시세 수정':'시세 입력')+'</button>'+
+      '<button type="button" class="btn" data-act="big-price">'+(plan.bigManual!=null&&plan.bigPx==null?'큰수 수정':'큰수 직접 입력')+'</button>'+
+      (plan.bigManual!=null?'<button type="button" class="btn ghost" data-act="big-reset">자동으로</button>':'')+'</span>')+'</div>';
 }
 
 // VR은 2주 회차마다 기간 예약주문을 한 번만 넣는다. 그 뒤로는 같은 주문이 유지된다고 보고 매일 체결만 확인한다.
@@ -1824,6 +1828,18 @@ document.addEventListener("click", function(ev){
   if(a.type==="VR"&&act==="vm-del"){ var di=+b.getAttribute("data-i"), dk="v:"+di;
     if(!armed[dk]){ Object.keys(armed).forEach(function(x){delete armed[x];}); armed[dk]=1; setTimeout(function(){ if(armed[dk]){ delete armed[dk]; render(); } },3000); render(); return; }
     delete armed[dk]; vrTradeDel(a,di,b); return; }
+  if(act==="big-price"){
+    var pp=a._plan; if(!pp) return;
+    var curP=pp.bigManual!=null&&pp.bigPx==null?pp.bigManual:null;
+    var pin=window.prompt(a.ticker+" 큰수 가격 ($)\n자동 큰수는 "+n2(pp.bigAuto)+"예요. 입력한 가격이 "+dlabel(pp.session)+" 큰수가 되고, 그보다 높은 LOC 매수는 이 가격으로 모아요. 비우면 자동으로 돌아가요.", curP!=null?n2(curP):"");
+    if(pin===null) return;
+    pin=String(pin).replace(/[$,\s]/g,"");
+    var pv=null;
+    if(pin!==""){ pv=Math.round(parseFloat(pin)*100)/100; if(!(pv>0)){ toast("가격을 숫자로 넣어주세요."); return; } }
+    var prevP=snapA();
+    save(a,{bigOv:pv?{session:pp.session,price:pv}:null}).then(function(){ toast(pv?"큰수를 "+n2(pv)+"로 정했어요.":"큰수를 자동 값으로 돌렸어요."); undoSet("큰수 가격 변경",prevP); render(); });
+    return;
+  }
   if(act==="big-edit"||act==="big-reset"){
     var bp=a._plan; if(!bp) return;
     var nv=null, pct=E.bigPctOf(a);
