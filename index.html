@@ -214,6 +214,8 @@ details.panel[open]>summary{margin-bottom:12px}
 .field label{font-size:11px;color:var(--ink-2)}
 .field input,.field select{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;color:var(--ink);font-family:var(--mono);width:100%}
 .field select{font-family:var(--sans)}
+.field label.check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);padding:8px 0;cursor:pointer}
+.field label.check input{width:auto;margin:0}
 .field input:focus,.field select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .hint{font-size:11px;color:var(--ink-3);margin-top:8px}
 
@@ -431,16 +433,26 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="field"><label for="n-name">이름</label><input id="n-name" placeholder="예: VR 2호" required></div>
       <div class="field"><label for="n-ticker">종목</label>
         <select id="n-ticker"><option>SOXL</option><option>TQQQ</option></select></div>
+      <div class="field" style="align-self:end"><label class="check"><input id="n-join" type="checkbox"> 이어서 하기 (이미 진행 중)</label></div>
       <div class="field inf-only"><label for="n-N">분할수</label><select id="n-N"><option value="20">20분할</option><option value="40">40분할</option></select></div>
       <div class="field inf-only"><label for="n-principal">원금 ($)</label><input id="n-principal" type="number" step="0.01" inputmode="decimal"></div>
-      <div class="field vr-only" hidden><label for="n-V">시작 V ($)</label><input id="n-V" type="number" step="0.01" inputmode="decimal"></div>
+      <div class="field inf-only join-only" hidden><label for="n-iqty">보유 수량</label><input id="n-iqty" type="number" step="1" inputmode="numeric"></div>
+      <div class="field inf-only join-only" hidden><label for="n-iavg">평단 ($)</label><input id="n-iavg" type="number" step="0.0001" inputmode="decimal"></div>
+      <div class="field inf-only join-only" hidden><label for="n-icash">잔금 ($, 무매 몫만)</label><input id="n-icash" type="number" step="0.01" inputmode="decimal"></div>
+      <div class="field inf-only join-only" hidden><label for="n-iT">T (비우면 추정값)</label><input id="n-iT" type="number" step="any" inputmode="decimal"></div>
+      <div class="field inf-only join-only" hidden><label for="n-imode">모드</label><select id="n-imode"><option value="NORMAL">일반모드</option><option value="REVERSE">리버스모드 진행 중</option></select></div>
+      <div class="field inf-only join-only" hidden><label for="n-icycle">몇 차 사이클</label><input id="n-icycle" type="number" step="1" min="1" inputmode="numeric" value="1"></div>
+      <div class="field vr-only" hidden><label for="n-V" id="n-V-label">시작 V ($)</label><input id="n-V" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-pool">Pool ($)</label><input id="n-pool" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-qty">보유 수량</label><input id="n-qty" type="number" step="1" inputmode="numeric" value="0"></div>
       <div class="field vr-only" hidden><label for="n-avg">평단 ($, 보유 있을 때)</label><input id="n-avg" type="number" step="0.0001" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-contrib">2주 적립금 ($)</label><input id="n-contrib" type="number" step="0.01" value="150"></div>
       <div class="field vr-only" hidden><label for="n-next">다음 V 갱신일</label><input id="n-next" type="date"></div>
+      <div class="field vr-only join-only" hidden><label for="n-vcycle">지금 회차</label><input id="n-vcycle" type="number" step="1" min="1" inputmode="numeric" value="1"></div>
+      <div class="field vr-only join-only" hidden><label for="n-vinv">지금까지 넣은 돈 ($, 선택)</label><input id="n-vinv" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field" style="align-self:end"><button class="btn primary" type="submit">계좌 만들기</button></div>
     </form>
+    <div class="hint join-only" id="join-hint" hidden></div>
     <div class="hint">VR을 0에서 시작할 때는 시작 V와 Pool에 첫 적립금을 넣고, 보유 수량 0으로 만드세요. 첫 매수표는 V 기준으로 계산됩니다.</div>
   </details>
 
@@ -1006,13 +1018,14 @@ function seedOf(a){ var m=trk.meta; return (m&&m.calc&&m.calc.seedCapitalUsd!=nu
 function cycleNo(label){ var m=/\[(\d+)차\]/.exec(label||""); return m ? +m[1] : null; }
 function nextLabel(label){ var n=cycleNo(label); return n ? label.replace(/\[\d+차\]/, "["+(n+1)+"차]") : (label||"무매법 V4.0")+" [다음]"; }
 function sortTrades(list){ return list.slice().sort(function(a,b){ if(a.date!==b.date) return a.date<b.date?-1:1; return (a.createdAt||0)-(b.createdAt||0); }); }
-function tLabel(t){ if(t.type==="buy") return t.tDelta!=null ? "T+"+t.tDelta : "-"; return t.tMult!=null ? "×"+(+t.tMult.toFixed(3))+(t.tTag?" "+t.tTag:"") : "-"; }
+function tLabel(t){ if(t.join) return "T="+(+(+t.tAfter||0).toFixed(4)); if(t.type==="buy") return t.tDelta!=null ? "T+"+t.tDelta : "-"; return t.tMult!=null ? "×"+(+t.tMult.toFixed(3))+(t.tTag?" "+t.tTag:"") : "-"; }
 
 // 거래를 날짜순으로 쌓아 누적수량·평단을 구한다 (매도는 평단에 영향 없음)
 function tradeRows(list){
   var q=0, avg=null;
   return sortTrades(list||getTrades()).map(function(t){
-    if(t.type==="buy"){ var cost=(avg!=null?avg*q:0)+t.qty*t.price; q+=t.qty; avg=q>0?cost/q:null; }
+    if(t.join){ q=t.qty; avg=q>0?t.price:null; }
+    else if(t.type==="buy"){ var cost=(avg!=null?avg*q:0)+t.qty*t.price; q+=t.qty; avg=q>0?cost/q:null; }
     else { q-=t.qty; if(q<=0){ q=0; avg=null; } }
     return Object.assign({}, t, { cumQty:q, avgPrice: avg!=null?Math.round(avg*100)/100:null, amount: Math.round(t.price*t.qty*100)/100 });
   });
@@ -1022,6 +1035,8 @@ function replay(list, seed){
   var q=0, avg=null, cash=seed||0, T=0, realized=0, buy=0, sell=0;
   sortTrades(list).forEach(function(t){
     var fee=(t.fee||0)/100;
+    // 이어서 하기로 만든 첫 줄: 그 시점의 보유·평단·잔금·T를 그대로 시작점으로 쓴다
+    if(t.join){ q=t.qty; avg=q>0?t.price:null; cash=t.cash; T=t.tAfter||0; return; }
     if(t.type==="buy"){
       var cost=t.price*t.qty; avg = q>0 ? (avg*q+cost)/(q+t.qty) : t.price; q+=t.qty; cash-=cost*(1+fee); buy+=cost; T+=(t.tDelta||0);
     } else {
@@ -1241,6 +1256,7 @@ function svgLegend(items, x0){
 }
 function chartWH(){ var w=window.innerWidth||800; return w<600?[420,300]:[720,340]; }
 function lineChart(rows, startAmount, trades, tk){
+  if(trades) trades=trades.filter(function(t){ return !t.join; });
   var wh=chartWH(), W=wh[0], H=wh[1];
   var rs=rows.filter(function(r){return r.amount!=null;});
   if(!rs.length) return '<svg class="chart" viewBox="0 0 720 340"><text x="360" y="170" text-anchor="middle" class="axis-label">원화 평가액을 기록하면 추이가 그려집니다</text></svg>';
@@ -1360,6 +1376,7 @@ function assetHero(rows, startAmount){
     (left!=null&&left>0?'<div class="delta muted">'+pct(left)+'<span>목표(+20%)까지</span></div>':'')+'</div>';
 }
 function priceChart(tk, meta, trades){
+  if(trades) trades=trades.filter(function(t){ return !t.join; });
   var all=bars(tk); if(!all.length) return "";
   var startUS=meta&&meta.startDate?E.addDays(meta.startDate,-1):all[Math.max(0,all.length-20)].d, i0=-1;
   for(var k=0;k<all.length;k++){ if(all[k].d>=startUS){ i0=k; break; } }
@@ -1438,6 +1455,7 @@ document.addEventListener("pointerdown", chartHover);
 document.addEventListener("pointerout", chartLeave);
 
 function tradeChart(tx0){
+  if(tx0) tx0=tx0.filter(function(t){ return !t.join&&t.type!=="합류"; });
   if(!tx0||!tx0.length) return "";
   // 같은 날 같은 가격·같은 구분(매수/매도)으로 체결된 건은 점 하나로 합친다 (수량 합산, 평단은 마지막 값)
   var tx=[]; tx0.forEach(function(t){ var p=tx[tx.length-1];
@@ -1517,6 +1535,7 @@ function tradeLog(a){
   var rows=tradeRows();
   var body=rows.slice().reverse().map(function(t){
     var del=armed["t:"+t.id];
+    if(t.join) return '<tr><td>'+esc(t.date)+'</td><td>합류</td><td>'+esc(tLabel(t))+'</td><td>'+(t.qty>0?'$'+n2(t.price):'-')+'</td><td>'+t.qty+'</td><td>잔금 $'+n2(t.cash)+'</td><td>'+t.cumQty+'</td><td>'+(t.avgPrice!=null?"$"+n2(t.avgPrice):"-")+'</td><td></td></tr>';
     return '<tr><td>'+esc(t.date)+'</td><td class="'+(t.type==="buy"?"up":"down")+'">'+(t.type==="buy"?"매수":"매도")+'</td><td>'+esc(tLabel(t))+'</td><td>$'+n2(t.price)+'</td><td>'+t.qty+'</td><td>$'+n2(t.amount)+'</td><td>'+t.cumQty+'</td><td>'+(t.avgPrice!=null?"$"+n2(t.avgPrice):"-")+'</td>'+
       '<td><button type="button" class="del" data-act="rec-trade-edit" data-id="'+esc(t.id)+'">수정</button> <button type="button" class="del'+(del?" confirming":"")+'" data-act="rec-trade-del" data-id="'+esc(t.id)+'">'+(del?"한번더?":"삭제")+'</button></td></tr>';
   }).join("");
@@ -1596,6 +1615,7 @@ function writeTrades(a, list, label, msg){
 function tradesFromLog(a){
   var log=(a.log||[]).filter(function(l){return l.side==="BUY"||l.side==="SELL";}).slice().reverse(), base=Date.now()-log.length;
   var out=log.map(function(l,i){ return tradeFromFill(a,{side:l.side,kind:l.kind,px:l.px,q:l.q},l.d,null,base+i); });
+  if(a.join){ var j=a.join; out.unshift({ id:genId(), date:j.d, usDate:j.d, type:"buy", join:true, price:j.avg||0, qty:j.qty||0, cash:j.cash, tAfter:j.T||0, createdAt:base-1, fee:0, src:"join" }); }
   if(out.length) out[out.length-1].tAfter=a.T||0;
   return out;
 }
@@ -1625,7 +1645,7 @@ function archiveAndRoll(a, allTrades, endDate, next){
   var m=trk.meta, seed=seedOf(a), rows=computeRows(trk.entries,allTrades,a.ticker), tr=tradeRows(allTrades), st=replay(allTrades,seed);
   var last=null; for(var i=rows.length-1;i>=0;i--) if(rows[i].amountRecorded){ last=rows[i]; break; }
   var id="cycle_"+(m.startDate||endDate).replace(/-/g,"")+"_"+Date.now().toString(36);
-  var trOut=tr.map(function(t){ return {date:t.date,type:t.type==="buy"?"매수":"매도",price:t.price,qty:t.qty,amount:t.amount,cumQty:t.cumQty,avgPrice:t.avgPrice}; });
+  var trOut=tr.map(function(t){ return {date:t.date,type:t.join?"합류":t.type==="buy"?"매수":"매도",price:t.price,qty:t.qty,amount:t.amount,cumQty:t.cumQty,avgPrice:t.avgPrice}; });
   var arc = last ? { label:m.label||"무매법 V4.0", startDate:m.startDate||null, endDate:endDate, startAmount:m.startAmount!=null?m.startAmount:null, endAmount:last.amount,
       entries: rows.filter(function(r){return r.amountRecorded;}).map(function(r){ return {date:r.date,amount:r.amount,soxlPrice:r.soxlPrice,qty:r.qty,avgPrice:r.avgPrice}; }),
       trades:trOut, plUsd:st.realized, pctOverride: st.totalBuy?st.realized/st.totalBuy:null, totalBuyUsd:st.totalBuy, totalSellUsd:st.totalSell, seedUsd:seed, seedReturnPct: seed?st.realized/seed:null }
@@ -1677,7 +1697,7 @@ function recAct(act, b, a){
   if(act==="rec-date"){ var tid=b.getAttribute("data-t"), el=$(tid), base=el&&el.value?new Date(el.value+"T12:00:00Z"):new Date(); base.setUTCDate(base.getUTCDate()+(+b.getAttribute("data-d"))); var v=base.toISOString().slice(0,10); if(tid==="a-date") rf.aDate=v; else rf.tDate=v; render(); return true; }
   if(act==="rec-tdelta"){ rf.tDelta=parseFloat(b.getAttribute("data-v")); render(); return true; }
   if(act==="rec-tmult"){ rf.sellMult=parseFloat(b.getAttribute("data-v")); rf.sellTag=b.getAttribute("data-tag"); render(); return true; }
-  if(act==="rec-csv-trades"){ downloadCSV("무한매수법_매매내역_"+((trk.meta&&trk.meta.startDate)||todayKR())+"_시작",["일시","구분","T값","체결가","수량","금액","누적수량","평단"],tradeRows().map(function(t){return [t.date,t.type==="buy"?"매수":"매도",tLabel(t),t.price,t.qty,t.amount,t.cumQty,t.avgPrice];})); return true; }
+  if(act==="rec-csv-trades"){ downloadCSV("무한매수법_매매내역_"+((trk.meta&&trk.meta.startDate)||todayKR())+"_시작",["일시","구분","T값","체결가","수량","금액","누적수량","평단"],tradeRows().map(function(t){return [t.date,t.join?"합류":t.type==="buy"?"매수":"매도",tLabel(t),t.price,t.qty,t.amount,t.cumQty,t.avgPrice];})); return true; }
   if(act==="rec-csv-entries"){ downloadCSV("무한매수법_"+((trk.meta&&trk.meta.startDate)||"")+"_시작_"+todayKR()+"_기준",ENTRY_CSV_HEAD,entryCsvLines(computeRows(trk.entries,getTrades(),L&&L.ticker))); return true; }
   if(act==="rec-csv-arc"||act==="rec-csv-arc-tr"){
     var c=trk.cycles.filter(function(x){return x.id===b.getAttribute("data-id");})[0]; if(!c) return true;
@@ -1974,17 +1994,36 @@ document.addEventListener("submit", function(ev){
     var type=$("n-type").value, tk=$("n-ticker").value, name=$("n-name").value.trim();
     var id="acct-"+Date.now().toString(36);
     var base={id:id,type:type,name:name,ticker:tk,createdAt:Date.now(),order:orderedAccounts().length,log:[],events:[],pending:null,fee:0.07};
+    var joining=$("n-join").checked, jd=todayKR();
     if(type==="INF"){
-      var pr=parseFloat($("n-principal").value);
+      var pr=parseFloat($("n-principal").value), N0=parseInt($("n-N").value,10);
+      if(joining){
+        // 이어서 하기: 증권사 잔고 화면의 보유·평단·잔금(+T)으로 지금 상태를 그대로 만든다
+        var jq=parseInt($("n-iqty").value,10), ja=parseFloat($("n-iavg").value), jc=parseFloat($("n-icash").value), jT=parseFloat($("n-iT").value);
+        if(!(jq>=0)||!(jc>=0)||(jq>0&&!(ja>0))){ toast("보유 수량·평단·잔금을 넣어주세요."); return; }
+        if(!(jq>0)) ja=null;
+        var est=joinEstT(N0,jq,ja||0,jc);
+        if(isNaN(jT)) jT=est;
+        if(!(jT>=0)||jT>=N0+20){ toast("T를 확인해주세요."); return; }
+        if(!(pr>0)) pr=E.r2(jc+(jq>0?jq*ja:0));
+        var jm=$("n-imode").value==="REVERSE"&&jq>0?"REVERSE":"NORMAL", jcy=Math.max(1,parseInt($("n-icycle").value,10)||1);
+        if(jm==="NORMAL"&&jT>N0-1){ toast("T가 "+(N0-1)+"보다 크면 리버스모드예요. 모드를 바꾸거나 T를 확인해주세요."); return; }
+        Object.assign(base,{N:N0,basePct:tk==="TQQQ"?15:20,principal:pr,initialPrincipal:pr,cash:jc,T:jT,qty:jq,avg:ja,mode:jm,revDay:jm==="REVERSE"?1:0,cycle:jcy,compound:true,bigMult:1.12,realized:0,aside:0,
+          join:{d:jd,qty:jq,avg:ja,cash:jc,T:jT},
+          log:[{d:jd,side:"NOTE",text:"이어서 하기: 보유 "+jq+"주"+(ja?" · 평단 $"+ja:"")+" · 잔금 "+usd(jc)+" · T "+jT+(isNaN(parseFloat($("n-iT").value))?" (추정)":"")+(jm==="REVERSE"?" · 리버스 진행 중":"")+" · "+jcy+"차"}]});
+      } else {
       if(!(pr>0)){ toast("원금을 넣어주세요."); return; }
-      Object.assign(base,{N:parseInt($("n-N").value,10),basePct:tk==="TQQQ"?15:20,principal:pr,initialPrincipal:pr,cash:pr,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:1.12,realized:0,aside:0});
+      Object.assign(base,{N:N0,basePct:tk==="TQQQ"?15:20,principal:pr,initialPrincipal:pr,cash:pr,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:1.12,realized:0,aside:0});
+      }
     } else {
       var V=parseFloat($("n-V").value), pool=parseFloat($("n-pool").value);
       if(!(V>0)||!(pool>=0)){ toast("시작 V와 Pool을 넣어주세요."); return; }
-      Object.assign(base,{V:V,pool:pool,qty:parseInt($("n-qty").value,10)||0,avg:(parseInt($("n-qty").value,10)||0)>0&&parseFloat($("n-avg").value)>0?parseFloat($("n-avg").value):null,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:pool+(parseInt($("n-qty").value,10)||0)*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:1});
+      var vq=parseInt($("n-qty").value,10)||0, vinv=parseFloat($("n-vinv").value), vcy=joining?Math.max(1,parseInt($("n-vcycle").value,10)||1):1;
+      Object.assign(base,{V:V,pool:pool,qty:vq,avg:vq>0&&parseFloat($("n-avg").value)>0?parseFloat($("n-avg").value):null,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:joining&&vinv>0?vinv:pool+vq*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:vcy});
+      if(joining) base.log=[{d:jd,side:"NOTE",text:"이어서 하기: "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
-    db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}]); render(); });
+    db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); addFormRefresh(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}]); render(); });
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
@@ -2013,12 +2052,41 @@ document.addEventListener("focusout", function(ev){
   var t=ev.target; if(t.id==="inline-edit"&&t.isConnected&&rf.inline===t.getAttribute("data-k")) saveInline(t);
 });
 
+// 계좌 추가: 전략(무매/VR)과 "이어서 하기"에 따라 칸을 보이고 숨긴다
+function addFormRefresh(){
+  var vr=$("n-type").value==="VR", jn=$("n-join").checked;
+  document.querySelectorAll("#add-form .vr-only, #add-form .inf-only, #add-panel .join-only").forEach(function(e){
+    var ok=(e.classList.contains("vr-only")?vr:e.classList.contains("inf-only")?!vr:true)&&(!e.classList.contains("join-only")||jn);
+    e.hidden=!ok;
+  });
+  $("n-V-label").textContent=jn?"지금 V ($)":"시작 V ($)";
+  joinHint();
+}
+// 이어서 하기 안내: 무매는 추정 T, VR은 지금 평가금 E와 V 비교 (라오어 중간합류 글: E가 직전 V보다 낮을 때 합류 추천)
+function joinEstT(N, q, avg, cash){ var held=q*avg; return held>0&&cash>=0 ? Math.round(N*held/(held+cash)*10000)/10000 : (q>0?null:0); }
+function joinHint(){
+  var h=$("join-hint"); if(!h||!$("n-join").checked) return;
+  var num=function(id){ var v=parseFloat($(id).value); return isNaN(v)?null:v; };
+  if($("n-type").value==="VR"){
+    var q=num("n-qty")||0, V=num("n-V"), lb=lastBar($("n-ticker").value), Ev=lb?q*lb.c:null;
+    h.textContent="지금 V·Pool·보유 수량·평단과 다음 V 갱신일을 증권사 화면과 지금까지의 기록대로 넣으세요. 회차는 Pool 사용 한도(75%에서 점점 줄어듦)에 쓰입니다."+
+      (Ev!=null&&q>0?" 지금 평가금 E = "+usd(Ev)+" ("+$("n-ticker").value+" 종가 "+usd(lb.c)+" 기준)"+(V>0?(Ev<V?". E가 V보다 낮아 합류하기 좋은 때예요.":". E가 V보다 높아요. 라오어 글은 E가 직전 V보다 낮아질 때 합류를 권합니다."):".")+" 새로 VR을 시작하는 거라면 V를 지금 평가금으로 잡으세요.":"");
+    return;
+  }
+  var N=parseInt($("n-N").value,10), iq=num("n-iqty"), ia=num("n-iavg"), ic=num("n-icash");
+  var est=iq!=null&&ia!=null&&ic!=null?joinEstT(N,iq,ia,ic):null;
+  $("n-iT").placeholder=est!=null?"추정 "+est:"";
+  h.textContent="보유 수량·평단·잔금은 증권사 잔고 화면 값을 넣으세요. 잔금에는 VR 같은 다른 돈은 빼고 이 무매에 쓸 달러만 넣습니다."+
+    (est!=null?" 추정 T = "+est+" (분할수 × 매입금액 ÷ (매입금액 + 잔금)). 매번 1회분씩 샀다면 거의 맞고, 쿼터매도가 있었다면 다를 수 있어요. 알고 있는 T가 있으면 T 칸에 넣으세요.":"")+
+    " 원금을 비우면 잔금 + 매입금액으로 잡습니다.";
+}
 $("n-type").addEventListener("change", function(){
-  var vr=this.value==="VR";
-  document.querySelectorAll("#add-form .vr-only").forEach(function(e){e.hidden=!vr;});
-  document.querySelectorAll("#add-form .inf-only").forEach(function(e){e.hidden=vr;});
-  $("n-ticker").value = vr ? "TQQQ" : "SOXL";
+  $("n-ticker").value = this.value==="VR" ? "TQQQ" : "SOXL";
+  addFormRefresh();
 });
+$("n-join").addEventListener("change", addFormRefresh);
+$("add-form").addEventListener("input", joinHint);
+$("add-form").addEventListener("change", joinHint);
 
 /* ---------- boot ---------- */
 render();
