@@ -467,7 +467,6 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="field inf-only join-only" hidden><label for="n-icash">잔금 ($, 무매 몫만)</label><input id="n-icash" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field inf-only join-only" hidden><label for="n-iT">T (비우면 추정값)</label><input id="n-iT" type="number" step="any" inputmode="decimal"></div>
       <div class="field inf-only join-only" hidden><label for="n-imode">모드</label><select id="n-imode"><option value="NORMAL">일반모드</option><option value="REVERSE">리버스모드 진행 중</option></select></div>
-      <div class="field inf-only join-only" hidden><label for="n-icycle">몇 차 사이클</label><input id="n-icycle" type="number" step="1" min="1" inputmode="numeric" placeholder="예: 3"></div>
       <div class="field vr-only" hidden><label for="n-V" id="n-V-label">시작 V ($)</label><input id="n-V" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-pool">Pool ($)</label><input id="n-pool" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-qty">보유 수량</label><input id="n-qty" type="number" step="1" inputmode="numeric" value="0"></div>
@@ -2045,8 +2044,7 @@ document.addEventListener("submit", function(ev){
         if(isNaN(jT)) jT=est;
         if(!(jT>=0)||jT>=N0+20){ toast("T를 확인해주세요."); return; }
         if(!(pr>0)) pr=E.r2(jc+(jq>0?jq*ja:0));
-        var jm=$("n-imode").value==="REVERSE"&&jq>0?"REVERSE":"NORMAL", jcy=parseInt($("n-icycle").value,10);
-        if(!(jcy>=1)){ toast("몇 차 사이클인지 넣어주세요."); $("n-icycle").focus(); return; }
+        var jm=$("n-imode").value==="REVERSE"&&jq>0?"REVERSE":"NORMAL", jcy=1; // 사이클 차수는 T와 헷갈려서 받지 않는다 (Dw 2026-11-07)
         if(jm==="NORMAL"&&jT>N0-1){ toast("T가 "+(N0-1)+"보다 크면 리버스모드예요. 모드를 바꾸거나 T를 확인해주세요."); return; }
         // 파일로 불러온 매매가 있으면 그 매매를 기록으로 남기고, 칸 값을 고쳤을 때만 마지막에 합류 줄로 맞춘다
         var imp=infImport&&infImport.seed===pr&&infImport.trades.length?infImport:null, jn={d:jd,qty:jq,avg:ja,cash:jc,T:jT};
@@ -2055,7 +2053,7 @@ document.addEventListener("submit", function(ev){
           join:jn,
           _imp:(imp?imp.trades.map(function(t){ var l={d:t.date,side:t.type==="buy"?"BUY":"SELL",kind:"import",px:t.price,q:t.qty,fee:0};
               if(t.type==="buy") l.tDelta=t.tDelta||0; else { l.tMult=t.tMult!=null?t.tMult:1; if(t.tTag) l.tTag=t.tTag; if(t.pnl!=null) l.pnl=t.pnl; } return l; }).reverse():[]),
-          _note:[{d:jd,side:"NOTE",text:(imp?"매매내역 파일("+imp.n+"건, "+imp.from+"~"+imp.to+")로 ":"")+"이어서 하기: 보유 "+jq+"주"+(ja?" · 평단 $"+ja:"")+" · 잔금 "+usd(jc)+" · T "+jT+(isNaN(parseFloat($("n-iT").value))?" (추정)":"")+(jm==="REVERSE"?" · 리버스 진행 중":"")+" · "+jcy+"차"}]});
+          _note:[{d:jd,side:"NOTE",text:(imp?"매매내역 파일("+imp.n+"건, "+imp.from+"~"+imp.to+")로 ":"")+"이어서 하기: 보유 "+jq+"주"+(ja?" · 평단 $"+ja:"")+" · 잔금 "+usd(jc)+" · T "+jT+(isNaN(parseFloat($("n-iT").value))?" (추정)":"")+(jm==="REVERSE"?" · 리버스 진행 중":"")}]});
         // 불러온 매매는 체결 기록에 한 줄씩 (최신이 위), 맨 위에 이어서 하기 메모
         base.log=base._note.concat(base._imp); delete base._note; delete base._imp;
       } else {
@@ -2072,7 +2070,9 @@ document.addEventListener("submit", function(ev){
       if(joining) base.log=[{d:jd,side:"NOTE",text:(vrImport?"기록표("+vrImport.rows+"회차)로 ":"")+"이어서 하기: "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
-    db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}]); render(); });
+    // 이어서 하기로 만든 무매 계좌는 기록(매매내역·그래프)을 바로 켠다. 기록에 연결된 무매 계좌가 아직 없을 때만
+    var autoLink=type==="INF"&&joining&&!linkedAcct()&&trk.metaLoaded&&!trk.meta;
+    db.doc("accounts/"+id).set(base).then(function(){ return autoLink?linkAccount(base):null; }).then(function(){ selected=id; $("add-panel").open=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}].concat(autoLink?[{p:"cycle/current",d:null}]:[])); render(); }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
