@@ -444,18 +444,18 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="field" style="align-self:end"><label class="check"><input id="n-join" type="checkbox"> 이어서 하기 (이미 진행 중)</label></div>
       <div class="vr-only join-only vr-import" hidden>
       <div class="vi-h">VR 기록표로 채우기 <span class="muted">(선택)</span></div>
-      <div class="vi-d">회차별 기록표(시작일·마감일·cycle·마지막종가·마지막수량·투입원금·E마지막·V·시작P·마지막P 등)를 엑셀에서 복사해 붙여넣거나 파일(.xlsx·.csv)을 고르세요. 마지막 줄로 지금 상태를 채우고, 지난 회차는 회차 추이에 넣습니다.</div>
+      <div class="vi-d">회차별 기록표(시작일·마감일·cycle·마지막종가·마지막수량·투입원금·E마지막·V·시작P·마지막P 등)를 엑셀에서 복사해 붙여넣거나 파일(.xlsx·.csv)을 고르면 바로 읽어 아래 칸을 채웁니다. 마지막 줄로 지금 상태를 채우고, 지난 회차는 회차 추이에 넣습니다.</div>
       <textarea id="vi-text" rows="3" placeholder="엑셀에서 머리줄까지 표를 복사해 여기에 붙여넣기"></textarea>
-      <div class="vi-a"><label class="btn" for="vi-file">파일 고르기</label><input id="vi-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden><button class="btn" type="button" id="vi-read">표 읽기</button><button class="btn" type="button" id="vi-clear" hidden>지우기</button></div>
+      <div class="vi-a"><label class="btn" for="vi-file">파일 고르기</label><input id="vi-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden><button class="btn" type="button" id="vi-clear" hidden>지우기</button></div>
       <div class="vi-r" id="vi-result"></div>
     </div>
       <div class="field inf-only"><label for="n-N">분할수</label><select id="n-N"><option value="20">20분할</option><option value="40">40분할</option></select></div>
       <div class="field inf-only"><label for="n-principal">원금 ($)</label><input id="n-principal" type="number" step="0.01" inputmode="decimal"></div>
       <div class="inf-only join-only vr-import" hidden>
         <div class="vi-h">매매내역 파일로 채우기 <span class="muted">(선택)</span></div>
-        <div class="vi-d">날짜·매수/매도·체결가·수량 열이 있는 표(이 앱의 매매내역 CSV, 증권사 엑셀, 직접 정리한 표)를 붙여넣거나 파일을 고르세요. 위 분할수와 원금(이번 사이클 시작 원금)을 먼저 넣으면 보유·평단·잔금·T를 계산해 채웁니다. T값 열이 있으면 그대로 쓰고, 없으면 그날 매수액·매도 수량으로 T를 셉니다.</div>
+        <div class="vi-d">날짜·매수/매도·체결가·수량 열이 있는 표(이 앱의 매매내역 CSV, 증권사 엑셀, 직접 정리한 표)를 붙여넣거나 파일을 고르면 바로 보유·평단·잔금·T를 계산해 아래 칸을 채웁니다. 위 분할수와 원금(이번 사이클 시작 원금)이 필요해요. T값 열이 있으면 그대로 쓰고, 없으면 그날 매수액·매도 수량으로 T를 셉니다.</div>
         <textarea id="ii-text" rows="3" placeholder="엑셀에서 머리줄까지 표를 복사해 여기에 붙여넣기"></textarea>
-        <div class="vi-a"><label class="btn" for="ii-file">파일 고르기</label><input id="ii-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden><button class="btn" type="button" id="ii-read">표 읽기</button><button class="btn" type="button" id="ii-clear" hidden>지우기</button></div>
+        <div class="vi-a"><label class="btn" for="ii-file">파일 고르기</label><input id="ii-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden><button class="btn" type="button" id="ii-clear" hidden>지우기</button></div>
         <div class="vi-r" id="ii-result"></div>
       </div>
       <div class="field inf-only join-only" hidden><label for="n-iqty">보유 수량</label><input id="n-iqty" type="number" step="1" inputmode="numeric"></div>
@@ -2169,9 +2169,9 @@ function viReadFile(f, pre, done){
 }
 var viRun=function(txt){ viApply(vrParseTable(txt, parseFloat($("n-contrib").value))); };
 $("vi-file").addEventListener("change", function(){ viReadFile(this.files&&this.files[0], "vi", viRun); });
-$("vi-read").addEventListener("click", function(){ viApply(vrParseTable($("vi-text").value, parseFloat($("n-contrib").value))); });
 $("vi-clear").addEventListener("click", viClear);
-$("vi-text").addEventListener("paste", function(){ var t=this; setTimeout(function(){ viApply(vrParseTable(t.value, parseFloat($("n-contrib").value))); },0); });
+// 붙여넣거나 고치면 바로 읽는다 (버튼 없이)
+var viTimer=null; $("vi-text").addEventListener("input", function(){ var t=this; clearTimeout(viTimer); viTimer=setTimeout(function(){ if(t.value.trim()) viRun(t.value); else { vrImport=null; $("vi-result").innerHTML=""; $("vi-clear").hidden=true; } },300); });
 
 /* ----- 무매 매매내역 불러오기 (이어서 하기) -----
    날짜·구분·체결가·수량(+T값) 표를 읽어 이번 사이클 매매를 다시 쌓는다.
@@ -2189,7 +2189,7 @@ function infParseTable(text, N, seed, tk){
     if(m.d!=null&&m.side!=null&&m.px!=null&&m.q!=null){ hi=i; map=m; }
   }
   if(hi<0) return { err:"머리줄을 찾지 못했어요. 날짜·구분(매수/매도)·체결가·수량 열 이름이 있어야 해요." };
-  if(!(seed>0)) return { err:"위 원금(이번 사이클 시작 원금)을 먼저 넣고 다시 읽어주세요." };
+  if(!(seed>0)) return { err:"위 원금(이번 사이클 시작 원금)을 넣으면 바로 계산해요." };
   var rows=[], skipped=0, otherTk=0;
   grid.slice(hi+1).forEach(function(r, k){
     var cell=function(c){ return map[c]!=null?r[map[c]]:null; };
@@ -2260,9 +2260,11 @@ function iiApply(r){
 function iiClear(){ infImport=null; $("ii-text").value=""; $("ii-file").value=""; $("ii-result").innerHTML=""; $("ii-clear").hidden=true; }
 var iiRun=function(txt){ iiApply(infParseTable(txt, parseInt($("n-N").value,10), parseFloat($("n-principal").value), $("n-ticker").value)); };
 $("ii-file").addEventListener("change", function(){ viReadFile(this.files&&this.files[0], "ii", iiRun); });
-$("ii-read").addEventListener("click", function(){ iiRun($("ii-text").value); });
 $("ii-clear").addEventListener("click", iiClear);
-$("ii-text").addEventListener("paste", function(){ var t=this; setTimeout(function(){ iiRun(t.value); },0); });
+var iiTimer=null; $("ii-text").addEventListener("input", function(){ var t=this; clearTimeout(iiTimer); iiTimer=setTimeout(function(){ if(t.value.trim()) iiRun(t.value); else { infImport=null; $("ii-result").innerHTML=""; $("ii-clear").hidden=true; } },300); });
+// 원금·분할수를 나중에 넣거나 바꿔도 불러온 표로 다시 계산한다
+["n-principal","n-N","n-ticker"].forEach(function(id){ $(id).addEventListener("change", function(){ if($("n-join").checked&&$("n-type").value==="INF"&&$("ii-text").value.trim()) iiRun($("ii-text").value); }); });
+$("n-principal").addEventListener("input", function(){ clearTimeout(iiTimer); var v=this; iiTimer=setTimeout(function(){ if($("n-join").checked&&$("n-type").value==="INF"&&$("ii-text").value.trim()&&parseFloat(v.value)>0) iiRun($("ii-text").value); },500); });
 
 // 계좌 추가: 전략(무매/VR)과 "이어서 하기"에 따라 칸을 보이고 숨긴다
 function addFormRefresh(){
