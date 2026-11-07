@@ -1012,12 +1012,12 @@ function vrTradeDel(a, i, b){
   if(vmf.edit&&vmf.edit.i===i) vmf.edit=null;
   vrCommit(a, vrPatchOf(un.next), log, dlabel(old.d)+" 거래 삭제", "거래 기록을 삭제했어요. 보유·평단·Pool도 되돌렸어요.", b);
 }
-var KIND={first:"처음매수","star-half":"별지점 절반","avg-half":"평단 절반","star-full":"별지점 전체",ladder:"하락 대비",quarter:"쿼터매도",limit:"지정가매도","rev-moc":"리버스 MOC","rev-sell":"리버스 매도","rev-buy":"쿼터매수","vr-buy":"VR 매수","vr-sell":"VR 매도",roll:"V 갱신",edit:"상태 수정"};
+var KIND={first:"처음매수","star-half":"별지점 절반","avg-half":"평단 절반","star-full":"별지점 전체",ladder:"하락 대비",quarter:"쿼터매도",limit:"지정가매도","rev-moc":"리버스 MOC","rev-sell":"리버스 매도","rev-buy":"쿼터매수","vr-buy":"VR 매수","vr-sell":"VR 매도",roll:"V 갱신",edit:"상태 수정",import:"불러온 기록"};
 function logPanel(a){
   var log=a.log||[];
   var rows=log.slice(0,60).map(function(l){
     if(l.side==="NOTE") return '<tr><td>'+esc(l.d)+'</td><td>기록</td><td colspan="4" style="text-align:left">'+esc(l.text)+'</td></tr>';
-    return '<tr><td>'+esc(l.d)+'</td><td class="'+(l.side==="BUY"?"up":"down")+'">'+(l.side==="BUY"?"매수":"매도")+'</td><td>'+esc(KIND[l.kind]||l.kind)+(l.manual?' <span class="muted">직접</span>':'')+'</td><td>'+n2(l.px)+'</td><td>'+l.q+'</td><td class="'+signCls(l.pnl)+'">'+(l.pnl!=null?usd(l.pnl):"")+'</td></tr>';
+    return '<tr><td>'+esc(l.d)+'</td><td class="'+(l.side==="BUY"?"up":"down")+'">'+(l.side==="BUY"?"매수":"매도")+'</td><td>'+esc(KIND[l.kind]||l.kind)+(l.manual?' <span class="muted">직접</span>':'')+(l.kind==="import"?' <span class="muted">'+esc(l.side==="BUY"?"T+"+(+(l.tDelta||0).toFixed(4)):"×"+(+(l.tMult!=null?l.tMult:1).toFixed(3)))+'</span>':'')+'</td><td>'+n2(l.px)+'</td><td>'+l.q+'</td><td class="'+signCls(l.pnl)+'">'+(l.pnl!=null?usd(l.pnl):"")+'</td></tr>';
   }).join("");
   return '<details class="panel" id="lg-'+esc(a.id)+'"><summary>체결 기록 ('+log.length+')</summary>'+(rows?'<div class="tablewrap"><table class="log"><thead><tr><th>날짜</th><th>구분</th><th>종류</th><th>체결가</th><th>수량</th><th>실현손익</th></tr></thead><tbody>'+rows+'</tbody></table></div>':'<div class="empty">아직 반영한 체결이 없습니다.</div>')+'</details>';
 }
@@ -1642,15 +1642,17 @@ function writeTrades(a, list, label, msg){
 }
 function tradesFromLog(a){
   var log=(a.log||[]).filter(function(l){return l.side==="BUY"||l.side==="SELL";}).slice().reverse(), base=Date.now()-log.length;
-  var out=log.map(function(l,i){ return tradeFromFill(a,{side:l.side,kind:l.kind,px:l.px,q:l.q},l.d,null,base+i); });
+  var out=log.map(function(l,i){ return tradeFromFill(a,{side:l.side,kind:l.kind,px:l.px,q:l.q,tDelta:l.tDelta,tMult:l.tMult,tTag:l.tTag,fee:l.fee},l.d,null,base+i); });
   if(a.join){ var j=a.join; out.unshift({ id:genId(), date:j.d, usDate:j.d, type:"buy", join:true, price:j.avg||0, qty:j.qty||0, cash:j.cash, tAfter:j.T||0, createdAt:base-1, fee:0, src:"join" }); }
   if(a.importTrades&&a.importTrades.length) out=a.importTrades.map(function(t){ return Object.assign({},t); }).concat(out);
   if(out.length) out[out.length-1].tAfter=a.T||0;
   return out;
 }
 function tradeFromFill(a, l, d, close, ts){
-  var N=a.N||20, t={ id:genId(), date:d, usDate:d, type:l.side==="BUY"?"buy":"sell", price:l.px, qty:l.q, createdAt:ts, fee:a.fee||0, src:"desk", kind:l.kind||null };
+  var N=a.N||20, t={ id:genId(), date:d, usDate:d, type:l.side==="BUY"?"buy":"sell", price:l.px, qty:l.q, createdAt:ts, fee:l.fee!=null?l.fee:(a.fee||0), src:"desk", kind:l.kind||null };
   if(close!=null) t.soxlPrice=close;
+  // 불러온 기록은 저장해 둔 T 변화를 그대로 쓴다
+  if(l.tDelta!=null||l.tMult!=null){ if(t.type==="buy") t.tDelta=l.tDelta||0; else { t.tMult=l.tMult!=null?l.tMult:1; t.tTag=l.tTag||""; } return t; }
   if(t.type==="buy") t.tDelta = TD[l.kind]!=null ? TD[l.kind] : 0;
   else { var m={ quarter:[0.75,"별지점"], limit:[0.25,"목표가"], "rev-moc":[1-2/N,"리버스 MOC"], "rev-sell":[1-2/N,"리버스"] }[l.kind]||[1,""]; t.tMult=m[0]; t.tTag=m[1]; }
   return t;
@@ -2048,8 +2050,12 @@ document.addEventListener("submit", function(ev){
         var imp=infImport&&infImport.seed===pr&&infImport.trades.length?infImport:null, jn={d:jd,qty:jq,avg:ja,cash:jc,T:jT};
         if(imp&&imp.qty===jq&&Math.abs(imp.cash-jc)<0.01&&(ja==null?imp.avg==null:imp.avg!=null&&Math.abs(imp.avg-ja)<0.0001)) jn=null;
         Object.assign(base,{N:N0,basePct:tk==="TQQQ"?15:20,principal:pr,initialPrincipal:pr,cash:jc,T:jT,qty:jq,avg:ja,mode:jm,revDay:jm==="REVERSE"?1:0,cycle:jcy,compound:true,bigMult:1.12,realized:0,aside:0,
-          join:jn, importTrades:imp?imp.trades:null,
-          log:[{d:jd,side:"NOTE",text:(imp?"매매내역 파일("+imp.n+"건, "+imp.from+"~"+imp.to+")로 ":"")+"이어서 하기: 보유 "+jq+"주"+(ja?" · 평단 $"+ja:"")+" · 잔금 "+usd(jc)+" · T "+jT+(isNaN(parseFloat($("n-iT").value))?" (추정)":"")+(jm==="REVERSE"?" · 리버스 진행 중":"")+" · "+jcy+"차"}]});
+          join:jn,
+          _imp:(imp?imp.trades.map(function(t){ var l={d:t.date,side:t.type==="buy"?"BUY":"SELL",kind:"import",px:t.price,q:t.qty,fee:0};
+              if(t.type==="buy") l.tDelta=t.tDelta||0; else { l.tMult=t.tMult!=null?t.tMult:1; if(t.tTag) l.tTag=t.tTag; if(t.pnl!=null) l.pnl=t.pnl; } return l; }).reverse():[]),
+          _note:[{d:jd,side:"NOTE",text:(imp?"매매내역 파일("+imp.n+"건, "+imp.from+"~"+imp.to+")로 ":"")+"이어서 하기: 보유 "+jq+"주"+(ja?" · 평단 $"+ja:"")+" · 잔금 "+usd(jc)+" · T "+jT+(isNaN(parseFloat($("n-iT").value))?" (추정)":"")+(jm==="REVERSE"?" · 리버스 진행 중":"")+" · "+jcy+"차"}]});
+        // 불러온 매매는 체결 기록에 한 줄씩 (최신이 위), 맨 위에 이어서 하기 메모
+        base.log=base._note.concat(base._imp); delete base._note; delete base._imp;
       } else {
       if(!(pr>0)){ toast("원금을 넣어주세요."); return; }
       Object.assign(base,{N:N0,basePct:tk==="TQQQ"?15:20,principal:pr,initialPrincipal:pr,cash:pr,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:1.12,realized:0,aside:0});
@@ -2226,7 +2232,7 @@ function infParseTable(text, N, seed, tk){
   if(!cur.length) return { err:"파일의 마지막 매매에서 보유가 0이 되어 사이클이 끝났어요. 새 사이클은 이어서 하기 없이 원금으로 시작하세요." };
   var byDay={}, days=[]; cur.forEach(function(r){ if(!byDay[r.date]){ byDay[r.date]=[]; days.push(r.date); } byDay[r.date].push(r); });
   var hold=0, avg=null, cash=seed, T=0, rev=false, revFrom=null, notes=[], usedT=cur.some(function(r){ return r.tDelta!=null||r.tMult!=null; });
-  var ts=Date.now()-cur.length-1000, out=[];
+  var ts=Date.now()-cur.length-1000, out=[], maxRatio=0, normBuyDays=0;
   days.forEach(function(d){
     var list=byDay[d], buys=list.filter(function(r){return r.type==="buy";}), sells=list.filter(function(r){return r.type==="sell";});
     var amt=buys.reduce(function(x,r){return x+r.price*r.qty;},0), sq=sells.reduce(function(x,r){return x+r.qty;},0);
@@ -2241,18 +2247,21 @@ function infParseTable(text, N, seed, tk){
     if(buys.length&&!buys.some(function(r){return r.tDelta!=null;})){
       var dl;
       if(rev) dl=Math.round((N-T*(sells.length?(sells[0].tMult||1):1))*0.25*10000)/10000;
-      else { var ratio=budget>0?amt/budget:0; dl=ratio>=0.75?1:0.5; if(ratio>1.6) notes.push(d+" 매수액 "+usd(amt)+"이 1회매수금 "+usd(budget)+"보다 많아요."); }
+      else { var ratio=budget>0?amt/budget:0; dl=ratio>=0.75?1:0.5; if(ratio>maxRatio) maxRatio=ratio; if(ratio>1.6) notes.push(d+" 매수액 "+usd(amt)+"이 1회매수금 "+usd(budget)+"보다 많아요."); }
+      if(!rev) normBuyDays++;
       buys[0].tDelta=dl; for(var j=1;j<buys.length;j++) buys[j].tDelta=0;
     }
     // 그날 거래를 상태에 반영 (replay와 같은 식)
     sells.concat(buys).forEach(function(r){
       if(r.type==="buy"){ avg=hold>0?(avg*hold+r.price*r.qty)/(hold+r.qty):r.price; hold+=r.qty; cash-=r.price*r.qty; T+=(r.tDelta||0); }
-      else { var qq=Math.min(r.qty,hold); cash+=r.price*qq; hold-=qq; if(hold===0) avg=null; if(r.tMult!=null) T*=r.tMult; }
-      out.push({ id:genId(), date:r.date, usDate:r.date, type:r.type, price:r.price, qty:r.qty, createdAt:ts++, fee:0, src:"import", tDelta:r.type==="buy"?(r.tDelta||0):undefined, tMult:r.type==="sell"?r.tMult:undefined, tTag:r.type==="sell"?(r.tTag||""):undefined });
+      else { var qq=Math.min(r.qty,hold); r.pnl=avg!=null?E.r2((r.price-avg)*qq):null; cash+=r.price*qq; hold-=qq; if(hold===0) avg=null; if(r.tMult!=null) T*=r.tMult; }
+      out.push({ id:genId(), date:r.date, usDate:r.date, type:r.type, price:r.price, qty:r.qty, createdAt:ts++, fee:0, src:"import", tDelta:r.type==="buy"?(r.tDelta||0):undefined, tMult:r.type==="sell"?r.tMult:undefined, tTag:r.type==="sell"?(r.tTag||""):undefined, pnl:r.type==="sell"&&r.pnl!=null?r.pnl:undefined });
     });
     if(!rev&&T>N-1+1e-9){ rev=true; revFrom=d; }
   });
   out.forEach(function(t){ Object.keys(t).forEach(function(k){ if(t[k]===undefined) delete t[k]; }); });
+  // 매수액이 1회매수금에 한참 못 미치면 원금을 잘못 넣은 경우가 많다 (예: 원화로 넣음)
+  if(!usedT&&normBuyDays>=2&&maxRatio<0.3) notes.push("날마다 산 금액이 1회매수금(원금÷분할수)의 30%도 안 돼요. 원금이 너무 크게 들어간 것 같아요. 원금은 이번 사이클에 쓰는 달러 금액이에요. 지금 원금으로는 T가 작게 셉니다.");
   if(cash<-0.01) notes.push("계산한 잔금이 "+usd(cash)+"로 음수예요. 원금이 이번 사이클 시작 원금이 맞는지 확인해주세요.");
   return { trades:out, qty:hold, avg:avg!=null?Math.round(avg*10000)/10000:null, cash:E.r2(cash), T:Math.round(T*10000)/10000, rev:rev, revFrom:revFrom,
     n:cur.length, dropped:start, ends:ends, skipped:skipped, otherTk:otherTk, usedT:usedT, notes:notes, from:cur[0].date, to:cur[cur.length-1].date, seed:seed };
@@ -2268,7 +2277,7 @@ function iiApply(r){
     (r.skipped?'<br>읽지 못한 줄 '+r.skipped+'개는 건너뛰었어요.':'')+(r.otherTk?'<br>다른 종목 '+r.otherTk+'줄은 뺐어요.':'')+
     (r.rev?'<br><span class="warn">'+esc(r.revFrom)+'부터 T가 '+(parseInt($("n-N").value,10)-1)+'을 넘어 리버스로 셌어요. 그 뒤 일반모드로 돌아간 날이 있으면 T와 모드를 확인해주세요.</span>':'')+
     (r.notes.length?'<br><span class="warn">'+r.notes.map(esc).join("<br>")+'</span>':'')+
-    '<br>계좌를 만든 뒤 기록을 켜면 이 매매들이 매매내역에 그대로 들어가요.';
+    '<br>계좌를 만들면 이 매매들이 체결 기록에 한 줄씩 남고, 기록을 켜면 매매내역으로 그대로 옮겨져요.';
   $("ii-clear").hidden=false; joinHint();
 }
 function iiClear(){ infImport=null; $("ii-text").value=""; $("ii-file").value=""; $("ii-result").innerHTML=""; $("ii-clear").hidden=true; }
