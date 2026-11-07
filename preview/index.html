@@ -467,14 +467,14 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="field inf-only join-only" hidden><label for="n-icash">잔금 ($, 무매 몫만)</label><input id="n-icash" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field inf-only join-only" hidden><label for="n-iT">T (비우면 추정값)</label><input id="n-iT" type="number" step="any" inputmode="decimal"></div>
       <div class="field inf-only join-only" hidden><label for="n-imode">모드</label><select id="n-imode"><option value="NORMAL">일반모드</option><option value="REVERSE">리버스모드 진행 중</option></select></div>
-      <div class="field inf-only join-only" hidden><label for="n-icycle">몇 차 사이클</label><input id="n-icycle" type="number" step="1" min="1" inputmode="numeric" value="1"></div>
+      <div class="field inf-only join-only" hidden><label for="n-icycle">몇 차 사이클</label><input id="n-icycle" type="number" step="1" min="1" inputmode="numeric" placeholder="예: 3"></div>
       <div class="field vr-only" hidden><label for="n-V" id="n-V-label">시작 V ($)</label><input id="n-V" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-pool">Pool ($)</label><input id="n-pool" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-qty">보유 수량</label><input id="n-qty" type="number" step="1" inputmode="numeric" value="0"></div>
       <div class="field vr-only" hidden><label for="n-avg">평단 ($, 보유 있을 때)</label><input id="n-avg" type="number" step="0.0001" inputmode="decimal"></div>
       <div class="field vr-only" hidden><label for="n-contrib">2주 적립금 ($)</label><input id="n-contrib" type="number" step="0.01" value="150"></div>
       <div class="field vr-only" hidden><label for="n-next">다음 V 갱신일</label><input id="n-next" type="date"></div>
-      <div class="field vr-only join-only" hidden><label for="n-vcycle">지금 회차</label><input id="n-vcycle" type="number" step="1" min="1" inputmode="numeric" value="1"></div>
+      <div class="field vr-only join-only" hidden><label for="n-vcycle">지금 회차</label><input id="n-vcycle" type="number" step="1" min="1" inputmode="numeric" placeholder="예: 5"></div>
       <div class="field vr-only join-only" hidden><label for="n-vinv">지금까지 넣은 돈 ($, 선택)</label><input id="n-vinv" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field" style="align-self:end"><button class="btn primary" type="submit">계좌 만들기</button></div>
     </form>
@@ -2037,7 +2037,8 @@ document.addEventListener("submit", function(ev){
         if(isNaN(jT)) jT=est;
         if(!(jT>=0)||jT>=N0+20){ toast("T를 확인해주세요."); return; }
         if(!(pr>0)) pr=E.r2(jc+(jq>0?jq*ja:0));
-        var jm=$("n-imode").value==="REVERSE"&&jq>0?"REVERSE":"NORMAL", jcy=Math.max(1,parseInt($("n-icycle").value,10)||1);
+        var jm=$("n-imode").value==="REVERSE"&&jq>0?"REVERSE":"NORMAL", jcy=parseInt($("n-icycle").value,10);
+        if(!(jcy>=1)){ toast("몇 차 사이클인지 넣어주세요."); $("n-icycle").focus(); return; }
         if(jm==="NORMAL"&&jT>N0-1){ toast("T가 "+(N0-1)+"보다 크면 리버스모드예요. 모드를 바꾸거나 T를 확인해주세요."); return; }
         // 파일로 불러온 매매가 있으면 그 매매를 기록으로 남기고, 칸 값을 고쳤을 때만 마지막에 합류 줄로 맞춘다
         var imp=infImport&&infImport.seed===pr&&infImport.trades.length?infImport:null, jn={d:jd,qty:jq,avg:ja,cash:jc,T:jT};
@@ -2052,7 +2053,8 @@ document.addEventListener("submit", function(ev){
     } else {
       var V=parseFloat($("n-V").value), pool=parseFloat($("n-pool").value);
       if(!(V>0)||!(pool>=0)){ toast("시작 V와 Pool을 넣어주세요."); return; }
-      var vq=parseInt($("n-qty").value,10)||0, vinv=parseFloat($("n-vinv").value), vcy=joining?Math.max(1,parseInt($("n-vcycle").value,10)||1):1;
+      var vq=parseInt($("n-qty").value,10)||0, vinv=parseFloat($("n-vinv").value), vcy=joining?parseInt($("n-vcycle").value,10):1;
+      if(!(vcy>=1)){ toast("지금 몇 회차인지 넣어주세요."); $("n-vcycle").focus(); return; }
       Object.assign(base,{V:V,pool:pool,qty:vq,avg:vq>0&&parseFloat($("n-avg").value)>0?parseFloat($("n-avg").value):null,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:joining&&vinv>0?vinv:pool+vq*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:vcy});
       if(joining&&vrImport){ base.G=vrImport.G; base.band=vrImport.band; base.hist=vrImport.hist; if(vrImport.lastRoll) base.lastRoll=vrImport.lastRoll; }
       if(joining) base.log=[{d:jd,side:"NOTE",text:(vrImport?"기록표("+vrImport.rows+"회차)로 ":"")+"이어서 하기: "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
