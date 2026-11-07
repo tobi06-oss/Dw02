@@ -81,6 +81,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .userbar{display:flex;gap:8px;align-items:center;justify-content:flex-end;font-size:12px;color:var(--ink-2);margin-top:-8px}
 
 /* 계좌 탭 */
+.kind-tabs{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:4px}
+.kind-tabs button{flex:1;background:none;border:none;border-radius:9px;padding:10px 8px;font-size:15px;font-weight:700;color:var(--ink-2);font-family:var(--sans);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.kind-tabs button .n{font-size:12px;font-weight:600;color:var(--ink-3);font-family:var(--mono)}
+.kind-tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.kind-tabs button[aria-selected="true"] .n{color:var(--accent)}
+.kind-tabs .dot{width:7px;height:7px;border-radius:50%;background:var(--danger)}
 .tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .tab{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:12px 14px;text-align:left;box-shadow:var(--shadow);position:relative}
 .tab .t1{font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center}
@@ -348,6 +354,7 @@ details.archive-item>summary::-webkit-details-marker{display:none}
 details.archive-item>summary::before{content:"▸";color:var(--ink-3);margin-right:2px;font-size:11px}
 details.archive-item[open]>summary::before{content:"▾"}
 details.archive-item .a-label{font-size:13px}
+.a-acct{font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:1px 8px;align-self:center}
 .archive-body{padding:14px 12px}
 
 /* 차트 v2 */
@@ -404,7 +411,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 </style>
 </head>
 <body>
-<div style="background:#b45309;color:#fff;font:600 13px/1.4 sans-serif;padding:8px 12px;text-align:center">테스트 페이지 (PR #30 미리보기) · 같은 Firebase를 쓰니 테스트용 아이디로만 쓰세요</div>
+<div style="background:#b45309;color:#fff;font:600 13px/1.4 sans-serif;padding:8px 12px;text-align:center">테스트 페이지 (PR #30·#31 미리보기) · 같은 Firebase를 쓰니 테스트용 아이디로만 쓰세요</div>
 
 <div class="wrap">
   <header class="top">
@@ -434,16 +441,17 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
     <div class="bd">인터넷 연결이나 Firebase 설정(보안 규칙·승인된 도메인)을 확인한 뒤 새로 고쳐주세요.</div>
   </div>
 
+  <nav class="kind-tabs" id="kind-tabs" role="tablist" aria-label="전략"></nav>
   <nav class="tabs" id="tabs" role="tablist" aria-label="계좌"></nav>
   <main id="view" class="wrap" style="gap:14px"></main>
 
   <details class="panel" id="add-panel">
-    <summary>계좌 추가</summary>
+    <summary id="add-sum">계좌 추가</summary>
     <form id="add-form" class="form">
       <div class="join-seg" role="group" aria-label="시작 방법"><button type="button" data-add="new" class="on">새로 시작</button><button type="button" data-add="join">이어서 하기 <span>이미 진행 중</span></button><input id="n-join" type="checkbox" hidden></div>
-      <div class="field"><label for="n-type">전략</label>
+      <div class="field" hidden><label for="n-type">전략</label>
         <select id="n-type"><option value="INF">무한매수법 V4.0</option><option value="VR">VR (밸류 리밸런싱)</option></select></div>
-      <div class="field"><label for="n-name">이름</label><input id="n-name" placeholder="예: VR 2호" required></div>
+      <div class="field"><label for="n-name">이름</label><input id="n-name" placeholder="예: SOXL 2호" required></div>
       <div class="field"><label for="n-ticker">종목</label>
         <select id="n-ticker"><option>SOXL</option><option>TQQQ</option></select></div>
       <div class="vr-only join-only vr-import" hidden>
@@ -478,7 +486,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="field" style="align-self:end"><button class="btn primary" type="submit">계좌 만들기</button></div>
     </form>
     <div class="hint join-only" id="join-hint" hidden></div>
-    <div class="hint">VR을 0에서 시작할 때는 시작 V와 Pool에 첫 적립금을 넣고, 보유 수량 0으로 만드세요. 첫 매수표는 V 기준으로 계산됩니다.</div>
+    <div class="hint vr-only" hidden>VR을 0에서 시작할 때는 시작 V와 Pool에 첫 적립금을 넣고, 보유 수량 0으로 만드세요. 첫 매수표는 V 기준으로 계산됩니다.</div>
   </details>
 
   <details class="panel" id="price-panel">
@@ -517,7 +525,9 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 "use strict";
 var E = window.Engine;
 var db = null, loaded = false, accounts = {}, prices = {}, selected = null, fillEdits = {};
-try { selected = localStorage.getItem("desk.sel"); } catch(e) {}
+// 맨 위 전략 탭(무한매수 | VR): 고른 전략의 계좌만 아래 탭에 보이고, 전략마다 마지막으로 본 계좌를 기억한다
+var curType = "INF", lastSel = {};
+try { selected = localStorage.getItem("desk.sel"); curType = localStorage.getItem("desk.kind")==="VR" ? "VR" : "INF"; lastSel = JSON.parse(localStorage.getItem("desk.selk")||"{}")||{}; } catch(e) {}
 
 var $ = function(id){ return document.getElementById(id); };
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
@@ -567,17 +577,42 @@ function renderTickers(){
 // 판정은 engine.js orderStatus — 주문 알림(scripts/order-reminder.mjs)도 같은 함수를 씁니다.
 function orderBadge(a){ return E.orderStatus(a, bars(a.ticker)); }
 
+function kindOf(a){ return a&&a.type==="VR" ? "VR" : "INF"; }
+function kindName(k){ return k==="VR" ? "VR" : "무한매수"; }
+var savedSel={};
+function saveSel(){ try{ localStorage.setItem("desk.sel",selected||""); localStorage.setItem("desk.kind",curType); localStorage.setItem("desk.selk",JSON.stringify(lastSel)); }catch(e){} }
 function renderTabs(){
-  var list=orderedAccounts();
-  if(!selected || !accounts[selected]) selected = list.length ? list[0].id : null;
+  var all=orderedAccounts();
+  if(loaded){
+    if(selected&&accounts[selected]) curType=kindOf(accounts[selected]);
+    else { var ls=lastSel[curType], first=all.filter(function(a){ return kindOf(a)===curType; })[0]; selected = ls&&accounts[ls]&&kindOf(accounts[ls])===curType ? ls : (first?first.id:null); }
+    if(selected) lastSel[curType]=selected;
+    if(selected!==savedSel.sel||curType!==savedSel.kind){ savedSel={sel:selected,kind:curType}; saveSel(); }
+  }
+  var list=all.filter(function(a){ return kindOf(a)===curType; });
   var html=list.map(function(a){
     var v=valueOf(a), ob=orderBadge(a);
     return '<button class="tab" role="tab" aria-selected="'+(a.id===selected)+'" data-id="'+esc(a.id)+'">'+
-      '<div class="t1"><span class="kind">'+(a.type==="VR"?"VR":"무매")+'</span>'+esc(a.name)+(ob?'<span class="obadge '+ob.cls+'">'+ob.txt+'</span>':'')+'</div>'+
+      '<div class="t1">'+esc(a.name)+(ob?'<span class="obadge '+ob.cls+'">'+ob.txt+'</span>':'')+'</div>'+
       '<div class="t2 num">'+(v.eq!=null?usd(v.eq,0):"-")+' <span class="'+signCls(v.pl)+'">'+pct(v.pl,1)+'</span></div></button>';
   }).join("");
-  html+='<button class="tab add" type="button" id="tab-add">+ 계좌 추가</button>';
+  // 이 전략에 계좌가 없으면 아래 빈 화면에 만들기 버튼이 있으니 + 탭은 숨긴다
+  if(list.length||!loaded) html+='<button class="tab add" type="button" id="tab-add">+ '+kindName(curType)+' 계좌 추가</button>';
   $("tabs").innerHTML=html;
+  // 위 전략 탭: 계좌가 없어도 둘 다 늘 보인다. 주문·체결 확인이 남은 계좌가 있으면 빨간 점
+  $("kind-tabs").innerHTML=["INF","VR"].map(function(k){
+    var ks=all.filter(function(a){ return kindOf(a)===k; }), need=ks.some(function(a){ return !!orderBadge(a); });
+    return '<button type="button" role="tab" data-kind="'+k+'" aria-selected="'+(curType===k)+'">'+kindName(k)+(loaded?'<span class="n">'+ks.length+'</span>':'')+(need?'<span class="dot" title="할 일이 남은 계좌가 있어요"></span>':'')+'</button>';
+  }).join("");
+  setAddType(curType);
+}
+// 계좌 추가 칸은 지금 고른 전략으로 맞춘다 (전략을 따로 고르지 않음)
+function setAddType(t){
+  $("add-sum").textContent=kindName(t)+" 계좌 추가";
+  if($("n-type").value===t) return;
+  $("n-type").value=t; $("n-ticker").value = t==="VR" ? "TQQQ" : "SOXL";
+  $("n-name").placeholder = t==="VR" ? "예: VR 2호" : "예: SOXL 2호";
+  addFormRefresh();
 }
 
 // 화면을 그리다 오류가 나면 예전 화면이 그대로 남아 엉뚱한 안내가 보인다. 대신 오류와 새로고침 버튼을 보여준다.
@@ -596,9 +631,13 @@ function renderView(){
   if(!loaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
   if(!a){
     if(!trk.metaLoaded||!trk.cyclesLoaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
-    v.innerHTML = isOwner()
+    v.innerHTML = !Object.keys(accounts).length&&isOwner()
       ? '<div class="panel"><div class="empty">계좌가 없습니다. 아래 "계좌 추가"에서 만들거나, 지금까지 정한 두 계좌(SOXL 무매 20/20 · VR 1호)를 불러오세요.</div><div class="actions"><button class="btn primary" type="button" id="seed-btn">내 계좌 두 개 불러오기</button></div></div>'
-      : '<div class="panel"><div class="empty">아직 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 무매·VR을 하고 있으면 "이어서 하기"로 지금 보유·평단·잔금(또는 매매내역·VR 기록표 파일)을 넣어 합류하세요.</div><div class="actions"><button class="btn primary" type="button" data-add="new">계좌 만들기</button><button class="btn primary" type="button" data-add="join">이어서 하기 <span style="font-weight:400;opacity:.8">(이미 진행 중)</span></button></div></div>';
+      : '<div class="panel"><div class="empty">'+(curType==="VR"
+          ? '아직 VR 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 VR을 하고 있으면 "이어서 하기"로 지금 V·Pool·보유 수량(또는 VR 기록표 파일)을 넣어 합류하세요.'
+          : '아직 무한매수 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 무매를 하고 있으면 "이어서 하기"로 지금 보유·평단·잔금(또는 매매내역 파일)을 넣어 합류하세요.')+
+        '</div><div class="actions"><button class="btn primary" type="button" data-add="new">'+kindName(curType)+' 계좌 만들기</button><button class="btn primary" type="button" data-add="join">이어서 하기 <span style="font-weight:400;opacity:.8">(이미 진행 중)</span></button></div></div>'+
+        (curType==="INF"&&trk.cycles.length?archiveSection():"");
     return;
   }
   if(!bars(a.ticker).length){ v.innerHTML='<div class="panel empty">'+esc(a.ticker)+' 종가가 아직 없습니다. 아래 "종가 직접 입력"에서 최근 종가를 넣어주세요.</div>'; return; }
@@ -745,6 +784,7 @@ function slip(a, plan, buyHtml, sellHtml, notes){
 }
 
 function renderINF(a){
+  useRec(a);
   var b=bars(a.ticker), lb=b[b.length-1];
   var plan=E.infPlan(a,b);
   a._plan=plan;
@@ -775,7 +815,7 @@ function renderINF(a){
     (ladBig.length?'<div class="lt" style="margin:6px 0 0">큰수 적용 시 테두리 표시 '+ladBig.length+'개는 큰수 '+n2(ladBig[0].price)+'로 걸어요</div>':'')+'</div>';
   buyHtml+=bigEdit(a,plan);
   var sellHtml=sells.map(ordRow).join("");
-  var lk=a.linked==="tracker", hasRec=lk&&!!trk.meta;
+  var lk=!!a.linked, hasRec=lk&&!!trk.meta;
   var missing = lk&&trk.metaLoaded&&!trk.meta ? '<div class="banner warn"><div class="bt">기록 사이클이 없어요</div><div class="bd">원화 기록·매매내역을 담을 사이클을 새로 만듭니다. 지금까지 반영한 체결은 매매내역으로 옮겨져요.</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">사이클 새로 만들기</button></div></div>' : "";
   return banners(a)+linkBanner(a)+missing+(hasRec?recHead(a):"")+hero+slip(a,plan,buyHtml,sellHtml,plan.notes)+undoPanel()+
     (hasRec?amountForm(a)+tradeForm(a)+tradeLog(a)+recCharts(a):"")+editorINF(a)+(lk?archiveSection()+(hasRec?dangerZone():""):logPanel(a));
@@ -899,7 +939,7 @@ function stat(k,v){ return '<div class="stat"><div class="k">'+k+'</div><div cla
 
 function fld(id,label,val,type,step){ return '<div class="field"><label for="'+id+'">'+label+'</label><input id="'+id+'" type="'+(type||"number")+'" '+(step?'step="'+step+'"':'')+' value="'+esc(val==null?"":val)+'"></div>'; }
 function editorINF(a){
-  var lk=a.linked==="tracker", ro=function(h){ return lk ? h.replace('<input ','<input disabled title="매매내역에서 계산되는 값이에요" ') : h; };
+  var lk=!!a.linked, ro=function(h){ return lk ? h.replace('<input ','<input disabled title="매매내역에서 계산되는 값이에요" ') : h; };
   return '<details class="panel" id="ed-'+esc(a.id)+'"><summary>상태 수정</summary><form class="form" data-form="edit">'+
     fld("e-name","이름",a.name,"text")+fld("e-principal","원금 ($)",a.principal,"number","0.01")+ro(fld("e-cash","잔금 ($)",a.cash,"number","0.01"))+
     ro(fld("e-qty","보유 수량",a.qty,"number","1"))+ro(fld("e-avg","평단 ($)",a.avg,"number","0.0001"))+fld("e-T","T",a.T,"number","any")+
@@ -1024,9 +1064,12 @@ function logPanel(a){
 }
 
 /* ---------- 기록 (예전 트래커 기능: 원화 평가액·매매내역·추이·지난 사이클) ----------
-   Firestore 위치는 예전 트래커와 같습니다: users/{uid}/cycle/current, entries/{날짜}, cycles/{id}
-   무매 계좌 하나(linked: "tracker")가 이 기록과 연결되고, 그 계좌의 평단·보유·잔금·T는 매매내역에서 다시 계산합니다. */
-var trk = { meta:null, metaLoaded:false, entries:[], cycles:[], migrated:false };
+   진행 중 기록은 무매 계좌(탭)마다 따로 둡니다. 연결된 계좌의 평단·보유·잔금·T는 그 계좌 매매내역에서 다시 계산합니다.
+   - 예전 트래커 기록과 연결된 계좌(linked:"tracker"): users/{uid}/cycle/current, entries/{날짜}  ← 예전 그대로
+   - 그 밖의 계좌(linked:"own"): cycle/{계좌ID}, entries/{계좌ID}_{날짜} (문서에 acct 필드)
+   - 끝난 사이클은 모두 cycles/{id} 한곳에 모이고, 어느 계좌 것인지 acctId·acctName을 같이 적습니다.
+   trk.meta·trk.entries는 "지금 보고 있는 계좌"의 기록입니다 (useRec). */
+var trk = { meta:null, metas:{}, metaLoaded:false, entries:[], allEntries:[], cycles:[], migrated:false };
 var rf = { aDate:null, aAmount:"", aSoxl:"", tDate:null, tPrice:"", tQty:"", tDelta:1, sellMult:0.75, sellTag:"별지점", editTrade:null, editEntry:null, inline:null };
 var undoStack = [], undoSeq = 0, armed = {};
 var TD = { first:1, "star-full":1, "star-half":0.5, "avg-half":0.5, ladder:0, "rev-buy":0 };
@@ -1038,8 +1081,18 @@ function usdS(n){ if(n==null||isNaN(n)) return "-"; return (n>=0?"+$":"-$")+Math
 function usdP(n){ return n==null||isNaN(n) ? "-" : "$"+Number(n).toLocaleString("en-US",{maximumFractionDigits:2}); }
 function genId(){ return "t"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function linkedAcct(){ var l=orderedAccounts().filter(function(a){return a.type==="INF"&&a.linked==="tracker";}); return l[0]||null; }
+function recKey(a){ return a.linked==="tracker" ? "current" : a.id; }
+function recPath(a){ return "cycle/"+recKey(a); }
+function entPath(a,d){ return "entries/"+(a.linked==="tracker" ? d : a.id+"_"+d); }
+function entData(a,data){ if(a.linked!=="tracker") data.acct=a.id; return data; }
+function metaOf(a){ return a&&a.type==="INF"&&a.linked ? trk.metas[recKey(a)]||null : null; }
+function entriesOf(a){ if(!a||a.type!=="INF"||!a.linked) return []; var own=a.linked!=="tracker"; return trk.allEntries.filter(function(e){ return own ? e.acct===a.id : !e.acct; }); }
+function useRec(a){ trk.meta=metaOf(a); trk.entries=entriesOf(a); }
+function syncRec(){ useRec(selected?accounts[selected]:null); }
+// 예전 트래커 기록을 아직 아무 계좌도 이어받지 않았을 때만 그 기록을 돌려준다
+function legacyFree(){ return !linkedAcct()&&trk.metas.current||null; }
 function getTrades(){ return (trk.meta&&trk.meta.trades)||[]; }
-function seedOf(a){ var m=trk.meta; return (m&&m.calc&&m.calc.seedCapitalUsd!=null) ? m.calc.seedCapitalUsd : (a?a.principal:0); }
+function seedOf(a,m){ if(m===undefined) m=trk.meta; return (m&&m.calc&&m.calc.seedCapitalUsd!=null) ? m.calc.seedCapitalUsd : (a?a.principal:0); }
 function cycleNo(label){ var m=/\[(\d+)차\]/.exec(label||""); return m ? +m[1] : null; }
 function nextLabel(label){ var n=cycleNo(label); return n ? label.replace(/\[\d+차\]/, "["+(n+1)+"차]") : (label||"무매법 V4.0")+" [다음]"; }
 function sortTrades(list){ return list.slice().sort(function(a,b){ if(a.date!==b.date) return a.date<b.date?-1:1; return (a.createdAt||0)-(b.createdAt||0); }); }
@@ -1108,8 +1161,8 @@ var UNDO_MAX=20;
 function curDoc(path){
   var sp=path.split("/"), c=sp[0], id=sp[1], x=null;
   if(c==="accounts"){ if(accounts[id]){ x=JSON.parse(JSON.stringify(accounts[id])); delete x._plan; } }
-  else if(c==="cycle"){ if(trk.meta) x=JSON.parse(JSON.stringify(trk.meta)); }
-  else if(c==="entries"){ var e=trk.entries.filter(function(y){return y.id===id||y.date===id;})[0]; if(e){ x=JSON.parse(JSON.stringify(e)); delete x.id; } }
+  else if(c==="cycle"){ if(trk.metas[id]) x=JSON.parse(JSON.stringify(trk.metas[id])); }
+  else if(c==="entries"){ var e=trk.allEntries.filter(function(y){return y.id===id||(!y.acct&&y.date===id);})[0]; if(e){ x=JSON.parse(JSON.stringify(e)); delete x.id; } }
   else if(c==="cycles"){ var cy=trk.cycles.filter(function(y){return y.id===id;})[0]; if(cy){ x=JSON.parse(JSON.stringify(cy)); delete x.id; } }
   return x;
 }
@@ -1129,7 +1182,7 @@ function undoKind(u){
   });
   return k||"INF";
 }
-function curKind(){ var a=selected?accounts[selected]:null; return a&&a.type==="VR"?"VR":"INF"; }
+function curKind(){ return curType; }
 // 그 유형 계좌가 하나도 없으면(예: 하나뿐인 VR 계좌를 지운 직후) 되살릴 수 있게 어느 탭에서나 보여준다
 function kindStack(){
   var k=curKind(), has={};
@@ -1224,10 +1277,10 @@ function planOp(op, cur, skipKeys){
 function runUndo(u){
   var paths=u.ops.map(function(o){ return o.p; });
   return Promise.all(paths.map(function(p){ return db.doc(p).get(); })).then(function(curs){
-    var cycIdx=paths.indexOf("cycle/current");
+    var cycIdx=-1; paths.forEach(function(p,i){ if(cycIdx<0&&p.indexOf("cycle/")===0) cycIdx=i; });
     var plans=u.ops.map(function(o,i){
       var sp=o.p.split("/"), acct=sp[0]==="accounts"?accounts[sp[1]]:null;
-      var linkedWithTrades = acct&&acct.linked==="tracker"&&cycIdx>=0;
+      var linkedWithTrades = acct&&acct.type==="INF"&&acct.linked&&cycIdx>=0&&paths[cycIdx]===recPath(acct);
       var pl=planOp(o, curs[i], linkedWithTrades?DERIVED:null); pl.p=o.p; pl.acct=linkedWithTrades?acct:null; return pl;
     });
     var legacy=plans.some(function(x){return x.legacy;});
@@ -1241,7 +1294,7 @@ function runUndo(u){
     var cyc=cycIdx>=0?plans[cycIdx]:null;
     plans.forEach(function(pl){
       if(!pl.acct||!cyc) return;
-      var trades = cyc.kind==="update"&&cyc.data.trades ? cyc.data.trades : (cyc.kind==="set"&&cyc.data ? cyc.data.trades||[] : getTrades());
+      var trades = cyc.kind==="update"&&cyc.data.trades ? cyc.data.trades : (cyc.kind==="set"&&cyc.data ? cyc.data.trades||[] : ((metaOf(pl.acct)||{}).trades||[]));
       var sp=statePatch(pl.acct, trades);
       if(pl.kind==="update"){ Object.assign(pl.data, sp); } else if(pl.kind==="none"){ pl.kind="update"; pl.data=sp; }
     });
@@ -1619,23 +1672,23 @@ function archiveSection(){
     var body = c.entriesOnly ? trTable : trTable+
       '<div class="panel-head" style="margin-top:'+(trTable?'22px':'0')+'"><div class="chart-cap" style="margin:0">평가액 추이</div><button type="button" class="export-btn" data-act="rec-csv-arc" data-id="'+esc(c.id)+'">CSV로 저장</button></div>'+assetChart(computeRows(c.entries||[],null),c.startAmount)+
       '<div style="margin-top:12px">'+entryTable(computeRows(c.entries||[],null),false)+'</div>';
-    return '<details class="archive-item" id="arc-'+esc(c.id)+'"><summary>'+inlineOr("alabel:"+c.id,'<span class="a-label">'+esc(c.label||c.id)+'</span>',c.label||"")+
+    return '<details class="archive-item" id="arc-'+esc(c.id)+'"><summary>'+(c.acctName?'<span class="a-acct">'+esc(c.acctName)+'</span>':'')+inlineOr("alabel:"+c.id,'<span class="a-label">'+esc(c.label||c.id)+'</span>',c.label||"")+
       '<span class="a-period">'+esc(c.startDate||"-")+' ~ '+esc(c.endDate||"-")+'</span><span class="a-amounts"><span class="a-pl '+(up?"up":"down")+'">'+badge+'</span>'+(seedLine?'<span class="a-fx">'+esc(seedLine)+'</span>':'')+(fx?'<span>'+fx+'</span>':'')+'</span></summary><div class="archive-body">'+body+'</div></details>';
   }).join("");
   return tot+'<section class="panel"><h2>지난 사이클</h2>'+(list||'<div class="empty">지난 사이클 기록이 없습니다.</div>')+'</section>';
 }
 function linkBanner(a){
-  if(a.type!=="INF"||a.linked==="tracker"||linkedAcct()||!trk.metaLoaded) return "";
-  var m=trk.meta;
-  var desc = m ? esc(m.label||"무매법 V4.0")+" ("+esc(m.startDate||"")+" 시작, 원금 "+usd(seedOf(a),0)+", 매매 "+getTrades().length+"건)을 이 계좌로 이어받습니다. 평단·보유·잔금·T를 그 매매내역으로 다시 계산해요."
-    : "원화 평가액·매매내역·추이 차트·지난 사이클 기록을 이 계좌에 붙입니다. 지금까지 반영한 체결은 매매내역으로 옮겨집니다.";
-  return '<div class="banner info"><div class="bt">'+(m?"예전 트래커 기록과 연결":"기록 기능 켜기")+'</div><div class="bd">'+desc+'</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">'+(m?"이 계좌로 이어받기":"기록 켜기")+'</button></div></div>';
+  if(a.type!=="INF"||a.linked||!trk.metaLoaded) return "";
+  var m=legacyFree();
+  if(m) return '<div class="banner info"><div class="bt">예전 트래커 기록과 연결</div><div class="bd">'+esc(m.label||"무매법 V4.0")+" ("+esc(m.startDate||"")+" 시작, 원금 "+usd(seedOf(a,m),0)+", 매매 "+((m.trades||[]).length)+"건)을 이 계좌로 이어받습니다. 평단·보유·잔금·T를 그 매매내역으로 다시 계산해요. 이어받지 않고 이 계좌만의 기록을 새로 켤 수도 있어요."+
+    '</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link" data-mode="inherit">이 계좌로 이어받기</button><button class="btn" data-act="link">새로 켜기</button></div></div>';
+  return '<div class="banner info"><div class="bt">기록 기능 켜기</div><div class="bd">이 계좌만의 원화 평가액·매매내역·추이 차트를 켭니다. 지금까지 반영한 체결은 매매내역으로 옮겨지고, 사이클이 끝나면 지난 사이클에 계좌 이름과 함께 모여요.</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">기록 켜기</button></div></div>';
 }
 
 /* ----- 저장 동작 ----- */
 function writeTrades(a, list, label, msg){
-  var u=snap(["cycle/current","accounts/"+a.id]);
-  return Promise.all([db.doc("cycle/current").update({trades:list}), save(a, statePatch(a,list))]).then(function(){
+  var u=snap([recPath(a),"accounts/"+a.id]);
+  return Promise.all([db.doc(recPath(a)).update({trades:list}), save(a, statePatch(a,list))]).then(function(){
     if(msg) toast(msg);
     pushUndo(label, u);
     render();
@@ -1658,26 +1711,28 @@ function tradeFromFill(a, l, d, close, ts){
   else { var m={ quarter:[0.75,"별지점"], limit:[0.25,"목표가"], "rev-moc":[1-2/N,"리버스 MOC"], "rev-sell":[1-2/N,"리버스"] }[l.kind]||[1,""]; t.tMult=m[0]; t.tTag=m[1]; }
   return t;
 }
-// fresh: 남아 있는 사이클 기록(삭제한 계좌의 것)을 이어받지 않고 이 계좌의 기록으로 새로 시작
-function linkAccount(a, fresh){
-  var m=fresh?null:trk.meta, patch, metaW;
+// inherit: 예전 트래커 기록(cycle/current)을 이 계좌로 이어받는다. 아니면 이 계좌만의 기록을 새로 만든다
+// (기록이 지워진 예전 연결 계좌는 예전 자리에 다시 만든다)
+function linkTarget(a, inherit){ return inherit||a.linked==="tracker" ? "cycle/current" : "cycle/"+a.id; }
+function linkAccount(a, inherit){
+  var m=inherit?trk.metas.current||null:null, patch, metaW;
   if(m){
-    var seed=seedOf(a), list=getTrades(), st=replay(list,seed), n=cycleNo(m.label);
+    var seed=seedOf(a,m), list=m.trades||[], st=replay(list,seed), n=cycleNo(m.label);
     patch={ linked:"tracker", principal:seed, initialPrincipal:seed, qty:st.qty, avg:st.avg, cash:st.cash, T:st.T, realized:st.realized, cycle:n||a.cycle||1,
       mode: st.qty>0&&st.T>(a.N||20)-1?"REVERSE":"NORMAL", revDay:0, pending:null, fee:0,
       events:["예전 트래커의 매매 "+list.length+"건으로 T "+st.T+" · 보유 "+st.qty+"주 · 잔금 "+usd(st.cash)+"을 다시 계산했어요. 수수료는 0%로 두었으니 메리츠 수수료가 붙기 시작하면 상태 수정에서 0.07로 바꾸세요."] };
     metaW = (!m.calc||m.calc.seedCapitalUsd==null) ? db.doc("cycle/current").set({calc:{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:seed}},{merge:true}) : Promise.resolve();
   } else {
-    var tr=tradesFromLog(a);
+    var tr=tradesFromLog(a), lk=a.linked==="tracker"?"tracker":"own";
     // 이어서 하기로 불러온 매매가 있으면 사이클 시작일을 첫 매매일로 잡아 그래프가 그날부터 그려지게 한다
     var sd=todayKR(); tr.forEach(function(t){ if(!t.join&&t.date&&t.date<sd) sd=t.date; });
-    metaW = db.doc("cycle/current").set({ label:"무매법 V4.0 ["+(a.cycle||1)+"차]", startDate:sd, startAmount:null, calc:{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:a.principal}, trades:tr });
-    patch={ linked:"tracker" };
+    metaW = db.doc(linkTarget(a,false)).set({ label:"무매법 V4.0 ["+(a.cycle||1)+"차]", startDate:sd, startAmount:null, calc:{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:a.principal}, trades:tr });
+    patch={ linked:lk };
   }
   return metaW.then(function(){ return save(a,patch); }).then(function(){ toast("기록을 연결했어요."); });
 }
 function archiveAndRoll(a, allTrades, endDate, next){
-  var m=trk.meta, seed=seedOf(a), rows=computeRows(trk.entries,allTrades,a.ticker), tr=tradeRows(allTrades), st=replay(allTrades,seed);
+  var m=metaOf(a), ents=entriesOf(a), seed=seedOf(a,m), rows=computeRows(ents,allTrades,a.ticker), tr=tradeRows(allTrades), st=replay(allTrades,seed);
   var last=null; for(var i=rows.length-1;i>=0;i--) if(rows[i].amountRecorded){ last=rows[i]; break; }
   var id="cycle_"+(m.startDate||endDate).replace(/-/g,"")+"_"+Date.now().toString(36);
   var trOut=tr.map(function(t){ return {date:t.date,type:t.join?"합류":t.type==="buy"?"매수":"매도",price:t.price,qty:t.qty,amount:t.amount,cumQty:t.cumQty,avgPrice:t.avgPrice}; });
@@ -1686,30 +1741,34 @@ function archiveAndRoll(a, allTrades, endDate, next){
       trades:trOut, plUsd:st.realized, pctOverride: st.totalBuy?st.realized/st.totalBuy:null, totalBuyUsd:st.totalBuy, totalSellUsd:st.totalSell, seedUsd:seed, seedReturnPct: seed?st.realized/seed:null }
     : { label:m.label||"무매법 V4.0", startDate:m.startDate||null, endDate:endDate, currency:"USD", entriesOnly:true, entries:trOut, realizedPnlUsd:st.realized,
       returnPct: st.totalBuy?st.realized/st.totalBuy:null, totalBuyUsd:st.totalBuy, totalSellUsd:st.totalSell, seedUsd:seed, seedReturnPct: seed?st.realized/seed:null };
+  // 끝난 사이클은 계좌와 상관없이 한곳(지난 사이클)에 모으고, 어느 계좌 것인지 적어 둔다
+  arc.acctId=a.id; arc.acctName=a.name||null; arc.ticker=a.ticker||null;
   var nextSeed = next.compound!==false ? next.principal : next.cash;
   var start = todayKR();
   return db.doc("cycles/"+id).set(arc).then(function(){
-    return Promise.all(trk.entries.map(function(e){ return db.doc("entries/"+e.date).delete(); }));
+    return Promise.all(ents.map(function(e){ return db.doc("entries/"+e.id).delete(); }));
   }).then(function(){
     var nm={ label:nextLabel(m.label), startDate:start, startAmount:last?last.amount:null, calc:{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:nextSeed}, trades:[] };
-    return db.doc("cycle/current").set(nm).then(function(){ return last ? db.doc("entries/"+start).set({date:start,amount:last.amount}) : null; });
+    return db.doc(recPath(a)).set(nm).then(function(){ return last ? db.doc(entPath(a,start)).set(entData(a,{date:start,amount:last.amount})) : null; });
   });
 }
 
 /* ----- 예전 방식(entries에 수량을 적어 둔 기록) → 매매내역으로 한 번만 옮기기 ----- */
 // 주문표로 반영한 체결 중 예전(미국 날짜)로 기록된 것은 한국 날짜(+1일)로 한 번만 옮긴다
 function fixDeskTradeDates(){
-  if(!db||!trk.meta||trk.fixedDates) return;
-  var list=getTrades(), bad=function(t){ return t.src==="desk" && (!t.usDate || t.date!==t.usDate); }, need=list.some(bad);
+  var m=trk.metas.current;
+  if(!db||!m||trk.fixedDates) return;
+  var list=m.trades||[], bad=function(t){ return t.src==="desk" && (!t.usDate || t.date!==t.usDate); }, need=list.some(bad);
   trk.fixedDates=true;
   if(!need) return;
   var out=list.map(function(t){ return bad(t) ? Object.assign({},t,{usDate:t.usDate||t.date,date:t.usDate||t.date}) : t; });
   db.doc("cycle/current").update({trades:out}).catch(function(e){ console.error("fix dates",e); });
 }
 function maybeMigrate(){
-  if(trk.migrated||!db||!trk.meta||trk.meta.trades!=null) return;
+  var m=trk.metas.current;
+  if(trk.migrated||!db||!m||m.trades!=null) return;
   trk.migrated=true;
-  var s=trk.entries.slice().sort(function(a,b){return a.date<b.date?-1:1;}), out=[], prev=0;
+  var s=trk.allEntries.filter(function(e){ return !e.acct; }).sort(function(a,b){return a.date<b.date?-1:1;}), out=[], prev=0;
   s.forEach(function(e){ if(e.qty==null) return; var dq=e.qty-prev, px=e.tradePrice!=null?e.tradePrice:e.soxlPrice;
     if(dq!==0&&px!=null){ var t={id:genId(),date:e.date,type:dq>0?"buy":"sell",price:px,qty:Math.abs(dq),createdAt:new Date(e.date).getTime()}; if(e.soxlPrice!=null) t.soxlPrice=e.soxlPrice; if(dq>0) t.tDelta=1; out.push(t); }
     prev=e.qty; });
@@ -1717,7 +1776,7 @@ function maybeMigrate(){
 }
 
 function recAct(act, b, a){
-  var L=linkedAcct();
+  var L=a&&a.type==="INF"&&a.linked?a:null;
   if(act==="undo"){
     var id=b.getAttribute("data-id"), it=undoStack.filter(function(u){return u.id===id;})[0]; if(!it) return true;
     b.disabled=true;
@@ -1725,8 +1784,8 @@ function recAct(act, b, a){
     return true;
   }
   if(act==="link"){ b.disabled=true;
-    var uL=snap(["accounts/"+a.id,"cycle/current"]);
-    linkAccount(a).then(function(){ pushUndo("기록 연결",uL); render(); }).catch(function(e){ console.error(e); toast("연결하지 못했어요."); b.disabled=false; }); return true; }
+    var inh=b.getAttribute("data-mode")==="inherit", uL=snap(["accounts/"+a.id,linkTarget(a,inh)]);
+    linkAccount(a,inh).then(function(){ pushUndo("기록 연결",uL); render(); }).catch(function(e){ console.error(e); toast("연결하지 못했어요."); b.disabled=false; }); return true; }
   if(act.indexOf("rec-")!==0) return false;
   if(act==="rec-inline"){ rf.inline=b.getAttribute("data-k"); render(); return true; }
   if(act==="rec-date"){ var tid=b.getAttribute("data-t"), el=$(tid), base=el&&el.value?new Date(el.value+"T12:00:00Z"):new Date(); base.setUTCDate(base.getUTCDate()+(+b.getAttribute("data-d"))); var v=base.toISOString().slice(0,10); if(tid==="a-date") rf.aDate=v; else rf.tDate=v; render(); return true; }
@@ -1785,16 +1844,16 @@ function recAct(act, b, a){
     var dd=b.getAttribute("data-date"), k2="e:"+dd;
     if(!armed[k2]){ Object.keys(armed).forEach(function(x){delete armed[x];}); armed[k2]=1; setTimeout(function(){ if(armed[k2]){ delete armed[k2]; render(); } },3000); render(); return true; }
     delete armed[k2];
-    var uE=snap(["entries/"+dd]);
-    db.doc("entries/"+dd).delete().then(function(){ toast(dd+" 기록을 삭제했어요."); pushUndo(dd+" 기록 삭제",uE); if(rf.editEntry===dd) rf.editEntry=null; render(); });
+    var uE=snap([entPath(L,dd)]);
+    db.doc(entPath(L,dd)).delete().then(function(){ toast(dd+" 기록을 삭제했어요."); pushUndo(dd+" 기록 삭제",uE); if(rf.editEntry===dd) rf.editEntry=null; render(); });
     return true;
   }
   if(act==="rec-del-cycle"){
     if(!armed.cycle){ armed.cycle=1; setTimeout(function(){ if(armed.cycle){ delete armed.cycle; render(); } },4000); render(); return true; }
     delete armed.cycle;
-    var pm=JSON.parse(JSON.stringify(trk.meta)), uC=snap(["cycle/current","accounts/"+L.id].concat(trk.entries.map(function(e){ return "entries/"+e.date; })));
-    Promise.all(trk.entries.map(function(e){ return db.doc("entries/"+e.date).delete(); })).then(function(){
-      return db.doc("cycle/current").set({ label:pm.label||"무매법 V4.0", startDate:todayKR(), startAmount:null, calc:{ticker:L.ticker,splitCount:L.N,seedCapitalUsd:L.principal}, trades:[] });
+    var pm=JSON.parse(JSON.stringify(trk.meta)), ents=trk.entries.slice(), uC=snap([recPath(L),"accounts/"+L.id].concat(ents.map(function(e){ return "entries/"+e.id; })));
+    Promise.all(ents.map(function(e){ return db.doc("entries/"+e.id).delete(); })).then(function(){
+      return db.doc(recPath(L)).set({ label:pm.label||"무매법 V4.0", startDate:todayKR(), startAmount:null, calc:{ticker:L.ticker,splitCount:L.N,seedCapitalUsd:L.principal}, trades:[] });
     }).then(function(){ return save(L,{qty:0,avg:null,cash:L.principal,T:0,realized:0,mode:"NORMAL",revDay:0,pending:null}); }).then(function(){
       toast("현재 사이클 기록을 지웠어요.");
       pushUndo("사이클 기록 지우기", uC);
@@ -1805,31 +1864,33 @@ function recAct(act, b, a){
   return true;
 }
 function saveInline(el){
-  var k=el.getAttribute("data-k"), raw=el.value.trim(); rf.inline=null;
+  var k=el.getAttribute("data-k"), raw=el.value.trim(), ra=selected?accounts[selected]:null; rf.inline=null;
   if(!db||raw===""){ render(); return; }
-  if(k==="title"&&trk.meta&&raw!==trk.meta.label){ var uT=snap(["cycle/current"]); db.doc("cycle/current").update({label:raw}).then(function(){ pushUndo("사이클 이름 변경",uT); render(); }); }
-  else if(k==="start"&&trk.meta){ var v=parseFloat(raw), pv=trk.meta.startAmount==null?null:trk.meta.startAmount; if(!isNaN(v)&&v!==pv){ var uS=snap(["cycle/current"]); db.doc("cycle/current").update({startAmount:v}).then(function(){ toast("시작평가액을 "+krw(v)+"원으로 고쳤어요."); pushUndo("시작평가액 수정",uS); render(); }); } }
+  syncRec(); var mp=ra&&trk.meta?recPath(ra):null;
+  if(k==="title"&&mp&&raw!==trk.meta.label){ var uT=snap([mp]); db.doc(mp).update({label:raw}).then(function(){ pushUndo("사이클 이름 변경",uT); render(); }); }
+  else if(k==="start"&&mp){ var v=parseFloat(raw), pv=trk.meta.startAmount==null?null:trk.meta.startAmount; if(!isNaN(v)&&v!==pv){ var uS=snap([mp]); db.doc(mp).update({startAmount:v}).then(function(){ toast("시작평가액을 "+krw(v)+"원으로 고쳤어요."); pushUndo("시작평가액 수정",uS); render(); }); } }
   else if(k.indexOf("alabel:")===0){ var uA=snap(["cycles/"+k.slice(7)]); db.doc("cycles/"+k.slice(7)).update({label:raw}).then(function(){ pushUndo("지난 사이클 이름 변경",uA); render(); }); }
   else if(k.indexOf("afx:")===0){ var f=parseFloat(raw), uF=snap(["cycles/"+k.slice(4)]); if(!isNaN(f)) db.doc("cycles/"+k.slice(4)).update({fxLoss:f}).then(function(){ pushUndo("환차손 수정",uF); render(); }); }
   render();
 }
 function saveAmount(){
-  var L=linkedAcct(); if(!L||!db) return;
+  var L=selected?accounts[selected]:null; if(!L||L.type!=="INF"||!L.linked||!db) return;
+  syncRec();
   var d=rf.aDate, amt=parseFloat(rf.aAmount), sx=rf.aSoxl;
   if(!d||isNaN(amt)){ toast("일시와 평가액을 넣어주세요."); return; }
   if(rf.editEntry){
     var od=rf.editEntry, orig=trk.entries.filter(function(e){return e.date===od;})[0]; if(!orig){ rf.editEntry=null; render(); return; }
     if(d!==od&&trk.entries.some(function(e){return e.date===d;})){ toast("이미 "+d+" 기록이 있어요."); return; }
-    var uEd=snap(["entries/"+od].concat(d!==od?["entries/"+d]:[]));
-    var data={date:d,amount:amt}; if(sx!=="") data.soxlPrice=parseFloat(sx);
-    var task = d===od ? db.doc("entries/"+od).set(data) : db.doc("entries/"+od).delete().then(function(){ return db.doc("entries/"+d).set(data); });
+    var uEd=snap([entPath(L,od)].concat(d!==od?[entPath(L,d)]:[]));
+    var data=entData(L,{date:d,amount:amt}); if(sx!=="") data.soxlPrice=parseFloat(sx);
+    var task = d===od ? db.doc(entPath(L,od)).set(data) : db.doc(entPath(L,od)).delete().then(function(){ return db.doc(entPath(L,d)).set(data); });
     task.then(function(){ toast(d+" 평가액 기록을 고쳤어요."); pushUndo(d+" 평가액 수정",uEd); rf.editEntry=null; rf.aAmount=""; rf.aSoxl=""; render(); });
     return;
   }
   var ex=trk.entries.filter(function(e){return e.date===d;})[0], had=ex&&ex.amount!=null, pa=had?ex.amount:null, hadS=ex&&ex.soxlPrice!=null, ps=hadS?ex.soxlPrice:null;
-  var data2={date:d,amount:amt}; if(sx!=="") data2.soxlPrice=parseFloat(sx);
-  var uN=snap(["entries/"+d]);
-  db.doc("entries/"+d).set(data2,{merge:true}).then(function(){
+  var data2=entData(L,{date:d,amount:amt}); if(sx!=="") data2.soxlPrice=parseFloat(sx);
+  var uN=snap([entPath(L,d)]);
+  db.doc(entPath(L,d)).set(data2,{merge:true}).then(function(){
     toast(d+" 평가액을 저장했어요."); rf.aAmount=""; rf.aSoxl="";
     pushUndo(d+" 평가액 기록",uN);
     render();
@@ -1859,11 +1920,12 @@ function seedDemo(){
   var ts=Date.now();
   var inf={id:"acct-soxl",type:"INF",name:"SOXL 무매 20/20",ticker:"SOXL",createdAt:ts,order:0,N:20,basePct:20,principal:54400,initialPrincipal:54400,cash:54400,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:1.12,fee:0.07,realized:0,aside:0,pending:null,events:[],log:[]};
   var vr={id:"acct-vr1",type:"VR",name:"VR 1호",ticker:"TQQQ",createdAt:ts+1,order:1,V:2834.39,pool:300,qty:37,G:10,band:0.15,contrib:150,vrType:"INSTALLMENT",invested:2387.06,nextUpdate:"2026-10-09",cycle:1,fee:0.07,pending:null,events:[],log:[]};
-  Promise.all([db.doc("accounts/acct-soxl").set(inf),db.doc("accounts/acct-vr1").set(vr)]).then(function(){ return linkAccount(inf); }).then(function(){ toast("계좌 두 개를 불러왔어요"+(trk.meta?" (SOXL은 예전 트래커 기록으로 이어받음)":"")+". 값이 다르면 상태 수정에서 고치세요."); });
+  Promise.all([db.doc("accounts/acct-soxl").set(inf),db.doc("accounts/acct-vr1").set(vr)]).then(function(){ return linkAccount(inf,!!legacyFree()); }).then(function(){ toast("계좌 두 개를 불러왔어요"+(trk.metas.current?" (SOXL은 예전 트래커 기록으로 이어받음)":"")+". 값이 다르면 상태 수정에서 고치세요."); });
 }
 document.addEventListener("click", function(ev){
   if(ev.target.closest("#seed-btn")){ seedDemo(); return; }
-  var t=ev.target.closest("[data-id].tab"); if(t){ selected=t.getAttribute("data-id"); try{localStorage.setItem("desk.sel",selected);}catch(e){} render(); return; }
+  var kt=ev.target.closest("[data-kind]"); if(kt){ var nk=kt.getAttribute("data-kind"); if(nk!==curType){ curType=nk; selected=null; render(); } return; }
+  var t=ev.target.closest("[data-id].tab"); if(t){ selected=t.getAttribute("data-id"); render(); return; }
   var ad=ev.target.closest("[data-add]");
   if(ad){ var jn=ad.getAttribute("data-add")==="join"; $("n-join").checked=jn; addFormRefresh();
     if(!ad.closest("#add-form")){ var ap2=$("add-panel"); ap2.open=true; ap2.scrollIntoView({behavior:"smooth",block:"start"}); $("n-name").focus(); }
@@ -1873,6 +1935,7 @@ document.addEventListener("click", function(ev){
   var b=ev.target.closest("[data-act]"); if(!b) return;
   if(b.getAttribute("data-act")==="undo"){ recAct("undo",b,null); return; }
   var a=accounts[selected]; if(!a) return;
+  syncRec();
   var act=b.getAttribute("data-act");
   if(recAct(act,b,a)) return;
   var snapA=function(){ var c=JSON.parse(JSON.stringify(a)); delete c._plan; return c; };
@@ -1958,14 +2021,14 @@ document.addEventListener("click", function(ev){
     b.disabled=true;
     var prevA=JSON.parse(JSON.stringify(a)); delete prevA._plan;
     var undoLabel=dlabel(p2.session)+" 체결 반영", done=function(msg){ delete fillEdits[a.id]; toast(msg||(res.log.length?res.log.length+"건을 반영했어요.":"체결 없음으로 기록했어요.")); };
-    if(a.type==="INF"&&a.linked==="tracker"&&trk.meta){
+    if(a.type==="INF"&&a.linked&&trk.meta){
       var ts=Date.now(), nt=res.log.map(function(l,i){ return tradeFromFill(a,l,bar.d,bar.c,ts+i); });
       var ended=(n.cycle||1)!==(a.cycle||1);
       if(nt.length&&!ended) nt[nt.length-1].tAfter=n.T;
-      var prevT=getTrades().slice(), all=prevT.concat(nt), prevM=curDoc("cycle/current");
-      (ended ? archiveAndRoll(a,all,bar.d,n) : db.doc("cycle/current").update({trades:all})).then(function(){ return save(a,patch); }).then(function(){
+      var prevT=getTrades().slice(), all=prevT.concat(nt), prevM=curDoc(recPath(a));
+      (ended ? archiveAndRoll(a,all,bar.d,n) : db.doc(recPath(a)).update({trades:all})).then(function(){ return save(a,patch); }).then(function(){
         done(ended?"사이클을 마감해 지난 사이클에 보관하고, 새 사이클을 시작했어요.":null);
-        if(!ended) pushUndo(undoLabel,[{p:"cycle/current",d:prevM},{p:"accounts/"+a.id,d:prevA}]);
+        if(!ended) pushUndo(undoLabel,[{p:recPath(a),d:prevM},{p:"accounts/"+a.id,d:prevA}]);
         render();
       }).catch(function(e){ console.error(e); toast("반영하지 못했어요."); b.disabled=false; });
     } else {
@@ -1978,8 +2041,8 @@ document.addEventListener("click", function(ev){
     save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,hist:nx.hist,cycleOrdered:false,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요."); undoSet((a.cycle||1)+"회차 V 갱신",prevR); render();});
   } else if(act==="del"){
     if(b.getAttribute("data-armed")!=="1"){ b.setAttribute("data-armed","1"); b.textContent="한 번 더 누르면 삭제됩니다"; return; }
-    var prevD=snapA();
-    db.doc("accounts/"+a.id).delete().then(function(){ toast("계좌를 삭제했어요."); selected=null; pushUndo(prevD.name+" 계좌 삭제",[{p:"accounts/"+prevD.id,d:prevD}]); render(); });
+    var prevD=snapA(), own=a.type==="INF"&&a.linked==="own", recP=own?[recPath(a)].concat(entriesOf(a).map(function(e){ return "entries/"+e.id; })):[], uD=snap(recP);
+    db.doc("accounts/"+a.id).delete().then(function(){ return Promise.all(recP.map(function(p){ return db.doc(p).delete(); })); }).then(function(){ toast("계좌를 삭제했어요."); selected=null; pushUndo(prevD.name+" 계좌 삭제",[{p:"accounts/"+prevD.id,d:prevD}].concat(uD)); render(); });
   }
 });
 
@@ -2017,14 +2080,14 @@ document.addEventListener("submit", function(ev){
       var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); if(patch.qty===0) patch.avg=null; }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
     var pre=Promise.resolve(), prevA=JSON.parse(JSON.stringify(a)); delete prevA._plan;
-    if(a.type==="INF"&&a.linked==="tracker"&&trk.meta){
+    if(a.type==="INF"&&a.linked&&trk.meta){
       delete patch.qty; delete patch.cash; delete patch.avg;
       var list=getTrades().slice(), seedNew=patch.principal!=null?patch.principal:seedOf(a);
       if(patch.T!=null&&patch.T!==a.T&&list.length){ var srt=sortTrades(list), lastT=srt[srt.length-1]; list=list.map(function(t){ return t.id===lastT.id?Object.assign({},t,{tAfter:patch.T}):t; }); }
       var st=replay(list,seedNew); patch.cash=st.cash; patch.qty=st.qty; patch.avg=st.avg; patch.realized=st.realized; if(!list.length&&patch.T!=null) st.T=patch.T; patch.T=st.T;
       var mp={trades:list}; if(seedNew!==seedOf(a)){ mp.calc=Object.assign({},trk.meta.calc||{},{seedCapitalUsd:seedNew}); patch.initialPrincipal=seedNew; }
-      var prevMeta=curDoc("cycle/current");
-      pre=db.doc("cycle/current").update(mp).then(function(){ pushUndo("상태 수정",[{p:"cycle/current",d:prevMeta},{p:"accounts/"+a.id,d:prevA}]); });
+      var prevMeta=curDoc(recPath(a)), mpath=recPath(a);
+      pre=db.doc(mpath).update(mp).then(function(){ pushUndo("상태 수정",[{p:mpath,d:prevMeta},{p:"accounts/"+a.id,d:prevA}]); });
     } else pushUndo("상태 수정",[{p:"accounts/"+a.id,d:prevA}]);
     // 무엇이 바뀌었는지 기타 기록에 남긴다 (예: 보유 42→43주). 매매 없이 숫자만 바뀐 걸 나중에 추적할 수 있게
     patch.log=[{d:new Date().toISOString().slice(0,10),side:"NOTE",text:editDiffText(a,patch)}].concat(a.log||[]).slice(0,400);
@@ -2071,10 +2134,9 @@ document.addEventListener("submit", function(ev){
       if(joining) base.log=[{d:jd,side:"NOTE",text:(vrImport?"기록표("+vrImport.rows+"회차)로 ":"")+"이어서 하기: "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
-    // 이어서 하기로 만든 무매 계좌는 기록(매매내역·그래프)을 바로 켠다. 기록에 연결된 무매 계좌가 없을 때만.
-    // 지운 계좌가 남긴 사이클 기록이 있으면 그걸 이어받지 않고 새로 시작한다 (실행취소로 되돌릴 수 있게 이전 기록을 남겨 둠)
-    var autoLink=type==="INF"&&joining&&!linkedAcct()&&trk.metaLoaded, prevMeta=autoLink?curDoc("cycle/current"):null;
-    db.doc("accounts/"+id).set(base).then(function(){ return autoLink?linkAccount(base,true):null; }).then(function(){ selected=id; $("add-panel").open=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}].concat(autoLink?[{p:"cycle/current",d:prevMeta||null}]:[])); render(); }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
+    // 새 무매 계좌는 처음부터 이 계좌만의 기록(원화 평가액·매매내역·그래프)을 켠다 (cycle/{계좌ID})
+    var autoLink=type==="INF"&&trk.metaLoaded;
+    db.doc("accounts/"+id).set(base).then(function(){ return autoLink?linkAccount(base,false):null; }).then(function(){ selected=id; $("add-panel").open=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}].concat(autoLink?[{p:"cycle/"+id,d:null}]:[])); render(); }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
@@ -2296,7 +2358,7 @@ $("n-principal").addEventListener("input", function(){ clearTimeout(iiTimer); va
 // 계좌 추가: 전략(무매/VR)과 "이어서 하기"에 따라 칸을 보이고 숨긴다
 function addFormRefresh(){
   var vr=$("n-type").value==="VR", jn=$("n-join").checked;
-  document.querySelectorAll("#add-form .vr-only, #add-form .inf-only, #add-panel .join-only").forEach(function(e){
+  document.querySelectorAll("#add-panel .vr-only, #add-panel .inf-only, #add-panel .join-only").forEach(function(e){
     var ok=(e.classList.contains("vr-only")?vr:e.classList.contains("inf-only")?!vr:true)&&(!e.classList.contains("join-only")||jn);
     e.hidden=!ok;
   });
@@ -2339,16 +2401,16 @@ function renderSoon(){ if(renderQueued) return; renderQueued=true; requestAnimat
 window.DeskApp = {
   start: function(adapter){
     db=adapter; loaded=false; accounts={}; prices={};
-    trk={meta:null,metaLoaded:false,entries:[],entriesLoaded:false,cycles:[],migrated:false}; undoStack=[]; rf.aDate=rf.tDate=todayKR(); rf.editTrade=rf.editEntry=rf.inline=null;
+    trk={meta:null,metas:{},metaLoaded:false,entries:[],allEntries:[],entriesLoaded:false,cycles:[],migrated:false}; undoStack=[]; rf.aDate=rf.tDate=todayKR(); rf.editTrade=rf.editEntry=rf.inline=null;
     render();
-    db.doc("cycle/current").onSnapshot(function(s){ trk.meta=s.exists?s.data():null; trk.metaLoaded=true; if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); renderSoon(); }, function(e){ console.error("cycle",e); });
-    db.collection("entries").onSnapshot(function(s){ trk.entries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; if(trk.metaLoaded) maybeMigrate(); renderSoon(); }, function(e){ console.error("entries",e); });
+    db.collection("cycle").onSnapshot(function(s){ var mm={}; s.docs.forEach(function(d){ mm[d.id]=d.data(); }); trk.metas=mm; trk.metaLoaded=true; syncRec(); if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); renderSoon(); }, function(e){ console.error("cycle",e); });
+    db.collection("entries").onSnapshot(function(s){ trk.allEntries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; syncRec(); if(trk.metaLoaded) maybeMigrate(); renderSoon(); }, function(e){ console.error("entries",e); });
     db.collection("undo").onSnapshot(function(s){ undoStack=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).filter(function(u){ return u.ops&&u.ops.length; }); slimOldUndo(undoStack); renderSoon(); }, function(e){ console.error("undo",e); });
     db.collection("cycles").onSnapshot(function(s){ trk.cyclesLoaded=true; trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); renderSoon(); }, function(e){ console.error("cycles",e); });
     db.collection("accounts").onSnapshot(function(snap){
       var next={};
       snap.docs.forEach(function(doc){ var v=JSON.parse(JSON.stringify(doc.data())); v.id=doc.id; next[doc.id]=v; });
-      accounts=next; loaded=true; $("offline").hidden=true; renderSoon();
+      accounts=next; loaded=true; $("offline").hidden=true; syncRec(); renderSoon();
     }, function(){ $("offline").hidden=false; });
     db.collection("prices").onSnapshot(function(snap){
       var next={};
@@ -2415,7 +2477,7 @@ function makeAdapter(uid) {
           };
           unsubs.push(onSnapshot(collection(fs, "prices"), (s) => { g = {}; s.docs.forEach((d) => g[d.id] = d.data()); emit(); }, err));
           unsubs.push(onSnapshot(collection(fs, "users", uid, "manualPrices"), (s) => { m = {}; s.docs.forEach((d) => m[d.id] = d.data()); emit(); }, err));
-        } else if (name === "entries" || name === "cycles" || name === "undo") {
+        } else if (name === "cycle" || name === "entries" || name === "cycles" || name === "undo") {
           unsubs.push(onSnapshot(collection(fs, "users", uid, name), (s) => next({ docs: s.docs }), err));
         }
         return () => {};
