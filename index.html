@@ -216,6 +216,14 @@ details.panel[open]>summary{margin-bottom:12px}
 .field select{font-family:var(--sans)}
 .field label.check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);padding:8px 0;cursor:pointer}
 .field label.check input{width:auto;margin:0}
+.vr-import{flex:1 1 100%;margin:4px 0;padding:12px;border:1px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;gap:8px}
+.vr-import[hidden]{display:none}
+.vr-import .vi-h{font-size:13px;font-weight:600}
+.vr-import .vi-d{font-size:11px;color:var(--ink-3)}
+.vr-import textarea{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--ink);font-family:var(--mono);width:100%;resize:vertical;box-sizing:border-box}
+.vr-import .vi-a{display:flex;gap:8px;flex-wrap:wrap}
+.vr-import .vi-r{font-size:12px;color:var(--ink-2);line-height:1.6}
+.vr-import .vi-r .warn{color:var(--buy)}
 .field input:focus,.field select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .hint{font-size:11px;color:var(--ink-3);margin-top:8px}
 
@@ -434,6 +442,13 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="field"><label for="n-ticker">종목</label>
         <select id="n-ticker"><option>SOXL</option><option>TQQQ</option></select></div>
       <div class="field" style="align-self:end"><label class="check"><input id="n-join" type="checkbox"> 이어서 하기 (이미 진행 중)</label></div>
+      <div class="vr-only join-only vr-import" hidden>
+      <div class="vi-h">VR 기록표로 채우기 <span class="muted">(선택)</span></div>
+      <div class="vi-d">회차별 기록표(시작일·마감일·cycle·마지막종가·마지막수량·투입원금·E마지막·V·시작P·마지막P 등)를 엑셀에서 복사해 붙여넣거나 파일(.xlsx·.csv)을 고르세요. 마지막 줄로 지금 상태를 채우고, 지난 회차는 회차 추이에 넣습니다.</div>
+      <textarea id="vi-text" rows="3" placeholder="엑셀에서 머리줄까지 표를 복사해 여기에 붙여넣기"></textarea>
+      <div class="vi-a"><label class="btn" for="vi-file">파일 고르기</label><input id="vi-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden><button class="btn" type="button" id="vi-read">표 읽기</button><button class="btn" type="button" id="vi-clear" hidden>지우기</button></div>
+      <div class="vi-r" id="vi-result"></div>
+    </div>
       <div class="field inf-only"><label for="n-N">분할수</label><select id="n-N"><option value="20">20분할</option><option value="40">40분할</option></select></div>
       <div class="field inf-only"><label for="n-principal">원금 ($)</label><input id="n-principal" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field inf-only join-only" hidden><label for="n-iqty">보유 수량</label><input id="n-iqty" type="number" step="1" inputmode="numeric"></div>
@@ -2020,10 +2035,11 @@ document.addEventListener("submit", function(ev){
       if(!(V>0)||!(pool>=0)){ toast("시작 V와 Pool을 넣어주세요."); return; }
       var vq=parseInt($("n-qty").value,10)||0, vinv=parseFloat($("n-vinv").value), vcy=joining?Math.max(1,parseInt($("n-vcycle").value,10)||1):1;
       Object.assign(base,{V:V,pool:pool,qty:vq,avg:vq>0&&parseFloat($("n-avg").value)>0?parseFloat($("n-avg").value):null,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:joining&&vinv>0?vinv:pool+vq*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:vcy});
-      if(joining) base.log=[{d:jd,side:"NOTE",text:"이어서 하기: "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
+      if(joining&&vrImport){ base.G=vrImport.G; base.band=vrImport.band; base.hist=vrImport.hist; if(vrImport.lastRoll) base.lastRoll=vrImport.lastRoll; }
+      if(joining) base.log=[{d:jd,side:"NOTE",text:(vrImport?"기록표("+vrImport.rows+"회차)로 ":"")+"이어서 하기: "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
-    db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); addFormRefresh(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}]); render(); });
+    db.doc("accounts/"+id).set(base).then(function(){ selected=id; $("add-panel").open=false; f.reset(); viClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}]); render(); });
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
@@ -2051,6 +2067,99 @@ document.addEventListener("keyup", function(ev){ if(ev.target.id==="inline-edit"
 document.addEventListener("focusout", function(ev){
   var t=ev.target; if(t.id==="inline-edit"&&t.isConnected&&rf.inline===t.getAttribute("data-k")) saveInline(t);
 });
+
+/* ----- VR 기록표 불러오기 (이어서 하기) -----
+   엑셀·CSV의 회차별 표를 읽는다. 머리줄 이름으로 열을 찾고, 숫자가 있는 cycle 줄은 회차, 그 아래 cycle 없이 V만 있는 줄은 다음 회차 시작값으로 본다. */
+var vrImport=null;
+var VI_COLS={ d0:["시작일"], d1:["마감일","종료일"], c:["cycle","회차","사이클"], close:["마지막종가","종가"], qty:["마지막수량","수량","보유수량"],
+  Es:["e시작"], inv:["투입원금","원금"], Ee:["e마지막","e"], V:["v"], min:["최소밴드"], max:["최대밴드"], Ps:["시작p","시작pool"], Pe:["마지막p","마지막pool","pool"], note:["비고","메모"] };
+function viSplit(text){
+  var lines=String(text||"").replace(/\r/g,"").split("\n"), tab=lines.some(function(l){ return l.indexOf("\t")>=0; });
+  return lines.map(function(l){
+    if(tab) return l.split("\t");
+    var out=[], cur="", q=false; for(var i=0;i<l.length;i++){ var ch=l[i]; if(q){ if(ch==='"'){ if(l[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=ch; } else if(ch==='"') q=true; else if(ch===","){ out.push(cur); cur=""; } else cur+=ch; }
+    out.push(cur); return out;
+  });
+}
+function viNum(v){ v=String(v==null?"":v).replace(/[$,\s]/g,""); if(v===""||v==="-") return null; var n=parseFloat(v); return isNaN(n)?null:n; }
+function viDate(v){
+  var t=String(v||""), m=/(\d{4})[.\-\/]\s*(\d{1,2})[.\-\/]\s*(\d{1,2})/.exec(t), p2=function(x){ return ("0"+x).slice(-2); };
+  if(m) return m[1]+"-"+p2(m[2])+"-"+p2(m[3]);
+  m=/^\s*(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\s*$/.exec(t); // 엑셀 기본 날짜 서식(월/일/연)
+  return m?(m[3].length===2?"20"+m[3]:m[3])+"-"+p2(m[1])+"-"+p2(m[2]):null;
+}
+function vrParseTable(text, contribIn){
+  var grid=viSplit(text), hi=-1, map={};
+  for(var i=0;i<grid.length&&hi<0;i++){
+    var keys=grid[i].map(function(h){ return String(h).replace(/\s/g,"").toLowerCase(); }), m={};
+    Object.keys(VI_COLS).forEach(function(k){ for(var j=0;j<keys.length;j++){ if(VI_COLS[k].indexOf(keys[j])>=0&&!Object.keys(m).some(function(x){return m[x]===j;})){ m[k]=j; break; } } });
+    if(m.V!=null&&m.c!=null){ hi=i; map=m; }
+  }
+  if(hi<0) return { err:"머리줄을 찾지 못했어요. 표의 첫 줄에 cycle(또는 회차)과 V 열 이름이 있어야 해요." };
+  var cell=function(r,k){ return map[k]!=null?r[map[k]]:null; };
+  var cyc=[], tail=null;
+  grid.slice(hi+1).forEach(function(r){
+    var c=viNum(cell(r,"c")), V=viNum(cell(r,"V"));
+    var row={ c:c, d0:viDate(cell(r,"d0")), d1:viDate(cell(r,"d1")), close:viNum(cell(r,"close")), qty:viNum(cell(r,"qty")), Es:viNum(cell(r,"Es")), inv:viNum(cell(r,"inv")),
+      Ee:viNum(cell(r,"Ee")), V:V, min:viNum(cell(r,"min")), max:viNum(cell(r,"max")), Ps:viNum(cell(r,"Ps")), Pe:viNum(cell(r,"Pe")), note:String(cell(r,"note")||"").trim() };
+    if(c!=null&&c>=1&&V!=null) cyc.push(row); else if(c==null&&V!=null&&cyc.length) tail=row;
+  });
+  if(!cyc.length) return { err:"회차 줄을 찾지 못했어요." };
+  cyc.sort(function(x,y){ return x.c-y.c; });
+  var last=cyc[cyc.length-1], prev=cyc.length>1?cyc[cyc.length-2]:null;
+  var contrib=last.inv!=null&&prev&&prev.inv!=null?E.r2(last.inv-prev.inv):(contribIn||0);
+  var G=10; cyc.forEach(function(r){ var m=/G\s*=\s*(\d+)/i.exec(r.note); if(m) G=+m[1]; });
+  var band=last.min!=null&&last.V?Math.round((1-last.min/last.V)*100)/100:0.15; if(!(band>0&&band<1)) band=0.15;
+  // 다음 회차 시작 줄이 있으면 마지막 회차까지 마감, 없으면 마지막 회차가 진행 중
+  var done=tail?cyc:cyc.slice(0,-1), cur;
+  if(tail) cur={ cycle:last.c+1, V:tail.V, pool:tail.Ps!=null?tail.Ps:(last.Pe!=null?E.r2(last.Pe+contrib):null), qty:last.qty, invested:tail.inv!=null?tail.inv:(last.inv!=null?E.r2(last.inv+contrib):null), next:last.d1?E.addDays(last.d1,14):null };
+  else cur={ cycle:last.c, V:last.V, pool:last.Pe!=null?last.Pe:last.Ps, qty:last.qty, invested:last.inv, next:last.d1 };
+  var nextOf=function(i){ return i+1<cyc.length?cyc[i+1]:tail; };
+  var hist=done.map(function(r){
+    var i=cyc.indexOf(r), n=nextOf(i);
+    return { c:r.c, d:r.d1, close:r.close, qty:r.qty, E:r.Ee, V:r.V, min:r.min!=null?r.min:E.r2(r.V*(1-band)), max:r.max!=null?r.max:E.r2(r.V*(1+band)),
+      pool:r.Pe, poolNext:n&&n.Ps!=null?n.Ps:(r.Pe!=null?E.r2(r.Pe+contrib):null), invested:r.inv, Vnext:n?n.V:null };
+  });
+  var lr=done.length?done[done.length-1]:null;
+  var lastRoll=lr&&lr.d1?{ d:lr.d1, close:lr.close, E:lr.Ee, Vprev:lr.V, Vnext:cur.V }:null;
+  // 표의 V가 라오어 실력공식(V + P/G + (E−V)/(2√G) + 적립금)과 얼마나 다른지: 앞으로는 앱이 이 공식으로 계산한다
+  var gAt=function(c){ var g=10; cyc.forEach(function(r){ var m=/G\s*=\s*(\d+)/i.exec(r.note); if(m&&r.c<=c) g=+m[1]; }); return g; };
+  var diffs=[]; hist.forEach(function(h){ if(h.Vnext!=null&&h.E!=null&&h.pool!=null){ var g=gAt(h.c+1); diffs.push(h.Vnext-(h.V+h.pool/g+(h.E-h.V)/(2*Math.sqrt(g))+contrib)); } });
+  var recent=diffs.slice(-5), drift=recent.length?recent.reduce(function(x,y){return x+y;},0)/recent.length:0;
+  var missing=["V","pool","qty","next"].filter(function(k){ return cur[k]==null; });
+  return { cur:cur, hist:hist, lastRoll:lastRoll, contrib:contrib, G:G, band:band, drift:E.r2(drift), rows:cyc.length, missing:missing,
+    split:cyc.filter(function(r){ return /분할/.test(r.note); }).map(function(r){ return r.c; }) };
+}
+function viApply(r){
+  var res=$("vi-result");
+  if(r.err){ vrImport=null; res.innerHTML='<span class="warn">'+esc(r.err)+'</span>'; $("vi-clear").hidden=true; return; }
+  vrImport=r; var c=r.cur;
+  var setv=function(id,v){ if(v!=null) $(id).value=v; };
+  setv("n-V",c.V); setv("n-pool",c.pool); setv("n-qty",c.qty); setv("n-contrib",r.contrib||null); setv("n-next",c.next); setv("n-vcycle",c.cycle); setv("n-vinv",c.invested);
+  res.innerHTML='<b>'+r.rows+'회차를 읽었어요.</b> 지금 '+c.cycle+'회차 · V '+usd(c.V)+' · Pool '+usd(c.pool)+' · 보유 '+c.qty+'주 · 다음 갱신 '+esc(c.next||"-")+' · 적립 '+usd(r.contrib)+' · G '+r.G+'<br>'+
+    '지난 '+r.hist.length+'회차는 회차 추이에 들어갑니다. 평단은 표에 없어서 증권사 화면 값을 직접 넣어주세요.'+
+    (r.split.length?'<br>액면분할 표시: '+r.split.join(", ")+'회차':'')+
+    (r.missing.length?'<br><span class="warn">표에서 못 찾은 값: '+r.missing.join(", ")+' — 위 칸에 직접 넣어주세요.</span>':'')+
+    (Math.abs(r.drift)>=1?'<br><span class="warn">이 표의 V는 라오어 실력공식(V + Pool/G + (E−V)÷2√G + 적립금)보다 회차마다 약 '+usd(Math.abs(r.drift))+' '+(r.drift>0?'높게':'낮게')+' 늘었어요. 앞으로 V 갱신은 앱이 이 공식으로 계산하니, 표와 달라지면 상태 수정에서 맞추세요.</span>':'');
+  $("vi-clear").hidden=false; joinHint();
+}
+function viClear(){ vrImport=null; $("vi-text").value=""; $("vi-file").value=""; $("vi-result").innerHTML=""; $("vi-clear").hidden=true; }
+// .xlsx는 그때만 SheetJS를 불러와 첫 시트를 탭 구분 글자로 바꾼다
+function viLoadXlsx(){ return window.XLSX?Promise.resolve(window.XLSX):new Promise(function(ok,no){ var sc=document.createElement("script"); sc.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; sc.onload=function(){ ok(window.XLSX); }; sc.onerror=function(){ no(new Error("load")); }; document.head.appendChild(sc); }); }
+function viReadFile(f){
+  if(!f) return;
+  var res=$("vi-result"); res.textContent="읽는 중…";
+  if(/\.xlsx?$/i.test(f.name)){
+    Promise.all([viLoadXlsx(), f.arrayBuffer()]).then(function(x){
+      var wb=x[0].read(x[1],{type:"array"}), ws=wb.Sheets[wb.SheetNames[0]];
+      var txt=x[0].utils.sheet_to_csv(ws,{FS:"\t",blankrows:false}); $("vi-text").value=txt; viApply(vrParseTable(txt, parseFloat($("n-contrib").value)));
+    }).catch(function(){ res.innerHTML='<span class="warn">엑셀 파일을 읽지 못했어요. 표를 복사해 붙여넣어 보세요.</span>'; });
+  } else f.text().then(function(txt){ $("vi-text").value=txt; viApply(vrParseTable(txt, parseFloat($("n-contrib").value))); });
+}
+$("vi-file").addEventListener("change", function(){ viReadFile(this.files&&this.files[0]); });
+$("vi-read").addEventListener("click", function(){ viApply(vrParseTable($("vi-text").value, parseFloat($("n-contrib").value))); });
+$("vi-clear").addEventListener("click", viClear);
+$("vi-text").addEventListener("paste", function(){ var t=this; setTimeout(function(){ viApply(vrParseTable(t.value, parseFloat($("n-contrib").value))); },0); });
 
 // 계좌 추가: 전략(무매/VR)과 "이어서 하기"에 따라 칸을 보이고 숨긴다
 function addFormRefresh(){
