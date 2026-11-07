@@ -214,8 +214,10 @@ details.panel[open]>summary{margin-bottom:12px}
 .field label{font-size:11px;color:var(--ink-2)}
 .field input,.field select{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;color:var(--ink);font-family:var(--mono);width:100%}
 .field select{font-family:var(--sans)}
-.field label.check{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);padding:8px 0;cursor:pointer}
-.field label.check input{width:auto;margin:0}
+.join-seg{flex:1 1 100%;display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:3px}
+.join-seg button{flex:1;background:none;border:none;border-radius:8px;padding:8px 6px;font-size:13px;font-weight:600;color:var(--ink-2);font-family:var(--sans);cursor:pointer}
+.join-seg button span{font-weight:400;font-size:11px;color:var(--ink-3)}
+.join-seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .vr-import{flex:1 1 100%;margin:4px 0;padding:12px;border:1px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;gap:8px}
 .vr-import[hidden]{display:none}
 .vr-import .vi-h{font-size:13px;font-weight:600}
@@ -436,12 +438,12 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
   <details class="panel" id="add-panel">
     <summary>계좌 추가</summary>
     <form id="add-form" class="form">
+      <div class="join-seg" role="group" aria-label="시작 방법"><button type="button" data-add="new" class="on">새로 시작</button><button type="button" data-add="join">이어서 하기 <span>이미 진행 중</span></button><input id="n-join" type="checkbox" hidden></div>
       <div class="field"><label for="n-type">전략</label>
         <select id="n-type"><option value="INF">무한매수법 V4.0</option><option value="VR">VR (밸류 리밸런싱)</option></select></div>
       <div class="field"><label for="n-name">이름</label><input id="n-name" placeholder="예: VR 2호" required></div>
       <div class="field"><label for="n-ticker">종목</label>
         <select id="n-ticker"><option>SOXL</option><option>TQQQ</option></select></div>
-      <div class="field" style="align-self:end"><label class="check"><input id="n-join" type="checkbox"> 이어서 하기 (이미 진행 중)</label></div>
       <div class="vr-only join-only vr-import" hidden>
       <div class="vi-h">VR 기록표로 채우기 <span class="muted">(선택)</span></div>
       <div class="vi-d">회차별 기록표(시작일·마감일·cycle·마지막종가·마지막수량·투입원금·E마지막·V·시작P·마지막P 등)를 엑셀에서 복사해 붙여넣거나 파일(.xlsx·.csv)을 고르면 바로 읽어 아래 칸을 채웁니다. 마지막 줄로 지금 상태를 채우고, 지난 회차는 회차 추이에 넣습니다.</div>
@@ -595,7 +597,7 @@ function renderView(){
     if(!trk.metaLoaded||!trk.cyclesLoaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
     v.innerHTML = isOwner()
       ? '<div class="panel"><div class="empty">계좌가 없습니다. 아래 "계좌 추가"에서 만들거나, 지금까지 정한 두 계좌(SOXL 무매 20/20 · VR 1호)를 불러오세요.</div><div class="actions"><button class="btn primary" type="button" id="seed-btn">내 계좌 두 개 불러오기</button></div></div>'
-      : '<div class="panel"><div class="empty">아직 계좌가 없어요. 무한매수법은 종목·분할수·원금을, VR은 시작 V·Pool·보유수량을 넣어 계좌를 만드세요.</div><div class="actions"><button class="btn primary" type="button" id="tab-add">계좌 만들기</button></div></div>';
+      : '<div class="panel"><div class="empty">아직 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 무매·VR을 하고 있으면 "이어서 하기"로 지금 보유·평단·잔금(또는 매매내역·VR 기록표 파일)을 넣어 합류하세요.</div><div class="actions"><button class="btn primary" type="button" data-add="new">계좌 만들기</button><button class="btn" type="button" data-add="join">이어서 하기 <span class="muted">(이미 진행 중)</span></button></div></div>';
     return;
   }
   if(!bars(a.ticker).length){ v.innerHTML='<div class="panel empty">'+esc(a.ticker)+' 종가가 아직 없습니다. 아래 "종가 직접 입력"에서 최근 종가를 넣어주세요.</div>'; return; }
@@ -1852,6 +1854,10 @@ function seedDemo(){
 document.addEventListener("click", function(ev){
   if(ev.target.closest("#seed-btn")){ seedDemo(); return; }
   var t=ev.target.closest("[data-id].tab"); if(t){ selected=t.getAttribute("data-id"); try{localStorage.setItem("desk.sel",selected);}catch(e){} render(); return; }
+  var ad=ev.target.closest("[data-add]");
+  if(ad){ var jn=ad.getAttribute("data-add")==="join"; $("n-join").checked=jn; addFormRefresh();
+    if(!ad.closest("#add-form")){ var ap2=$("add-panel"); ap2.open=true; ap2.scrollIntoView({behavior:"smooth",block:"start"}); $("n-name").focus(); }
+    return; }
   if(ev.target.closest("#tab-add")){ var ap=$("add-panel"); ap.open=true; ap.scrollIntoView({behavior:"smooth",block:"start"}); $("n-name").focus(); return; }
   if(ev.target.closest("summary")&&(ev.target.closest("[data-act]")||ev.target.id==="inline-edit")) ev.preventDefault();
   var b=ev.target.closest("[data-act]"); if(!b) return;
@@ -2274,6 +2280,7 @@ function addFormRefresh(){
     e.hidden=!ok;
   });
   $("n-V-label").textContent=jn?"지금 V ($)":"시작 V ($)";
+  document.querySelectorAll("#add-form .join-seg button").forEach(function(b){ b.classList.toggle("on",(b.getAttribute("data-add")==="join")===jn); });
   joinHint();
 }
 // 이어서 하기 안내: 무매는 추정 T, VR은 지금 평가금 E와 V 비교 (라오어 중간합류 글: E가 직전 V보다 낮을 때 합류 추천)
