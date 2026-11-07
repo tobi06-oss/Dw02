@@ -1656,8 +1656,9 @@ function tradeFromFill(a, l, d, close, ts){
   else { var m={ quarter:[0.75,"별지점"], limit:[0.25,"목표가"], "rev-moc":[1-2/N,"리버스 MOC"], "rev-sell":[1-2/N,"리버스"] }[l.kind]||[1,""]; t.tMult=m[0]; t.tTag=m[1]; }
   return t;
 }
-function linkAccount(a){
-  var m=trk.meta, patch, metaW;
+// fresh: 남아 있는 사이클 기록(삭제한 계좌의 것)을 이어받지 않고 이 계좌의 기록으로 새로 시작
+function linkAccount(a, fresh){
+  var m=fresh?null:trk.meta, patch, metaW;
   if(m){
     var seed=seedOf(a), list=getTrades(), st=replay(list,seed), n=cycleNo(m.label);
     patch={ linked:"tracker", principal:seed, initialPrincipal:seed, qty:st.qty, avg:st.avg, cash:st.cash, T:st.T, realized:st.realized, cycle:n||a.cycle||1,
@@ -2068,9 +2069,10 @@ document.addEventListener("submit", function(ev){
       if(joining) base.log=[{d:jd,side:"NOTE",text:(vrImport?"기록표("+vrImport.rows+"회차)로 ":"")+"이어서 하기: "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
-    // 이어서 하기로 만든 무매 계좌는 기록(매매내역·그래프)을 바로 켠다. 기록에 연결된 무매 계좌가 아직 없을 때만
-    var autoLink=type==="INF"&&joining&&!linkedAcct()&&trk.metaLoaded&&!trk.meta;
-    db.doc("accounts/"+id).set(base).then(function(){ return autoLink?linkAccount(base):null; }).then(function(){ selected=id; $("add-panel").open=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}].concat(autoLink?[{p:"cycle/current",d:null}]:[])); render(); }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
+    // 이어서 하기로 만든 무매 계좌는 기록(매매내역·그래프)을 바로 켠다. 기록에 연결된 무매 계좌가 없을 때만.
+    // 지운 계좌가 남긴 사이클 기록이 있으면 그걸 이어받지 않고 새로 시작한다 (실행취소로 되돌릴 수 있게 이전 기록을 남겨 둠)
+    var autoLink=type==="INF"&&joining&&!linkedAcct()&&trk.metaLoaded, prevMeta=autoLink?curDoc("cycle/current"):null;
+    db.doc("accounts/"+id).set(base).then(function(){ return autoLink?linkAccount(base,true):null; }).then(function(){ selected=id; $("add-panel").open=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}].concat(autoLink?[{p:"cycle/current",d:prevMeta||null}]:[])); render(); }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
