@@ -597,7 +597,7 @@ function renderView(){
     if(!trk.metaLoaded||!trk.cyclesLoaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
     v.innerHTML = isOwner()
       ? '<div class="panel"><div class="empty">계좌가 없습니다. 아래 "계좌 추가"에서 만들거나, 지금까지 정한 두 계좌(SOXL 무매 20/20 · VR 1호)를 불러오세요.</div><div class="actions"><button class="btn primary" type="button" id="seed-btn">내 계좌 두 개 불러오기</button></div></div>'
-      : '<div class="panel"><div class="empty">아직 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 무매·VR을 하고 있으면 "이어서 하기"로 지금 보유·평단·잔금(또는 매매내역·VR 기록표 파일)을 넣어 합류하세요.</div><div class="actions"><button class="btn primary" type="button" data-add="new">계좌 만들기</button><button class="btn" type="button" data-add="join">이어서 하기 <span class="muted">(이미 진행 중)</span></button></div></div>';
+      : '<div class="panel"><div class="empty">아직 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 무매·VR을 하고 있으면 "이어서 하기"로 지금 보유·평단·잔금(또는 매매내역·VR 기록표 파일)을 넣어 합류하세요.</div><div class="actions"><button class="btn primary" type="button" data-add="new">계좌 만들기</button><button class="btn primary" type="button" data-add="join">이어서 하기 <span style="font-weight:400;opacity:.8">(이미 진행 중)</span></button></div></div>';
     return;
   }
   if(!bars(a.ticker).length){ v.innerHTML='<div class="panel empty">'+esc(a.ticker)+' 종가가 아직 없습니다. 아래 "종가 직접 입력"에서 최근 종가를 넣어주세요.</div>'; return; }
