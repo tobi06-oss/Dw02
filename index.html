@@ -94,6 +94,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .tab[aria-selected="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent),var(--shadow)}
 .tab.add{color:var(--ink-3);display:flex;align-items:center;justify-content:center;font-size:13px;background:transparent;border-style:dashed;box-shadow:none}
 .tab.add:hover{color:var(--accent);border-color:var(--accent)}
+.tab.add[aria-selected="true"]{color:var(--accent);border:1px solid var(--accent);background:var(--surface);box-shadow:inset 0 0 0 1px var(--accent),var(--shadow);font-weight:600}
 .obadge{position:absolute;top:-9px;right:10px;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;box-shadow:0 0 0 2px var(--bg)}
 .obadge.todo{background:var(--danger);color:#fff} .obadge.warn{background:var(--warn-soft);color:var(--warn)}
 .kind{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--accent-soft);color:var(--accent)}
@@ -441,10 +442,8 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 
   <nav class="kind-tabs" id="kind-tabs" role="tablist" aria-label="전략"></nav>
   <nav class="tabs" id="tabs" role="tablist" aria-label="계좌"></nav>
-  <main id="view" class="wrap" style="gap:14px"></main>
-
-  <details class="panel" id="add-panel">
-    <summary id="add-sum">계좌 추가</summary>
+  <section class="panel" id="add-panel" hidden>
+    <div class="panel-head"><h2 id="add-sum">계좌 추가</h2><button type="button" class="btn ghost" id="add-close">닫기</button></div>
     <form id="add-form" class="form">
       <div class="join-seg" role="group" aria-label="시작 방법"><button type="button" data-add="new" class="on">새로 시작</button><button type="button" data-add="join">이어서 하기 <span>이미 진행 중</span></button><input id="n-join" type="checkbox" hidden></div>
       <div class="field" hidden><label for="n-type">전략</label>
@@ -485,7 +484,9 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
     </form>
     <div class="hint join-only" id="join-hint" hidden></div>
     <div class="hint vr-only" hidden>VR을 0에서 시작할 때는 시작 V와 Pool에 첫 적립금을 넣고, 보유 수량 0으로 만드세요. 첫 매수표는 V 기준으로 계산됩니다.</div>
-  </details>
+  </section>
+  <main id="view" class="wrap" style="gap:14px"></main>
+
 
   <details class="panel" id="price-panel">
     <summary>종가 직접 입력</summary>
@@ -524,7 +525,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 var E = window.Engine;
 var db = null, loaded = false, accounts = {}, prices = {}, selected = null, fillEdits = {};
 // 맨 위 전략 탭(무한매수 | VR): 고른 전략의 계좌만 아래 탭에 보이고, 전략마다 마지막으로 본 계좌를 기억한다
-var curType = "INF", lastSel = {};
+var curType = "INF", lastSel = {}, addMode = false;
 try { selected = localStorage.getItem("desk.sel"); curType = localStorage.getItem("desk.kind")==="VR" ? "VR" : "INF"; lastSel = JSON.parse(localStorage.getItem("desk.selk")||"{}")||{}; } catch(e) {}
 
 var $ = function(id){ return document.getElementById(id); };
@@ -590,12 +591,12 @@ function renderTabs(){
   var list=all.filter(function(a){ return kindOf(a)===curType; });
   var html=list.map(function(a){
     var v=valueOf(a), ob=orderBadge(a);
-    return '<button class="tab" role="tab" aria-selected="'+(a.id===selected)+'" data-id="'+esc(a.id)+'">'+
+    return '<button class="tab" role="tab" aria-selected="'+(!addMode&&a.id===selected)+'" data-id="'+esc(a.id)+'">'+
       '<div class="t1">'+esc(a.name)+(ob?'<span class="obadge '+ob.cls+'">'+ob.txt+'</span>':'')+'</div>'+
       '<div class="t2 num">'+(v.eq!=null?usd(v.eq,0):"-")+' <span class="'+signCls(v.pl)+'">'+pct(v.pl,1)+'</span></div></button>';
   }).join("");
   // 이 전략에 계좌가 없으면 아래 빈 화면에 만들기 버튼이 있으니 + 탭은 숨긴다
-  if(list.length||!loaded) html+='<button class="tab add" type="button" id="tab-add">+ '+kindName(curType)+' 계좌 추가</button>';
+  if(list.length||addMode||!loaded) html+='<button class="tab add" type="button" role="tab" aria-selected="'+addMode+'" id="tab-add">+ '+kindName(curType)+' 계좌 추가</button>';
   $("tabs").innerHTML=html;
   // 위 전략 탭: 계좌가 없어도 둘 다 늘 보인다. 주문·체결 확인이 남은 계좌가 있으면 빨간 점
   $("kind-tabs").innerHTML=["INF","VR"].map(function(k){
@@ -604,6 +605,13 @@ function renderTabs(){
   }).join("");
   setAddType(curType);
 }
+// 계좌 추가는 탭처럼 그 자리에 연다 (다른 칸은 숨김). join: true면 이어서 하기, false면 새로 시작, null이면 그대로
+function openAdd(join){
+  addMode=true; if(join!=null) $("n-join").checked=join; addFormRefresh(); render();
+  var k=$("kind-tabs"); if(k&&k.getBoundingClientRect().top<0) k.scrollIntoView({block:"start"});
+  try{ $("n-name").focus({preventScroll:true}); }catch(e){}
+}
+function closeAdd(){ addMode=false; render(); }
 // 계좌 추가 칸은 지금 고른 전략으로 맞춘다 (전략을 따로 고르지 않음)
 function setAddType(t){
   $("add-sum").textContent=kindName(t)+" 계좌 추가";
@@ -623,6 +631,7 @@ function render(){
 }
 function renderView(){
   renderTickers(); renderTabs(); undoFab();
+  $("add-panel").hidden=!addMode; ["view","price-panel","push-panel","foot"].forEach(function(id){ $(id).hidden=addMode; });
   var a = selected ? accounts[selected] : null;
   var v = $("view"); chartReg={}; chartSeq=0;
   var openSet = {}; v.querySelectorAll("details[id]").forEach(function(d){ if(d.open) openSet[d.id]=1; });
@@ -630,7 +639,7 @@ function renderView(){
   if(!a){
     if(!trk.metaLoaded||!trk.cyclesLoaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
     v.innerHTML = !Object.keys(accounts).length&&isOwner()
-      ? '<div class="panel"><div class="empty">계좌가 없습니다. 아래 "계좌 추가"에서 만들거나, 지금까지 정한 두 계좌(SOXL 무매 20/20 · VR 1호)를 불러오세요.</div><div class="actions"><button class="btn primary" type="button" id="seed-btn">내 계좌 두 개 불러오기</button></div></div>'
+      ? '<div class="panel"><div class="empty">계좌가 없습니다. 위 "+ 계좌 추가"로 만들거나, 지금까지 정한 두 계좌(SOXL 무매 20/20 · VR 1호)를 불러오세요.</div><div class="actions"><button class="btn primary" type="button" id="seed-btn">내 계좌 두 개 불러오기</button></div></div>'
       : '<div class="panel"><div class="empty">'+(curType==="VR"
           ? '아직 VR 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 VR을 하고 있으면 "이어서 하기"로 지금 V·Pool·보유 수량(또는 VR 기록표 파일)을 넣어 합류하세요.'
           : '아직 무한매수 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 무매를 하고 있으면 "이어서 하기"로 지금 보유·평단·잔금(또는 매매내역 파일)을 넣어 합류하세요.')+
@@ -1922,13 +1931,14 @@ function seedDemo(){
 }
 document.addEventListener("click", function(ev){
   if(ev.target.closest("#seed-btn")){ seedDemo(); return; }
-  var kt=ev.target.closest("[data-kind]"); if(kt){ var nk=kt.getAttribute("data-kind"); if(nk!==curType){ curType=nk; selected=null; render(); } return; }
-  var t=ev.target.closest("[data-id].tab"); if(t){ selected=t.getAttribute("data-id"); render(); return; }
+  var kt=ev.target.closest("[data-kind]"); if(kt){ var nk=kt.getAttribute("data-kind"); if(nk!==curType||addMode){ addMode=false; if(nk!==curType){ curType=nk; selected=null; } render(); } return; }
+  var t=ev.target.closest("[data-id].tab"); if(t){ addMode=false; selected=t.getAttribute("data-id"); render(); return; }
   var ad=ev.target.closest("[data-add]");
-  if(ad){ var jn=ad.getAttribute("data-add")==="join"; $("n-join").checked=jn; addFormRefresh();
-    if(!ad.closest("#add-form")){ var ap2=$("add-panel"); ap2.open=true; ap2.scrollIntoView({behavior:"smooth",block:"start"}); $("n-name").focus(); }
+  if(ad){ var jn=ad.getAttribute("data-add")==="join";
+    if(ad.closest("#add-form")){ $("n-join").checked=jn; addFormRefresh(); } else openAdd(jn);
     return; }
-  if(ev.target.closest("#tab-add")){ var ap=$("add-panel"); ap.open=true; ap.scrollIntoView({behavior:"smooth",block:"start"}); $("n-name").focus(); return; }
+  if(ev.target.closest("#tab-add")){ if(!addMode) openAdd(null); return; }
+  if(ev.target.closest("#add-close")){ closeAdd(); return; }
   if(ev.target.closest("summary")&&(ev.target.closest("[data-act]")||ev.target.id==="inline-edit")) ev.preventDefault();
   var b=ev.target.closest("[data-act]"); if(!b) return;
   if(b.getAttribute("data-act")==="undo"){ recAct("undo",b,null); return; }
@@ -2134,7 +2144,7 @@ document.addEventListener("submit", function(ev){
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
     // 새 무매 계좌는 처음부터 이 계좌만의 기록(원화 평가액·매매내역·그래프)을 켠다 (cycle/{계좌ID})
     var autoLink=type==="INF"&&trk.metaLoaded;
-    db.doc("accounts/"+id).set(base).then(function(){ return autoLink?linkAccount(base,false):null; }).then(function(){ selected=id; $("add-panel").open=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}].concat(autoLink?[{p:"cycle/"+id,d:null}]:[])); render(); }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
+    db.doc("accounts/"+id).set(base).then(function(){ return autoLink?linkAccount(base,false):null; }).then(function(){ selected=id; addMode=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}].concat(autoLink?[{p:"cycle/"+id,d:null}]:[])); render(); }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
