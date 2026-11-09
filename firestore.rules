@@ -22,29 +22,36 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // 초대 코드: 운영자만 만들고 보고 지운다.
-    // 회원이 아닌 사람은 코드를 읽을 수 없고, 등록할 때(members 문서를 만드는 같은 일괄 쓰기 안에서) 그 코드를 지우는 것만 된다 → 한 번 쓰면 끝
+    // 초대 코드 {createdAt, note, max: 쓸 수 있는 인원, used: 쓴 인원}. 운영자만 만들고 보고 지운다.
+    // 회원이 아닌 사람은 코드를 읽을 수 없고, 등록할 때(members 문서를 만드는 같은 일괄 쓰기 안에서) used를 1 올리는 것만 된다.
+    // used가 max에 닿으면 더 이상 등록할 수 없다.
+    function invitePath(code) { return /databases/$(database)/documents/invites/$(code); }
     match /invites/{code} {
       allow read: if isOwner();
       allow create: if isOwner()
-        && request.resource.data.keys().hasOnly(['createdAt', 'note'])
+        && request.resource.data.keys().hasOnly(['createdAt', 'note', 'max', 'used'])
+        && request.resource.data.max is int && request.resource.data.max >= 1 && request.resource.data.max <= 50
+        && request.resource.data.used == 0
         && code.size() >= 8;
-      allow delete: if isOwner()
-        || (request.auth != null
-            && !exists(/databases/$(database)/documents/members/$(request.auth.uid))
-            && getAfter(/databases/$(database)/documents/members/$(request.auth.uid)).data.code == code);
-      allow update: if false;
+      allow update: if request.auth != null
+        && !exists(/databases/$(database)/documents/members/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/members/$(request.auth.uid)).data.code == code
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used'])
+        && request.resource.data.used == resource.data.get('used', 0) + 1
+        && request.resource.data.used <= resource.data.get('max', 1);
+      allow delete: if isOwner();
     }
 
-    // 회원 등록: 본인 문서만, 지금 있는 초대 코드로, 그 코드를 같은 일괄 쓰기에서 지울 때만
+    // 회원 등록: 본인 문서만, 남은 자리가 있는 초대 코드로, 그 코드의 used를 같은 일괄 쓰기에서 1 올릴 때만
     match /members/{uid} {
       allow get: if request.auth != null && (request.auth.uid == uid || isOwner());
       allow list: if isOwner();
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['code', 'email', 'joinedAt'])
         && request.resource.data.code is string
-        && exists(/databases/$(database)/documents/invites/$(request.resource.data.code))
-        && !existsAfter(/databases/$(database)/documents/invites/$(request.resource.data.code));
+        && exists(invitePath(request.resource.data.code))
+        && get(invitePath(request.resource.data.code)).data.get('used', 0) < get(invitePath(request.resource.data.code)).data.get('max', 1)
+        && getAfter(invitePath(request.resource.data.code)).data.get('used', 0) == get(invitePath(request.resource.data.code)).data.get('used', 0) + 1;
       allow update: if false;
       allow delete: if isOwner();
     }

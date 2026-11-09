@@ -554,9 +554,10 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 
   <details class="panel" id="invite-panel" hidden>
     <summary>초대 코드 <span class="muted">(운영자만 보여요)</span></summary>
-    <div class="hint">코드를 만들어 지인에게 보내면, 그 사람이 "처음이면 계정 만들기"에서 코드를 넣고 가입해요. 코드는 한 번 쓰면 없어져요. 회원을 빼면 그 사람은 더 이상 기록을 읽고 쓸 수 없어요 (기록 자체는 남아요).</div>
+    <div class="hint">코드를 만들어 지인에게 보내면, 그 사람이 "처음이면 계정 만들기"에서 코드를 넣고 가입해요. 가입 인원만큼 쓰이면 코드가 막혀요. 단톡방에는 인원을 그 방 사람 수로 정한 코드 하나만 올리면 돼요. 회원을 빼면 그 사람은 더 이상 기록을 읽고 쓸 수 없어요 (기록 자체는 남아요).</div>
     <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end">
-      <div class="field" style="flex:1 1 180px"><label for="inv-note">메모 (누구에게 줄지, 선택)</label><input id="inv-note" maxlength="40" placeholder="예: 철수"></div>
+      <div class="field" style="flex:1 1 180px"><label for="inv-note">메모 (누구에게 줄지, 선택)</label><input id="inv-note" maxlength="40" placeholder="예: 철수, 투자 단톡방"></div>
+      <div class="field" style="flex:0 1 110px"><label for="inv-max">가입 인원</label><input id="inv-max" type="number" min="1" max="50" step="1" value="1" inputmode="numeric"></div>
       <button class="btn primary" type="button" id="inv-make">초대 코드 만들기</button>
     </div>
     <div id="inv-list" style="margin-top:12px"></div>
@@ -2536,7 +2537,7 @@ window.DeskApp = {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, writeBatch, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, writeBatch, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { FIREBASE_CONFIG, VAPID_KEY, OWNER_EMAILS } from "./firebase-config.js";
 
 const app = initializeApp(FIREBASE_CONFIG);
@@ -2654,12 +2655,12 @@ $("auth-reset").addEventListener("click", async () => {
 let pendingCode = null, authSeq = 0;
 const normCode = (c) => String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 const isOwnerUser = (u) => !!(u && u.email) && OWNER_EMAILS.some((e) => e && e.toLowerCase() === u.email.toLowerCase());
-// 회원 등록과 코드 지우기를 한 번에 (보안 규칙이 같은 일괄 쓰기에서 코드가 지워져야만 등록을 허락함 → 한 번 쓰면 끝)
+// 회원 등록과 코드 사용 인원(used) +1을 한 번에 (보안 규칙이 같은 일괄 쓰기에서 used가 1 올라야만 등록을 허락하고, max를 넘으면 막음)
 async function redeem(user, code) {
   const c = normCode(code); if (!c) throw new Error("empty");
   const b = writeBatch(fs);
   b.set(doc(fs, "members", user.uid), { code: c, email: user.email || "", joinedAt: new Date().toISOString() });
-  b.delete(doc(fs, "invites", c));
+  b.update(doc(fs, "invites", c), { used: increment(1) });
   await b.commit();
 }
 async function memberOk(user) {
@@ -2679,7 +2680,7 @@ $("gate-form").addEventListener("submit", async (e) => {
   const user = auth.currentUser; if (!user) return;
   $("gate-submit").disabled = true; $("gate-err").textContent = "";
   try { await redeem(user, $("gate-code").value); startApp(user); }
-  catch (err) { console.error("redeem", err); $("gate-err").textContent = "초대 코드가 맞지 않거나 이미 쓴 코드예요. 운영자에게 새 코드를 받아 넣어 주세요."; }
+  catch (err) { console.error("redeem", err); $("gate-err").textContent = "초대 코드가 맞지 않거나 가입 인원이 다 찬 코드예요. 운영자에게 새 코드를 받아 넣어 주세요."; }
   finally { $("gate-submit").disabled = false; }
 }, true);
 // 운영자 화면: 남은 초대 코드와 회원 목록
@@ -2690,9 +2691,10 @@ async function invRefresh() {
   try {
     const [iv, mb] = await Promise.all([getDocs(collection(fs, "invites")), getDocs(collection(fs, "members"))]);
     const inv = iv.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-    $("inv-list").innerHTML = '<div class="small muted">아직 안 쓴 초대 코드 ' + inv.length + '개</div>' + inv.map((x) =>
-      '<div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><b class="num" style="font-size:16px;letter-spacing:.06em">' + escH(x.id) + '</b><span class="small muted">' + escH(x.note || "") + ' · ' + escH((x.createdAt || "").slice(0, 10)) + '</span>' +
-      '<button class="btn ghost" type="button" data-inv-copy="' + escH(x.id) + '">안내문 복사</button><button class="btn ghost" type="button" data-inv-del="' + escH(x.id) + '">지우기</button></div>').join("");
+    const left = (x) => Math.max(0, (x.max || 1) - (x.used || 0));
+    $("inv-list").innerHTML = '<div class="small muted">초대 코드 ' + inv.length + '개 (다 쓴 코드는 지워도 돼요)</div>' + inv.map((x) =>
+      '<div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><b class="num" style="font-size:16px;letter-spacing:.06em' + (left(x) ? '' : ';text-decoration:line-through;color:var(--ink-3)') + '">' + escH(x.id) + '</b><span class="small muted">' + (x.used || 0) + '/' + (x.max || 1) + '명 사용' + (left(x) ? '' : ' · 다 씀') + (x.note ? ' · ' + escH(x.note) : '') + ' · ' + escH((x.createdAt || "").slice(0, 10)) + '</span>' +
+      (left(x) ? '<button class="btn ghost" type="button" data-inv-copy="' + escH(x.id) + '" data-inv-left="' + left(x) + '">안내문 복사</button>' : '') + '<button class="btn ghost" type="button" data-inv-del="' + escH(x.id) + '">지우기</button></div>').join("");
     const mem = mb.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.joinedAt < b.joinedAt ? -1 : 1));
     $("mem-list").innerHTML = '<div class="small muted">초대 코드로 가입한 회원 ' + mem.length + '명</div>' + mem.map((x) =>
       '<div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><span>' + escH(x.email || x.id) + '</span><span class="small muted">' + escH((x.joinedAt || "").slice(0, 10)) + ' 가입</span><button class="btn ghost" type="button" data-mem-del="' + escH(x.id) + '">회원에서 빼기</button></div>').join("");
@@ -2700,15 +2702,17 @@ async function invRefresh() {
 }
 $("inv-make").addEventListener("click", async () => {
   $("inv-make").disabled = true;
-  try { await setDoc(doc(fs, "invites", newCode()), { createdAt: new Date().toISOString(), note: $("inv-note").value.trim().slice(0, 40) }); $("inv-note").value = ""; await invRefresh(); }
+  const max = parseInt($("inv-max").value, 10);
+  if (!(max >= 1 && max <= 50)) { $("inv-list").textContent = "인원은 1~50명 사이로 넣어 주세요."; $("inv-make").disabled = false; return; }
+  try { await setDoc(doc(fs, "invites", newCode()), { createdAt: new Date().toISOString(), note: $("inv-note").value.trim().slice(0, 40), max, used: 0 }); $("inv-note").value = ""; $("inv-max").value = "1"; await invRefresh(); }
   catch (e) { console.error("invite", e); $("inv-list").textContent = "코드를 만들지 못했어요: " + (e.code || e.message); }
   finally { $("inv-make").disabled = false; }
 });
 $("invite-panel").addEventListener("click", async (ev) => {
   const cp = ev.target.closest("[data-inv-copy]"), dl = ev.target.closest("[data-inv-del]"), md = ev.target.closest("[data-mem-del]");
   if (cp) {
-    const c = cp.getAttribute("data-inv-copy"), url = location.origin + location.pathname;
-    const txt = "무매·VR 주문 데스크 초대 코드: " + c + "\n주소: " + url + "\n들어가서 '처음이면 계정 만들기'를 누르고 이메일·비밀번호와 이 코드를 넣으면 돼요. 코드는 한 번만 쓸 수 있어요.";
+    const c = cp.getAttribute("data-inv-copy"), n = +cp.getAttribute("data-inv-left") || 1, url = location.origin + location.pathname;
+    const txt = "무매·VR 주문 데스크 초대 코드: " + c + "\n주소: " + url + "\n들어가서 '처음이면 계정 만들기'를 누르고 이메일·비밀번호와 이 코드를 넣으면 돼요. " + (n > 1 ? "이 코드로 " + n + "명까지 가입할 수 있어요." : "코드는 한 번만 쓸 수 있어요.");
     try { await navigator.clipboard.writeText(txt); cp.textContent = "복사했어요"; } catch (e) { prompt("아래 안내문을 복사하세요", txt); }
   } else if (dl) {
     try { await deleteDoc(doc(fs, "invites", dl.getAttribute("data-inv-del"))); await invRefresh(); } catch (e) { console.error(e); }
@@ -2731,7 +2735,7 @@ onAuthStateChanged(auth, async (user) => {
     let ok = await memberOk(user);
     if (!ok && pendingCode) {
       try { await redeem(user, pendingCode); ok = true; }
-      catch (e) { console.error("redeem", e); $("gate-err").textContent = "초대 코드가 맞지 않거나 이미 쓴 코드예요. 계정은 만들어졌으니, 운영자에게 새 코드를 받아 넣어 주세요."; }
+      catch (e) { console.error("redeem", e); $("gate-err").textContent = "초대 코드가 맞지 않거나 가입 인원이 다 찬 코드예요. 계정은 만들어졌으니, 운영자에게 새 코드를 받아 넣어 주세요."; }
       pendingCode = null;
     }
     if (seq !== authSeq) return;
