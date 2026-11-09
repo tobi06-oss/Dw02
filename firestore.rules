@@ -1,15 +1,17 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 운영자: 초대 코드를 만들고 회원을 볼 수 있다. firebase-config.js의 OWNER_EMAILS와 같은 값으로 맞춘다.
+    // 운영자: 초대 코드를 만들고 회원을 볼 수 있다. 이메일이 아니라 로그인 계정 UID로 정한다 (Firebase 콘솔 > Authentication > 사용자 UID).
+    // firebase-config.js의 OWNER_UIDS와 같은 값으로 맞춘다.
     function isOwner() {
-      return request.auth != null && request.auth.token.email != null
-        && request.auth.token.email.lower() in ['tobi06@daum.net'];
+      return request.auth != null && request.auth.uid in ['__OWNER_UID__'];
     }
-    // 회원: 운영자이거나, 초대 코드로 등록한 사람 (members/{uid} 문서가 있음)
+    function memberPath(uid) { return /databases/$(database)/documents/members/$(uid); }
+    // 회원: 운영자이거나, 초대 코드로 등록했고 운영자가 이용을 멈추지(revoked) 않은 사람
     function isMember() {
       return request.auth != null
-        && (isOwner() || exists(/databases/$(database)/documents/members/$(request.auth.uid)));
+        && (isOwner() || (exists(memberPath(request.auth.uid))
+                          && get(memberPath(request.auth.uid)).data.get('revoked', false) != true));
     }
 
     // 각자 자기 기록만 읽고 쓴다. 초대 코드로 등록한 회원만 (예전 트래커의 users/{uid}/... 기록도 그대로 동작)
@@ -32,7 +34,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['createdAt', 'note', 'max', 'used'])
         && request.resource.data.max is int && request.resource.data.max >= 1 && request.resource.data.max <= 50
         && request.resource.data.used == 0
-        && code.size() >= 8;
+        && code.matches('[A-HJ-NP-Z2-9]{10}');
       allow update: if request.auth != null
         && !exists(/databases/$(database)/documents/members/$(request.auth.uid))
         && getAfter(/databases/$(database)/documents/members/$(request.auth.uid)).data.code == code
@@ -42,18 +44,24 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
 
-    // 회원 등록: 본인 문서만, 남은 자리가 있는 초대 코드로, 그 코드의 used를 같은 일괄 쓰기에서 1 올릴 때만
+    // 회원 등록: 본인 문서만, 남은 자리가 있는 초대 코드로, 그 코드의 used를 같은 일괄 쓰기에서 1 올릴 때만.
+    // email은 로그인 이메일 그대로, joinedAt은 서버 시각(serverTimestamp)만 된다.
+    // 회원에서 빼기 = 운영자가 revoked: true로 바꾸기 (문서를 지우지 않으므로 같은 계정이 다른 코드로 다시 들어올 수 없다). 다시 들이기 = false
     match /members/{uid} {
       allow get: if request.auth != null && (request.auth.uid == uid || isOwner());
       allow list: if isOwner();
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['code', 'email', 'joinedAt'])
         && request.resource.data.code is string
+        && request.resource.data.email == request.auth.token.get('email', '')
+        && request.resource.data.joinedAt == request.time
         && exists(invitePath(request.resource.data.code))
         && get(invitePath(request.resource.data.code)).data.get('used', 0) < get(invitePath(request.resource.data.code)).data.get('max', 1)
         && getAfter(invitePath(request.resource.data.code)).data.get('used', 0) == get(invitePath(request.resource.data.code)).data.get('used', 0) + 1;
-      allow update: if false;
-      allow delete: if isOwner();
+      allow update: if isOwner()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked'])
+        && request.resource.data.revoked is bool;
+      allow delete: if false;
     }
   }
 }

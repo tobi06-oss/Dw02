@@ -14,5 +14,6 @@ export const FIREBASE_CONFIG = {
 // Firebase 콘솔 > 프로젝트 설정 > 클라우드 메시징 > 웹 푸시 인증서 > "키 쌍 생성" 후 나오는 긴 문자열을 넣으세요.
 export const VAPID_KEY = "BBz4jbWSa5xpoBWaHdUsicTzZkXXJ21lPQg0ai7ZYoFbtCsSGJ1YcE7nBKGPpu0nRTaeMjgO7gaTx37uyciWn00";
 
-// 운영자 이메일: 초대 코드를 만들고 회원을 볼 수 있어요. firestore.rules의 isOwner()에도 같은 이메일을 넣어야 합니다.
-export const OWNER_EMAILS = ["tobi06@daum.net"];
+// 운영자 계정 UID: 초대 코드를 만들고 회원을 볼 수 있어요. Firebase 콘솔 > Authentication > 사용자 탭의 "사용자 UID" 값입니다.
+// 비밀번호가 아니라 공개돼도 괜찮은 값이에요. firestore.rules의 isOwner()에도 같은 UID를 넣어야 합니다.
+export const OWNER_UIDS = ["__OWNER_UID__"];

@@ -43,6 +43,8 @@
     do { x = addDays(x, -1); } while (!isSession(x));
     return x;
   }
+  // V 갱신일(달력상 2주 간격 금요일)이 휴장일·주말이면 그 전 마지막 장에 마감한다. 저장하는 날짜는 그대로 두어 2주 간격이 앞당겨지지 않게 한다
+  function vrDue(d) { return !d ? d : isSession(d) ? d : prevSession(d); }
   // 주문표 안내: 조기폐장일, 휴장일 표가 없는 해
   function calNotes(p) {
     if (!calKnown(p.session)) p.notes.push(p.session.slice(0, 4) + "년 미국 휴장일 표가 아직 없어 주말만 건너뜁니다. 휴장일에는 주문을 건너뛰세요.");
@@ -371,16 +373,18 @@
       limit: limit, limitPct: limitPct, buys: [], sells: [], orders: [], notes: [] };
     var cum = 0, fee = (a.fee || 0) / 100;
     calNotes(p);
-    p.due = a.nextUpdate && last.d >= a.nextUpdate;
+    p.due = a.nextUpdate && last.d >= vrDue(a.nextUpdate);
     p.cap = cap; p.used = a.cycleUsed || 0;
     // 0회차(새로 시작, 첫 매수 기간): 보유가 0이면 V 공식(밴드 하단 ÷ 보유 수량)으로 매수가를 낼 수 없다.
-    // 남은 한도 안에서 전일 종가 +10% 지정가로 한 번에 사고(시가 근처에서 바로 체결), 0회차 마감 때 그 평가금으로 V를 정한다.
+    // 남은 한도 안에서 전일 종가 +10% 지정가로 한 번에 사고, 0회차 마감 때 그 평가금으로 V를 정한다.
+    // 이 주문은 처음 넣은 가격·수량 그대로 0회차 마감까지 유지하는 기간 지정가로 본다 (다음 날 종가로 다시 계산하지 않음, index.html vrCarry).
     if (a.cycle === 0) {
       p.zero = true; p.min = 0; p.max = 0; p.ratio = null;
       var fp = r2(c0 * 1.1), fq = Math.floor((limit + EPS) / (fp * (1 + fee)));
       if (fq > 0) p.buys.push({ side: "BUY", kind: "vr-first", type: type, price: fp, qty: fq, label: "첫 매수", left: r2(pool - fp * fq * (1 + fee)) });
       p.orders = p.buys.slice();
-      if (fq > 0) p.notes.push("0회차(첫 매수): 전일 종가보다 10% 높은 " + fp.toFixed(2) + "에 지정가로 " + fq + "주를 걸면 보통 시가 근처에서 바로 체결돼요. 수량은 남은 매수 한도 $" + limit.toFixed(2) + " 안에서 셌어요.");
+      if (fq > 0) p.notes.push("0회차(첫 매수): 전일 종가보다 10% 높은 $" + fp.toFixed(2) + "에 지정가로 " + fq + "주, 최대 $" + (fp * fq * (1 + fee)).toFixed(2) + "(수수료 포함)까지 쓸 수 있는 주문이에요. 장이 오르면 이 가격 가까이에서도 체결되고, 시가가 이보다 높으면 체결되지 않아요. 수량은 남은 매수 한도 $" + limit.toFixed(2) + " 안에서 셌어요.");
+      if (fq > 0 && a.nextUpdate) p.notes.push("증권사에는 0회차 마감(" + vrDue(a.nextUpdate).slice(5).replace("-", "/") + ")까지 유지되는 기간 지정가로 넣으세요. 앱도 다 체결될 때까지 같은 가격·수량으로 체결을 확인해요.");
       else p.notes.push(qty > 0 ? "이번 0회차 매수 한도를 다 썼어요. 0회차 마감 때 평가금으로 V를 정하고 1회차를 시작해요." : "남은 매수 한도 $" + limit.toFixed(2) + "로는 1주도 살 수 없어요. 상태 수정에서 Pool을 늘려 주세요.");
       return p;
     }
@@ -509,7 +513,7 @@
     return { cls: "todo", txt: "주문 전" };
   }
 
-  var api = { r2: r2, f2: f2, nextSession: nextSession, prevSession: prevSession, isSession: isSession, isHoliday: isHoliday, isEarlyClose: isEarlyClose, calKnown: calKnown, CAL: CAL, addDays: addDays, starPct: starPct,
+  var api = { r2: r2, f2: f2, nextSession: nextSession, prevSession: prevSession, vrDue: vrDue, isSession: isSession, isHoliday: isHoliday, isEarlyClose: isEarlyClose, calKnown: calKnown, CAL: CAL, addDays: addDays, starPct: starPct,
     infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll, bigMisses: bigMisses, rejectRisk: rejectRisk, bigPctOf: bigPctOf, rejectPctOf: rejectPctOf,
     vrPlan: vrPlan, vrApply: vrApply, vrUnapply: vrUnapply, vrRoll: vrRoll, vrHistory: vrHistory, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
