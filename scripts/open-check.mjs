@@ -54,13 +54,13 @@ async function main() {
       const q = await quote(a.ticker);
       if (!q || q.d !== now.date) continue;
       const risk = E.rejectRisk(p.orders, q.open, a);
-      console.log(`${a.name || a.ticker}: 시가 ${n2(q.open)}, 위험 ${risk.length}건`);
       if (!risk.length) continue;
       const lim = E.rejectPctOf(a);
       lines.push(`${a.name || a.ticker} 시가 $${n2(q.open)}${q.last ? `(지금 $${n2(q.last)})` : ""}: ${risk.map((o) => `${o.label} $${n2(o.price)}`).join(", ")}가 시가 +${lim}% 넘어 거부됐을 수 있어요. 주문 상태를 확인하고 거부됐으면 $${n2(q.open * (1 + (lim - 1) / 100))} 이하로 다시 거세요`);
       mark[a.id] = p.session;
     }
-    console.log(`${uid.slice(0, 6)}…: ${lines.length ? lines.join(" / ") : "거부 위험 없음"}`);
+    // 공개 저장소라 실행 기록은 누구나 본다: 계좌 내용은 찍지 않고 개수만 남긴다
+    console.log(`사용자 1명: 거부 위험 계좌 ${lines.length}개`);
     if (!lines.length) continue;
     await setRef.set({ openCheckSent: { ...sent, ...mark } }, { merge: true });
     await sendPush(toks, { title: "LOC 매수가 거부됐을 수 있어요", body: lines.join(" · "), tag: "open-check", ttlHours: 6 });

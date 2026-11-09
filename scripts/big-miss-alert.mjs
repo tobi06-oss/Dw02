@@ -31,7 +31,8 @@ async function main() {
       lines.push(`${a.name || a.ticker} ${md(p.session)} 종가 $${n2(bar.c)}: 큰수 $${n2(miss[0].price)}에 걸어 ${q}주 못 삼 (원래 ${miss.map((o) => `${o.label} $${n2(o.orig)}`).join(", ")})`);
       mark[a.id] = p.session;
     }
-    console.log(`${uid.slice(0, 6)}…: ${lines.length ? lines.join(" / ") : "놓친 매수 없음"}`);
+    // 공개 저장소라 실행 기록은 누구나 본다: 계좌 내용은 찍지 않고 개수만 남긴다
+    console.log(`사용자 1명: 놓친 매수 계좌 ${lines.length}개`);
     if (!lines.length) continue;
     await setRef.set({ bigMissSent: { ...sent, ...mark } }, { merge: true });
     await sendPush(toks, { title: "큰수 때문에 못 산 매수가 있어요", body: lines.join(" · "), tag: "big-miss", ttlHours: 24 });

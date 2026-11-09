@@ -371,6 +371,19 @@
       limit: limit, limitPct: limitPct, buys: [], sells: [], orders: [], notes: [] };
     var cum = 0, fee = (a.fee || 0) / 100;
     calNotes(p);
+    p.due = a.nextUpdate && last.d >= a.nextUpdate;
+    p.cap = cap; p.used = a.cycleUsed || 0;
+    // 0회차(새로 시작, 첫 매수 기간): 보유가 0이면 V 공식(밴드 하단 ÷ 보유 수량)으로 매수가를 낼 수 없다.
+    // 남은 한도 안에서 전일 종가 +10% 지정가로 한 번에 사고(시가 근처에서 바로 체결), 0회차 마감 때 그 평가금으로 V를 정한다.
+    if (a.cycle === 0) {
+      p.zero = true; p.min = 0; p.max = 0; p.ratio = null;
+      var fp = r2(c0 * 1.1), fq = Math.floor((limit + EPS) / (fp * (1 + fee)));
+      if (fq > 0) p.buys.push({ side: "BUY", kind: "vr-first", type: type, price: fp, qty: fq, label: "첫 매수", left: r2(pool - fp * fq * (1 + fee)) });
+      p.orders = p.buys.slice();
+      if (fq > 0) p.notes.push("0회차(첫 매수): 전일 종가보다 10% 높은 " + fp.toFixed(2) + "에 지정가로 " + fq + "주를 걸면 보통 시가 근처에서 바로 체결돼요. 수량은 남은 매수 한도 $" + limit.toFixed(2) + " 안에서 셌어요.");
+      else p.notes.push(qty > 0 ? "이번 0회차 매수 한도를 다 썼어요. 0회차 마감 때 평가금으로 V를 정하고 1회차를 시작해요." : "남은 매수 한도 $" + limit.toFixed(2) + "로는 1주도 살 수 없어요. 상태 수정에서 Pool을 늘려 주세요.");
+      return p;
+    }
     for (var k = 1; k <= 20; k++) {
       var n = Math.max(1, qty + k - 1);
       var bp = r2(min / n);
@@ -386,8 +399,6 @@
       p.sells.push({ side: "SELL", kind: "vr-sell", type: type, price: spx, qty: 1, label: "매도 " + j, left: r2(pool + sc) });
     }
     p.orders = p.buys.concat(p.sells);
-    p.due = a.nextUpdate && last.d >= a.nextUpdate;
-    p.cap = cap; p.used = a.cycleUsed || 0;
     if (!p.buys.length) p.notes.push("이번 사이클 Pool 매수 한도 중 남은 $" + limit.toFixed(2) + "로 살 수 있는 매수 주문이 없습니다.");
     return p;
   }
@@ -436,6 +447,18 @@
   function vrRoll(a, close, date) {
     var s = clone(a), G = a.G || 10;
     var E = a.qty * close;
+    // 0회차 마감: 공식 대신 지금 평가금 E를 시작 V로 잡고 1회차를 연다 (적립금은 1회차 마감 때부터).
+    // 아직 1주도 못 샀으면 0회차를 한 주 늘린다.
+    if (a.cycle === 0) {
+      s.cycleUsed = 0;
+      if (!(a.qty > 0)) { s.nextUpdate = addDays(a.nextUpdate || date, 7); s.cycleCap = null; return { next: s, E: 0, growth: 0, contrib: 0, zero: true, extended: true }; }
+      s.V = r2(E); s.cycle = 1;
+      s.cycleCap = r2(s.pool * vrLimitPct(s, 1) / 100);
+      s.nextUpdate = addDays(a.nextUpdate || date, 14);
+      s.lastRoll = { d: date, close: close, E: r2(E), Vprev: null, Vnext: s.V };
+      s.hist = vrHistory(a);
+      return { next: s, E: E, growth: 0, contrib: 0, zero: true };
+    }
     var contrib = a.contrib || 0;
     var sign = a.vrType === "WITHDRAWAL" ? -1 : (a.vrType === "LUMPSUM" ? 0 : 1);
     var growth = a.pool / G + (E - a.V) / (2 * Math.sqrt(G));
