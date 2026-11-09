@@ -16,11 +16,40 @@
   function c2(x) { return Math.ceil(x * 100 - EPS) / 100; }
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
+  /* ---------------- 미국 장 달력 ----------------
+   * NYSE 휴장일·조기폐장일(13:00 마감). 해마다 12월 전에 다음 해를 추가하고 NYSE 공지로 확인한다.
+   * 주문 알림 스크립트(scripts/order-reminder.mjs)도 이 표를 쓴다.
+   * 표에 없는 해는 주말만 건너뛰고, 주문표에 "휴장일 표 없음" 안내를 붙인다.
+   */
+  var CAL = {
+    2026: { closed: ["2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25"],
+            early: ["2026-11-27", "2026-12-24"] },
+    2027: { closed: ["2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24"],
+            early: ["2027-11-26"] }
+  };
+  function calKnown(d) { return !!CAL[+String(d).slice(0, 4)]; }
+  function isHoliday(d) { var c = CAL[+String(d).slice(0, 4)]; return !!c && c.closed.indexOf(d) >= 0; }
+  function isEarlyClose(d) { var c = CAL[+String(d).slice(0, 4)]; return !!c && c.early.indexOf(d) >= 0; }
+  function isWeekend(d) { var w = new Date(d + "T12:00:00Z").getUTCDay(); return w === 0 || w === 6; }
+  // 미국 정규장이 열리는 날인지 (주말·휴장일 제외)
+  function isSession(d) { return !isWeekend(d) && !isHoliday(d); }
   function nextSession(d) {
-    var t = new Date(d + "T12:00:00Z");
-    do { t.setUTCDate(t.getUTCDate() + 1); } while (t.getUTCDay() === 0 || t.getUTCDay() === 6);
-    return t.toISOString().slice(0, 10);
+    var x = d;
+    do { x = addDays(x, 1); } while (!isSession(x));
+    return x;
   }
+  function prevSession(d) {
+    var x = d;
+    do { x = addDays(x, -1); } while (!isSession(x));
+    return x;
+  }
+  // 주문표 안내: 조기폐장일, 휴장일 표가 없는 해
+  function calNotes(p) {
+    if (!calKnown(p.session)) p.notes.push(p.session.slice(0, 4) + "년 미국 휴장일 표가 아직 없어 주말만 건너뜁니다. 휴장일에는 주문을 건너뛰세요.");
+    else if (isEarlyClose(p.session)) p.notes.push(p.session.slice(5).replace("-", "/") + "은 미국장 조기폐장일(뉴욕 13:00 마감)입니다. LOC는 그 전에 걸어 두세요.");
+  }
+  // 주문표를 만들지 않는 경우: 주문 없이 이유만 남긴다
+  function block(p, why) { p.orders = []; p.blocked = why; p.notes.push(why); return p; }
   function addDays(d, n) {
     var t = new Date(d + "T12:00:00Z");
     t.setUTCDate(t.getUTCDate() + n);
@@ -80,9 +109,11 @@
     if (!bars || !bars.length) return null;
     var last = bars[bars.length - 1], c0 = last.c;
     var N = a.N, base = a.basePct, T = a.T || 0, qty = a.qty || 0, avg = a.avg, cash = a.cash;
+    var fee = (a.fee || 0) / 100;
     var p = { basis: last, session: nextSession(last.d), orders: [], notes: [], T: T, N: N,
       mode: a.mode || "NORMAL", phase: "", star: null, starPct: null, budget: null, buyP: null, sellP: null };
     var floorPrice = c0 * 0.5;
+    calNotes(p);
 
     if (p.mode === "REVERSE") {
       var div = N / 2;
@@ -94,7 +125,11 @@
         return p;
       }
       p.phase = "리버스 " + (a.revDay + 1) + "일차";
+      // 별지점 = 직전 5개 미국 영업일 종가 평균. 하나라도 빠지면 계산하지 않는다
       var last5 = bars.slice(-5), sum = 0;
+      var gap = last5.length < 5 ? "종가가 " + last5.length + "개뿐" : null;
+      for (var g = 1; !gap && g < last5.length; g++) if (nextSession(last5[g - 1].d) !== last5[g].d) gap = nextSession(last5[g - 1].d) + " 종가 없음";
+      if (gap) return block(p, "리버스 별지점은 직전 5영업일 종가가 모두 있어야 합니다(" + gap + "). 아래 \"종가 직접 입력\"에서 빠진 날 종가를 넣으면 주문표가 나옵니다.");
       for (var i = 0; i < last5.length; i++) sum += last5[i].c;
       var star = sum / last5.length;
       p.star = star;
@@ -103,7 +138,9 @@
       var sq = Math.floor(qty / div);
       var bud = cash / 4;
       p.budget = bud;
-      var bq = Math.floor(bud / p.buyP);
+      // 수수료를 뺀 주식 매수 예산. 수량·사다리는 이 값으로만 계산한다
+      p.stockBudget = bud / (1 + fee);
+      var bq = Math.floor(p.stockBudget / p.buyP);
       p.exitPrice = r2(avg * (1 - base / 100));
       if (bq <= 0) {
         // 리버스 중 소진: 쿼터매수(잔금/4)로 1주도 못 사면 매수 없이 MOC 매도만 (소진 기준 추가 글, 2026-08)
@@ -114,14 +151,17 @@
       }
       if (sq > 0) p.orders.push({ side: "SELL", kind: "rev-sell", type: "LOC", price: p.sellP, qty: sq, label: "별지점 위 매도 (1/" + div + ")" });
       p.orders.push({ side: "BUY", kind: "rev-buy", type: "LOC", price: p.buyP, qty: bq, label: "쿼터매수 (잔금/4)" });
-      p.orders = p.orders.concat(ladder(bud, bq, floorPrice, 8 + ladMoreOf(a, p), lowestBuy(p.orders)));
+      p.orders = p.orders.concat(ladder(p.stockBudget, bq, floorPrice, 8 + ladMoreOf(a, p), lowestBuy(p.orders)));
       p.notes.push("별지점 = 직전 5거래일 종가 평균. 종가가 $" + p.exitPrice.toFixed(2) + "(평단 −" + base + "%)를 넘으면 일반모드로 돌아갑니다.");
       return applyBig(p, c0, a);
     }
 
     // 일반모드에서는 T ≤ N−1이라 분모가 1 이상이다. 혹시라도 넘으면 잔금 이상을 걸지 않도록 막는다.
-    var budget = cash / Math.max(1, N - T);
-    p.budget = budget;
+    // roundBudget = 방법론의 1회 매수금(잔금 ÷ (N−T)). stockBudget = 수수료를 뺀 주식 매수 예산.
+    // 수량·사다리는 stockBudget 하나로만 계산해 수수료가 한 번만 들어가게 한다.
+    var roundBudget = cash / Math.max(1, N - T);
+    var budget = roundBudget / (1 + fee);
+    p.budget = roundBudget; p.roundBudget = roundBudget; p.stockBudget = budget;
 
     if (qty <= 0) {
       p.phase = "처음매수";
@@ -244,8 +284,11 @@
     if ((a.mode || "NORMAL") === "REVERSE") {
       var factor = 1 - 2 / N;
       if (!a.revDay) {
-        if (has("rev-moc")) T = T * factor;
-        s.revDay = 1;
+        // 리버스 1일차는 MOC 체결이 확인된 날만 넘어간다. 낼 수량이 없어 MOC가 없던 날은 그대로 넘어간다.
+        var planned = fills.some(function (f) { return f.order.kind === "rev-moc"; });
+        if (has("rev-moc")) { T = T * factor; s.revDay = 1; }
+        else if (!planned) s.revDay = 1;
+        else { s.revDay = 0; events.push("리버스 첫날 MOC 매도가 체결되지 않아 다음 장도 리버스 1일차(MOC 매도)로 다시 냅니다."); }
       } else {
         if (has("rev-sell") || has("rev-moc")) T = T * factor;
         if (has("rev-buy") || has("ladder")) T = T + (N - T) * 0.25;
@@ -326,12 +369,14 @@
     var type = "LIMIT";
     var p = { basis: last, session: nextSession(last.d), min: min, max: max, E: qty * c0, ratio: a.V ? qty * c0 / a.V : null,
       limit: limit, limitPct: limitPct, buys: [], sells: [], orders: [], notes: [] };
-    var cum = 0;
+    var cum = 0, fee = (a.fee || 0) / 100;
+    calNotes(p);
     for (var k = 1; k <= 20; k++) {
       var n = Math.max(1, qty + k - 1);
       var bp = r2(min / n);
-      if (cum + bp > limit + EPS) break;
-      cum += bp;
+      // 수수료까지 더한 누적 매수금이 남은 한도·Pool을 넘지 않게 한다
+      if (cum + bp * (1 + fee) > limit + EPS) break;
+      cum += bp * (1 + fee);
       p.buys.push({ side: "BUY", kind: "vr-buy", type: type, price: bp, qty: 1, label: "매수 " + k, left: r2(pool - cum) });
     }
     var sc = 0;
@@ -441,7 +486,7 @@
     return { cls: "todo", txt: "주문 전" };
   }
 
-  var api = { r2: r2, f2: f2, nextSession: nextSession, addDays: addDays, starPct: starPct,
+  var api = { r2: r2, f2: f2, nextSession: nextSession, prevSession: prevSession, isSession: isSession, isHoliday: isHoliday, isEarlyClose: isEarlyClose, calKnown: calKnown, CAL: CAL, addDays: addDays, starPct: starPct,
     infPlan: infPlan, infApply: infApply, judge: judge, judgeAll: judgeAll, bigMisses: bigMisses, rejectRisk: rejectRisk, bigPctOf: bigPctOf, rejectPctOf: rejectPctOf,
     vrPlan: vrPlan, vrApply: vrApply, vrUnapply: vrUnapply, vrRoll: vrRoll, vrHistory: vrHistory, vrLimitPct: vrLimitPct, VR_LIMIT: VR_LIMIT, orderStatus: orderStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

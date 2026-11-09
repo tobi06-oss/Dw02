@@ -9,12 +9,6 @@ import { initDb, tokensByUser, sharedPrices, userAccounts, mergeBars, sendPush }
 const E = createRequire(import.meta.url)("../engine.js");
 const TEST = process.env.TEST === "1";
 
-// 미국 증시 휴장일 (앱은 휴장일을 모르므로 여기서 거릅니다). 해마다 추가하세요.
-const US_HOLIDAYS = new Set([
-  "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
-  "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
-]);
-
 // 한국 시각의 오늘 날짜(= 오늘 밤 열리는 미국장 날짜)와 HH:MM
 const kstNow = () => { const iso = new Date(Date.now() + 9 * 3600e3).toISOString(); return { date: iso.slice(0, 10), hm: iso.slice(11, 16) }; };
 const DEFAULT_TIME = "21:00";
@@ -23,8 +17,8 @@ async function main() {
   const db = initDb();
 
   const { date: session, hm } = kstNow();
-  const dow = new Date(session + "T12:00:00Z").getUTCDay();
-  if (!TEST && (dow === 0 || dow === 6 || US_HOLIDAYS.has(session))) { console.log(`${session}: 미국장 휴장, 알림 없음`); return; }
+  // 주말·미국 휴장일은 engine.js 달력(CAL)으로 거릅니다. 해마다 engine.js에 다음 해를 추가하세요.
+  if (!TEST && !E.isSession(session)) { console.log(`${session}: 미국장 휴장, 알림 없음`); return; }
 
   const byUser = await tokensByUser(db);
   if (!byUser.size) { console.log("알림을 켠 기기가 없습니다. 앱에서 '주문 알림'을 켜세요."); return; }
