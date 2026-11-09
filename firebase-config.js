@@ -16,4 +16,4 @@ export const VAPID_KEY = "BBz4jbWSa5xpoBWaHdUsicTzZkXXJ21lPQg0ai7ZYoFbtCsSGJ1YcE
 
 // 운영자 계정 UID: 초대 코드를 만들고 회원을 볼 수 있어요. Firebase 콘솔 > Authentication > 사용자 탭의 "사용자 UID" 값입니다.
 // 비밀번호가 아니라 공개돼도 괜찮은 값이에요. firestore.rules의 isOwner()에도 같은 UID를 넣어야 합니다.
-export const OWNER_UIDS = ["__OWNER_UID__"];
+export const OWNER_UIDS = ["ypIDstm7QsSbxrnxcr8vCeIDqQb2"];

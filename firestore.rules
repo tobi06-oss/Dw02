@@ -4,7 +4,7 @@ service cloud.firestore {
     // 운영자: 초대 코드를 만들고 회원을 볼 수 있다. 이메일이 아니라 로그인 계정 UID로 정한다 (Firebase 콘솔 > Authentication > 사용자 UID).
     // firebase-config.js의 OWNER_UIDS와 같은 값으로 맞춘다.
     function isOwner() {
-      return request.auth != null && request.auth.uid in ['__OWNER_UID__'];
+      return request.auth != null && request.auth.uid in ['ypIDstm7QsSbxrnxcr8vCeIDqQb2'];
     }
     function memberPath(uid) { return /databases/$(database)/documents/members/$(uid); }
     // 회원: 운영자이거나, 초대 코드로 등록했고 운영자가 이용을 멈추지(revoked) 않은 사람
