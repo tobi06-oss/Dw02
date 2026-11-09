@@ -383,7 +383,7 @@
       var fp = r2(c0 * 1.1), fq = Math.floor((limit + EPS) / (fp * (1 + fee)));
       if (fq > 0) p.buys.push({ side: "BUY", kind: "vr-first", type: type, price: fp, qty: fq, label: "첫 매수", left: r2(pool - fp * fq * (1 + fee)) });
       p.orders = p.buys.slice();
-      if (fq > 0) p.notes.push("0회차(첫 매수): 전일 종가보다 10% 높은 $" + fp.toFixed(2) + "에 지정가로 " + fq + "주, 최대 $" + (fp * fq * (1 + fee)).toFixed(2) + "(수수료 포함)까지 쓸 수 있는 주문이에요. 장이 오르면 이 가격 가까이에서도 체결되고, 시가가 이보다 높으면 체결되지 않아요. 수량은 남은 매수 한도 $" + limit.toFixed(2) + " 안에서 셌어요.");
+      if (fq > 0) p.notes.push("0회차(첫 매수): 전일 종가보다 10% 높은 $" + fp.toFixed(2) + "에 지정가로 " + fq + "주, 최대 $" + (fp * fq * (1 + fee)).toFixed(2) + "(수수료 포함)까지 쓸 수 있는 주문이에요. 장이 오르면 이 가격 가까이에서도 체결될 수 있어요. 시가가 이보다 높으면 개장 직후에는 체결되지 않지만, 장중에 이 가격까지 내려오면 체결될 수 있어요. 실제 체결 여부와 수량은 증권사 체결 내역으로 확인하세요. 수량은 남은 매수 한도 $" + limit.toFixed(2) + " 안에서 셌어요.");
       if (fq > 0 && a.nextUpdate) p.notes.push("증권사에는 0회차 마감(" + vrDue(a.nextUpdate).slice(5).replace("-", "/") + ")까지 유지되는 기간 지정가로 넣으세요. 앱도 다 체결될 때까지 같은 가격·수량으로 체결을 확인해요.");
       else p.notes.push(qty > 0 ? "이번 0회차 매수 한도를 다 썼어요. 0회차 마감 때 평가금으로 V를 정하고 1회차를 시작해요." : "남은 매수 한도 $" + limit.toFixed(2) + "로는 1주도 살 수 없어요. 상태 수정에서 Pool을 늘려 주세요.");
       return p;
