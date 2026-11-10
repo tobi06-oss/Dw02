@@ -83,8 +83,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .kind-tabs{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:4px}
 .kind-tabs button{flex:1;background:none;border:none;border-radius:9px;padding:10px 8px;font-size:15px;font-weight:700;color:var(--ink-2);font-family:var(--sans);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
 .kind-tabs button .n{font-size:12px;font-weight:600;color:var(--ink-3);font-family:var(--mono)}
-.kind-tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
-.kind-tabs button[aria-selected="true"] .n{color:var(--accent)}
+.kind-tabs button[aria-selected="true"]{background:var(--accent);color:var(--on-accent);box-shadow:0 2px 6px rgba(47,85,151,.35)}
+.kind-tabs button[aria-selected="true"] .n{color:var(--on-accent);opacity:.8}
+.kind-tabs button[aria-selected="true"] .dot{box-shadow:0 0 0 2px var(--on-accent)}
 .kind-tabs .dot{width:7px;height:7px;border-radius:50%;background:var(--danger)}
 .tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .tab{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:12px 14px;text-align:left;box-shadow:var(--shadow);position:relative}
@@ -652,7 +653,7 @@ function renderTabs(){
     if(selected) lastSel[curType]=selected;
     if(selected!==savedSel.sel||curType!==savedSel.kind){ savedSel={sel:selected,kind:curType}; saveSel(); }
   }
-  var list=all.filter(function(a){ return kindOf(a)===curType; });
+  var list=curType==="ASSET"?[]:all.filter(function(a){ return kindOf(a)===curType; });
   var html=list.map(function(a){
     var v=valueOf(a), ob=orderBadge(a);
     return '<button class="tab" role="tab" aria-selected="'+(!addMode&&a.id===selected)+'" data-id="'+esc(a.id)+'">'+
@@ -660,14 +661,15 @@ function renderTabs(){
       '<div class="t2 num">'+(v.eq!=null?usd(v.eq,0):"-")+' <span class="'+signCls(v.pl)+'">'+pct(v.pl,1)+'</span></div></button>';
   }).join("");
   // 이 전략에 계좌가 없으면 아래 빈 화면에 만들기 버튼이 있으니 + 탭은 숨긴다
-  if(list.length||addMode||!loaded) html+='<button class="tab add" type="button" role="tab" aria-selected="'+addMode+'" id="tab-add">+ '+kindName(curType)+' 계좌 추가</button>';
+  if(curType!=="ASSET"&&(list.length||addMode||!loaded)) html+='<button class="tab add" type="button" role="tab" aria-selected="'+addMode+'" id="tab-add">+ '+kindName(curType)+' 계좌 추가</button>';
   $("tabs").innerHTML=html;
-  // 위 전략 탭: 계좌가 없어도 둘 다 늘 보인다. 주문·체결 확인이 남은 계좌가 있으면 빨간 점
-  $("kind-tabs").innerHTML=["INF","VR"].map(function(k){
+  // 위 탭: 무한매수·VR(계좌가 없어도 늘 보임)과 자산(원화 총자산, 계좌와 상관없음). 주문·체결 확인이 남은 계좌가 있으면 빨간 점
+  $("kind-tabs").innerHTML=["INF","VR","ASSET"].map(function(k){
+    if(k==="ASSET") return '<button type="button" role="tab" data-kind="ASSET" aria-selected="'+(curType==="ASSET")+'">자산</button>';
     var ks=all.filter(function(a){ return kindOf(a)===k; }), need=ks.some(function(a){ return !!orderBadge(a); });
     return '<button type="button" role="tab" data-kind="'+k+'" aria-selected="'+(curType===k)+'">'+kindName(k)+(loaded?'<span class="n">'+ks.length+'</span>':'')+(need?'<span class="dot" title="할 일이 남은 계좌가 있어요"></span>':'')+'</button>';
   }).join("");
-  setAddType(curType);
+  if(curType!=="ASSET") setAddType(curType);
 }
 // 계좌 추가는 탭처럼 그 자리에 연다 (다른 칸은 숨김). join: true면 이어서 하기, false면 새로 시작, null이면 그대로
 function openAdd(join){
@@ -695,11 +697,12 @@ function render(){
 }
 function renderView(){
   renderTickers(); renderTabs(); undoFab();
-  $("add-panel").hidden=!addMode; ["view","price-panel","foot"].forEach(function(id){ $(id).hidden=addMode; }); if(window.DeskOwner) $("invite-panel").hidden=addMode;
+  $("add-panel").hidden=!addMode; ["view","price-panel","foot"].forEach(function(id){ $(id).hidden=addMode; }); if(curType==="ASSET") $("price-panel").hidden=true; if(window.DeskOwner) $("invite-panel").hidden=addMode;
   var a = selected ? accounts[selected] : null;
   var v = $("view"); chartReg={}; chartSeq=0;
   var openSet = {}; v.querySelectorAll("details[id]").forEach(function(d){ if(d.open) openSet[d.id]=1; });
   if(!loaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
+  if(curType==="ASSET"){ v.innerHTML=renderAssets(); v.querySelectorAll("details[id]").forEach(function(d){ if(openSet[d.id]) d.open=true; }); var ie0=$("inline-edit"); if(ie0){ ie0.focus(); try{ ie0.select(); }catch(e){} } return; }
   if(!a){
     if(!trk.metaLoaded||!trk.cyclesLoaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
     v.innerHTML = '<div class="panel"><div class="empty">'+(curType==="VR"
@@ -971,9 +974,9 @@ function renderINF(a){
   buyHtml+=bigEdit(a,plan);
   var sellHtml=sells.map(ordRow).join("");
   var lk=!!a.linked, hasRec=lk&&!!trk.meta;
-  var missing = lk&&trk.metaLoaded&&!trk.meta ? '<div class="banner warn"><div class="bt">기록 사이클이 없어요</div><div class="bd">원화 기록·매매내역을 담을 사이클을 새로 만듭니다. 지금까지 반영한 체결은 매매내역으로 옮겨져요.</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">사이클 새로 만들기</button></div></div>' : "";
-  return banners(a)+linkBanner(a)+missing+(hasRec?recHead(a):"")+hero+slip(a,plan,buyHtml,sellHtml,plan.notes)+dayStrip(a)+undoPanel()+
-    (hasRec?amountForm(a)+tradeForm(a)+tradeLog(a)+recCharts(a):"")+editorINF(a)+(lk?archiveSection():logPanel(a))+dangerZone(a,hasRec);
+  var missing = lk&&trk.metaLoaded&&!trk.meta ? '<div class="banner warn"><div class="bt">기록 사이클이 없어요</div><div class="bd">매매내역을 담을 사이클을 새로 만듭니다. 지금까지 반영한 체결은 매매내역으로 옮겨져요.</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">사이클 새로 만들기</button></div></div>' : "";
+  return banners(a)+linkBanner(a)+missing+hero+slip(a,plan,buyHtml,sellHtml,plan.notes)+dayStrip(a)+undoPanel()+
+    (hasRec?tradeForm(a)+tradeLog(a)+recCharts(a):"")+editorINF(a)+(lk?archiveSection():logPanel(a))+dangerZone(a,hasRec);
 }
 
 function renderVR(a){
@@ -1365,6 +1368,7 @@ function snap(paths){ return paths.map(function(p){ return {p:p, d:curDoc(p)}; }
 // 실행취소 목록은 무매와 VR을 따로 둔다: 계좌 문서는 그 계좌 유형, 원화 기록(cycle·entries·cycles)은 무매
 function undoKind(u){
   if(u.kind) return u.kind;
+  if((u.ops||[]).length&&u.ops.every(function(o){ return isAssetPath(o.p); })) return "ASSET";
   var k=null;
   (u.ops||[]).forEach(function(o){
     if(k) return;
@@ -1376,10 +1380,12 @@ function undoKind(u){
   return k||"INF";
 }
 function curKind(){ return curType; }
+// 총자산(cycle/assets, entries/asset_*)만 바꾼 작업은 자산 탭 목록에 둔다
+function isAssetPath(p){ return p==="cycle/assets"||p.indexOf("entries/asset_")===0; }
 // 그 유형 계좌가 하나도 없으면(예: 하나뿐인 VR 계좌를 지운 직후) 되살릴 수 있게 어느 탭에서나 보여준다
 function kindStack(){
   var k=curKind(), has={};
-  Object.keys(accounts).forEach(function(id){ has[accounts[id].type==="VR"?"VR":"INF"]=1; });
+  Object.keys(accounts).forEach(function(id){ has[accounts[id].type==="VR"?"VR":"INF"]=1; }); has.ASSET=1;
   return undoStack.filter(function(u){ var uk=undoKind(u); return uk===k||!has[uk]; });
 }
 function pushUndo(label, ops){
@@ -1509,7 +1515,7 @@ function undoFab(){
 function undoPanel(){
   var list=kindStack().sort(function(a,b){return b.time-a.time;});
   if(!list.length) return "";
-  return '<details class="panel" id="undo-panel"><summary>'+(curKind()==="VR"?"VR":"무매")+' 실행취소 ('+list.length+')</summary>'+list.map(function(u){
+  return '<details class="panel" id="undo-panel"><summary>'+(curKind()==="VR"?"VR":curKind()==="ASSET"?"자산":"무매")+' 실행취소 ('+list.length+')</summary>'+list.map(function(u){
     var d=new Date(u.time), t=(d.getMonth()+1)+"/"+d.getDate()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<div class="undo-row"><span class="l">'+esc(u.label)+'<span class="tm">'+t+'</span></span><button type="button" class="undo-btn" data-act="undo" data-id="'+esc(u.id)+'">실행취소</button></div>';
   }).join("")+'<div class="hint">아무 항목이나 골라서 그 작업이 바꾼 부분만 되돌릴 수 있어요. 그 부분을 나중 작업이 다시 바꿨으면 확인창이 떠요. 무매와 VR은 목록이 따로이고, 각각 최근 '+UNDO_MAX+'개까지 남고 창을 닫아도 유지됩니다.</div></details>';
@@ -1614,12 +1620,12 @@ function xAxis(xs, dates, H, padB, vals){
   pick.forEach(function(i){ o+='<text x="'+xs[i]+'" y="'+(H-8)+'" text-anchor="'+(i===0&&n>1?"start":(i===n-1&&n>1?"end":"middle"))+'" class="ax">'+mdLabel(dates[i])+'</text>'; });
   return o;
 }
-function assetChart(rows, startAmount){
+function assetChart(rows, startAmount, noGoal){
   var rs=rows.filter(function(r){ return r.amountRecorded; });
   if(!rs.length) return '<div class="empty">원화 평가액을 기록하면 추이가 그려집니다.</div>';
   var wh=chartWH(), W=wh[0], H=W<720?210:230, padL=6, padR=W<720?52:64, padT=14, padB=28, pw=W-padL-padR, ph=H-padT-padB;
   var vals=rs.map(function(r){return r.amount;}), base=startAmount!=null?startAmount:vals[0];
-  var lo=Math.min.apply(null,vals.concat([base])), hi=Math.max.apply(null,vals.concat([base])), target=base*1.2, showT=hi>=base*1.1;
+  var lo=Math.min.apply(null,vals.concat([base])), hi=Math.max.apply(null,vals.concat([base])), target=base*1.2, showT=!noGoal&&hi>=base*1.1;
   if(showT) hi=Math.max(hi,target);
   var pad=(hi-lo)*0.15||hi*0.004; lo-=pad; hi+=pad;
   var n=rs.length, x=function(i){ return padL+(n===1?pw/2:i/(n-1)*pw); }, y=function(v){ return padT+ph-(v-lo)/(hi-lo)*ph; };
@@ -1639,12 +1645,12 @@ function assetChart(rows, startAmount){
   })};
   return chartShell(id,'<svg class="chart2" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="원화 총자산 추이">'+o+'</svg>',W,H);
 }
-function assetHero(rows, startAmount){
+function assetHero(rows, startAmount, noGoal){
   var rs=rows.filter(function(r){ return r.amountRecorded; }); if(!rs.length) return "";
   var last=rs[rs.length-1], base=startAmount!=null?startAmount:rs[0].amount, ch=last.amount-base, p=base?ch/base:null, left=base?base*1.2/last.amount-1:null;
   return '<div class="chart-hero"><div><div class="k">총자산 (원화) · '+mdLabel(last.date)+'</div><div class="big num">'+krw(last.amount)+'<small>원</small></div></div>'+
     '<div class="delta '+signCls(ch)+'">'+krwS(ch)+'원 · '+pct(p)+'<span>시작 대비</span></div>'+
-    (left!=null&&left>0?'<div class="delta muted">'+pct(left)+'<span>목표(+20%)까지</span></div>':'')+'</div>';
+    (!noGoal&&left!=null&&left>0?'<div class="delta muted">'+pct(left)+'<span>목표(+20%)까지</span></div>':'')+'</div>';
 }
 function priceChart(tk, meta, trades){
   if(trades) trades=trades.filter(function(t){ return !t.join; });
@@ -1769,28 +1775,59 @@ var ENTRY_CSV_HEAD=["일시","평가액(원)","증감(%)","증감액","종가($)
 
 /* ----- 화면 조각 ----- */
 function inlineOr(key, shown, val, cls){
-  if(rf.inline===key) return '<input id="inline-edit" class="inline-input'+(cls?" "+cls:"")+'" data-k="'+key+'" value="'+esc(val==null?"":val)+'"'+(key==="start"||key.indexOf("afx:")===0?' type="number" inputmode="numeric"':' maxlength="60"')+'>';
+  if(rf.inline===key) return '<input id="inline-edit" class="inline-input'+(cls?" "+cls:"")+'" data-k="'+key+'" value="'+esc(val==null?"":val)+'"'+(key==="astart"||key.indexOf("afx:")===0?' type="number" inputmode="numeric"':' maxlength="60"')+'>';
   return shown+'<button type="button" class="icon-btn" data-act="rec-inline" data-k="'+key+'" aria-label="수정" title="수정">✎</button>';
-}
-function recHead(a){
-  var m=trk.meta, rows=computeRows(trk.entries,getTrades(),a.ticker), last=null;
-  for(var i=rows.length-1;i>=0;i--) if(rows[i].amount!=null){ last=rows[i]; break; }
-  var st=m.startAmount, pl=(last&&st!=null)?last.amount-st:null, pc=(pl!=null&&st)?pl/st:null;
-  var card=function(k,v,cls,sub){ return '<div class="card"><div class="label">'+k+'</div><div class="value '+(cls||"")+'">'+v+'</div>'+(sub?'<div class="sub">'+sub+'</div>':'')+'</div>'; };
-  return '<section class="panel"><div class="rec-title">'+inlineOr("title",'<span class="a-label">'+esc(m.label||"무매법 V4.0")+'</span>',m.label||"")+
-    '<span class="a-period">'+esc(m.startDate||"-")+' ~ 진행중</span><span class="a-amounts"><span class="a-pl '+signCls(pl)+'">'+(pl!=null?krwS(pl)+"원 ("+pct(pc)+")":"-")+'</span></span></div>'+
-    '<div class="cards"><div class="card"><div class="label">시작평가액 (원)</div>'+(rf.inline==="start"?inlineOr("start","",st):'<div class="value">'+krw(st)+'</div><button type="button" class="icon-btn" data-act="rec-inline" data-k="start" aria-label="시작평가액 수정" title="수정">✎</button>')+'</div>'+
-    card("최신평가액 (원)", last?krw(last.amount):"-", "", last?last.date:"")+card("누적손익 (원)", pl!=null?krwS(pl):"-", signCls(pl))+card("누적수익률", pc!=null?pct(pc):"-", signCls(pc))+'</div></section>';
 }
 function dateField(id,label,val){
   return '<div class="field"><label for="'+id+'">'+label+'</label><div class="date-field-wrap"><input type="date" id="'+id+'" value="'+esc(val)+'" required><div class="date-stepper-btns"><button type="button" data-act="rec-date" data-t="'+id+'" data-d="1" aria-label="하루 뒤" tabindex="-1">▲</button><button type="button" data-act="rec-date" data-t="'+id+'" data-d="-1" aria-label="하루 전" tabindex="-1">▼</button></div></div></div>';
 }
-function amountForm(a){
-  var lb=lastBar(a.ticker);
-  return '<section class="panel"><h2>자산총액 기록 (원화)</h2><form class="entry" data-form="amount">'+dateField("a-date","일시",rf.aDate)+
-    '<div class="field"><label for="a-amount">평가액 (원)</label><input type="number" id="a-amount" placeholder="자산총액" required inputmode="numeric" value="'+esc(rf.aAmount)+'"></div>'+
+/* ----- 자산 탭: 원화 총자산(무매·VR 합친 증권계좌 전체)은 계좌·사이클과 상관없이 한 줄로 이어진다 -----
+   cycle/assets {startAmount}, entries/asset_{날짜} {date, amount, acct:"assets"}
+   이 방식 전의 원화 기록(무매 사이클별)은 처음 열 때 한 번 날짜순으로 옮겨 담는다(migrateAssets). 원래 기록은 지우지 않는다. */
+var ASSET_META="cycle/assets";
+function assetPath(d){ return "entries/asset_"+d; }
+function assetEntries(){ return trk.allEntries.filter(function(e){ return e.acct==="assets"; }); }
+function assetRows(){ return computeRows(assetEntries(), null); }
+function assetStart(rows){ var m=trk.metas.assets; if(m&&m.startAmount!=null) return m.startAmount; var r=(rows||assetRows()).filter(function(x){return x.amountRecorded;})[0]; return r?r.amount:null; }
+function renderAssets(){
+  if(!trk.metaLoaded||!trk.entriesLoaded||!trk.cyclesLoaded) return '<div class="panel empty">기록을 불러오는 중…</div>';
+  var rows=assetRows(), rec=rows.filter(function(r){return r.amountRecorded;}), last=rec[rec.length-1], st=assetStart(rows);
+  var pl=(last&&st!=null)?last.amount-st:null, pc=(pl!=null&&st)?pl/st:null;
+  var card=function(k,v,cls,sub){ return '<div class="card"><div class="label">'+k+'</div><div class="value '+(cls||"")+'">'+v+'</div>'+(sub?'<div class="sub">'+sub+'</div>':'')+'</div>'; };
+  var head='<section class="panel"><h2>총자산 (원화)</h2><div class="cards"><div class="card"><div class="label">시작평가액 (원)</div>'+(rf.inline==="astart"?inlineOr("astart","",st):'<div class="value">'+krw(st)+'</div><button type="button" class="icon-btn" data-act="rec-inline" data-k="astart" aria-label="시작평가액 수정" title="수정">✎</button>')+'</div>'+
+    card("최신평가액 (원)", last?krw(last.amount):"-", "", last?last.date:"")+card("누적손익 (원)", pl!=null?krwS(pl):"-", signCls(pl))+card("누적수익률", pc!=null?pct(pc):"-", signCls(pc))+'</div></section>';
+  var form='<section class="panel"><h2>평가액 입력</h2><form class="entry" data-form="amount">'+dateField("a-date","일시",rf.aDate)+
+    '<div class="field"><label for="a-amount">평가액 (원)</label><input type="number" id="a-amount" placeholder="총자산" required inputmode="numeric" value="'+esc(rf.aAmount)+'"></div>'+
     '<button type="submit">'+(rf.editEntry?"수정 저장":"평가액 저장")+'</button>'+(rf.editEntry?'<button type="button" class="sub-btn" data-act="rec-entry-cancel">수정 취소</button>':'')+'</form>'+
-    '<div class="hint">계좌 전체 평가금액(원화)을 그날그날 기록합니다. 매매가 없는 날도 평가액만 넣으면 됩니다. 차트의 초록선은 매일 자동으로 들어오는 종가예요.</div></section>';
+    '<div class="hint">증권계좌 전체(무매·VR 합산) 평가금액을 원화로 그날그날 기록해요. 무매 사이클이 끝나도 끊기지 않고 이어져요.</div></section>';
+  var chart='<section class="panel"><div class="panel-head"><h2>총자산 추이</h2><button type="button" class="export-btn" data-act="rec-csv-entries">CSV로 저장</button></div>'+assetHero(rows,st,true)+assetChart(rows,st,true)+'</section>';
+  return head+form+chart+'<section class="panel"><h2>날짜별 기록 ('+rec.length+'건)</h2>'+assetTable(rows)+'</section>'+undoPanel();
+}
+function assetTable(rows){
+  var body=rows.filter(function(r){return r.amountRecorded;}).reverse().map(function(r){
+    var cls=r.diffAmt>0?"up":(r.diffAmt<0?"down":""), del=armed["e:"+r.date];
+    return '<tr><td>'+esc(r.date)+'</td><td>'+krw(r.amount)+'</td><td class="'+cls+'">'+(r.diffPct==null?"-":pct(r.diffPct))+'</td><td class="'+cls+'">'+(r.diffAmt==null?"-":krwS(r.diffAmt))+'</td>'+
+      '<td><button type="button" class="del" data-act="rec-entry-edit" data-date="'+esc(r.date)+'">수정</button> <button type="button" class="del'+(del?" confirming":"")+'" data-act="rec-entry-del" data-date="'+esc(r.date)+'">'+(del?"한번더?":"삭제")+'</button></td></tr>';
+  }).join("");
+  return body?'<div class="tablewrap"><table class="log entries"><thead><tr><th>일시</th><th>평가액(원)</th><th>증감</th><th>증감액</th><th></th></tr></thead><tbody>'+body+'</tbody></table></div>':'<div class="empty">아직 기록이 없습니다. 위에서 오늘 평가액을 넣어 보세요.</div>';
+}
+// 예전 원화 기록(지난 사이클 → 지금 사이클 순, 같은 날짜는 나중 것)을 총자산으로 한 번 옮겨 담는다
+function migrateAssets(){
+  if(trk.assetMig||!db||!trk.metaLoaded||!trk.entriesLoaded||!trk.cyclesLoaded||trk.metas.assets) return;
+  trk.assetMig=true;
+  var by={}, starts=[];
+  trk.cycles.slice().sort(function(x,y){ return (x.startDate||"").localeCompare(y.startDate||""); }).forEach(function(c){
+    if(c.entriesOnly) return;
+    if(c.startAmount!=null) starts.push({d:c.startDate||"",v:c.startAmount});
+    (c.entries||[]).forEach(function(e){ if(e&&e.date&&e.amount!=null) by[e.date]=e.amount; });
+  });
+  Object.keys(trk.metas).forEach(function(k){ var m=trk.metas[k]; if(k!=="assets"&&m&&m.startAmount!=null) starts.push({d:m.startDate||"",v:m.startAmount}); });
+  trk.allEntries.forEach(function(e){ if(e.acct!=="assets"&&e.date&&e.amount!=null) by[e.date]=e.amount; });
+  starts.sort(function(x,y){ return x.d.localeCompare(y.d); });
+  var ds=Object.keys(by);
+  Promise.all(ds.map(function(d){ return db.doc(assetPath(d)).set({date:d,amount:by[d],acct:"assets"}); })).then(function(){
+    return db.doc(ASSET_META).set({startAmount:starts.length?starts[0].v:null, movedFrom:ds.length, movedAt:Date.now()});
+  }).catch(function(e){ console.error("assets migrate",e); trk.assetMig=false; });
 }
 function tradeForm(a){
   var bt=function(v,l){ return '<button type="button" class="t-delta-btn'+(rf.tDelta===v?" active":"")+'" data-act="rec-tdelta" data-v="'+v+'">'+l+'</button>'; };
@@ -1826,16 +1863,12 @@ function entryTable(rows, editable){
   return body?'<div class="tablewrap"><table class="log entries"><thead><tr><th>일시</th><th>평가액(원)</th><th>증감</th><th>증감액</th><th>종가($)</th><th>평단($)</th><th>수량</th>'+(editable?'<th></th>':'')+'</tr></thead><tbody>'+body+'</tbody></table></div>':'<div class="empty">아직 기록이 없습니다.</div>';
 }
 function recCharts(a){
-  var rows=computeRows(trk.entries,getTrades(),a.ticker);
-  return '<section class="panel"><div class="panel-head"><h2>추이</h2><button type="button" class="export-btn" data-act="rec-csv-entries">CSV로 저장</button></div>'+
-    '<div class="chart-sub" style="border-top:none;padding-top:0;margin-top:6px">'+esc(a.ticker)+' 종가 · 평단 · 매매</div>'+priceChart(a.ticker,trk.meta,getTrades())+
-    '<div class="chart-sub"></div>'+assetHero(rows,trk.meta.startAmount)+assetChart(rows,trk.meta.startAmount)+'</section>'+
-    '<section class="panel"><h2>기록 ('+rows.length+'건)</h2>'+entryTable(rows,true)+'</section>';
+  return '<section class="panel"><h2>이번 사이클 차트</h2><div class="chart-sub" style="border-top:none;padding-top:0;margin-top:6px">'+esc(a.ticker)+' 종가 · 평단 · 매매</div>'+priceChart(a.ticker,trk.meta,getTrades())+'</section>';
 }
 // 위험 구역: 맨 아래 접힌 칸. 사이클 기록 지우기(기록이 켜진 무매만)와 계좌 삭제를 모은다
 function dangerZone(a, withCycle){
   var on=armed["cycle"];
-  var cyc = withCycle ? '<div class="danger-row"><div><div class="danger-title">현재 사이클 기록 지우기</div><div class="danger-desc">이 사이클의 원화 기록과 매매내역을 모두 지우고, 계좌를 원금 그대로 T 0부터 다시 시작합니다. 지운 직후에는 실행취소로 되돌릴 수 있어요.</div></div>'+
+  var cyc = withCycle ? '<div class="danger-row"><div><div class="danger-title">현재 사이클 기록 지우기</div><div class="danger-desc">이 사이클의 매매내역을 모두 지우고(자산 탭의 원화 기록은 남아요), 계좌를 원금 그대로 T 0부터 다시 시작합니다. 지운 직후에는 실행취소로 되돌릴 수 있어요.</div></div>'+
     '<button type="button" class="btn danger" data-act="rec-del-cycle">'+(on?"정말 지울까요? 한 번 더":"사이클 기록 지우기")+'</button></div>' : "";
   var del='<div class="danger-row"><div><div class="danger-title">이 계좌 삭제</div><div class="danger-desc">'+esc(a.name)+' 계좌'+(a.type==="INF"&&a.linked==="own"?"와 이 계좌의 진행 중 기록":"")+'을 지웁니다. 지난 사이클 기록은 남아요. 지운 직후에는 실행취소로 되돌릴 수 있어요.</div></div>'+
     '<button type="button" class="btn danger" data-act="del">이 계좌 삭제</button></div>';
@@ -1930,7 +1963,7 @@ function linkAccount(a, inherit){
 }
 function archiveAndRoll(a, allTrades, endDate, next){
   var m=metaOf(a), ents=entriesOf(a), seed=seedOf(a,m), rows=computeRows(ents,allTrades,a.ticker), tr=tradeRows(allTrades), st=replay(allTrades,seed);
-  var last=null; for(var i=rows.length-1;i>=0;i--) if(rows[i].amountRecorded){ last=rows[i]; break; }
+  var last=null; if(!trk.metas.assets) for(var i=rows.length-1;i>=0;i--) if(rows[i].amountRecorded){ last=rows[i]; break; }
   var id="cycle_"+(m.startDate||endDate).replace(/-/g,"")+"_"+Date.now().toString(36);
   var trOut=tr.map(function(t){ return {date:t.date,type:t.join?"합류":t.type==="buy"?"매수":"매도",price:t.price,qty:t.qty,amount:t.amount,cumQty:t.cumQty,avgPrice:t.avgPrice}; });
   var arc = last ? { label:m.label||"무매법 V4.0", startDate:m.startDate||null, endDate:endDate, startAmount:m.startAmount!=null?m.startAmount:null, endAmount:last.amount,
@@ -1989,7 +2022,21 @@ function recAct(act, b, a){
   if(act==="rec-tdelta"){ rf.tDelta=parseFloat(b.getAttribute("data-v")); render(); return true; }
   if(act==="rec-tmult"){ rf.sellMult=parseFloat(b.getAttribute("data-v")); rf.sellTag=b.getAttribute("data-tag"); render(); return true; }
   if(act==="rec-csv-trades"){ downloadCSV("무한매수법_매매내역_"+((trk.meta&&trk.meta.startDate)||todayKR())+"_시작",["일시","구분","T값","체결가","수량","금액","누적수량","평단"],tradeRows().map(function(t){return [t.date,t.join?"합류":t.type==="buy"?"매수":"매도",tLabel(t),t.price,t.qty,t.amount,t.cumQty,t.avgPrice];})); return true; }
-  if(act==="rec-csv-entries"){ downloadCSV("무한매수법_"+((trk.meta&&trk.meta.startDate)||"")+"_시작_"+todayKR()+"_기준",ENTRY_CSV_HEAD,entryCsvLines(computeRows(trk.entries,getTrades(),L&&L.ticker))); return true; }
+  if(act==="rec-csv-entries"){ downloadCSV("총자산_"+todayKR()+"_기준",["일시","평가액(원)","증감(%)","증감액"],assetRows().filter(function(r){return r.amountRecorded;}).map(function(r){ return [r.date,r.amount,r.diffPct==null?"":(r.diffPct*100).toFixed(2),r.diffAmt==null?"":r.diffAmt]; })); return true; }
+  if(act==="rec-entry-edit"){
+    var ee=assetEntries().filter(function(e){return e.date===b.getAttribute("data-date");})[0]; if(!ee) return true;
+    rf.editEntry=ee.date; rf.aDate=ee.date; rf.aAmount=ee.amount!=null?String(ee.amount):"";
+    render(); var af=$("a-amount"); if(af){ af.scrollIntoView({behavior:"smooth",block:"center"}); af.focus(); } return true;
+  }
+  if(act==="rec-entry-cancel"){ rf.editEntry=null; rf.aAmount=""; render(); return true; }
+  if(act==="rec-entry-del"){
+    var dd=b.getAttribute("data-date"), k2="e:"+dd;
+    if(!armed[k2]){ Object.keys(armed).forEach(function(x){delete armed[x];}); armed[k2]=1; setTimeout(function(){ if(armed[k2]){ delete armed[k2]; render(); } },3000); render(); return true; }
+    delete armed[k2]; if(!db) return true;
+    var uE=snap([assetPath(dd)]);
+    db.doc(assetPath(dd)).delete().then(function(){ toast(dd+" 기록을 삭제했어요."); pushUndo(dd+" 총자산 기록 삭제",uE); if(rf.editEntry===dd) rf.editEntry=null; render(); });
+    return true;
+  }
   if(act==="rec-csv-arc"||act==="rec-csv-arc-tr"){
     var c=trk.cycles.filter(function(x){return x.id===b.getAttribute("data-id");})[0]; if(!c) return true;
     if(act==="rec-csv-arc") downloadCSV("무한매수법_"+(c.label||c.id),ENTRY_CSV_HEAD,entryCsvLines(computeRows(c.entries||[],null)));
@@ -2031,20 +2078,6 @@ function recAct(act, b, a){
     if(rf.editTrade===did) rf.editTrade=null;
     return true;
   }
-  if(act==="rec-entry-edit"){
-    var ee=trk.entries.filter(function(e){return e.date===b.getAttribute("data-date");})[0]; if(!ee) return true;
-    rf.editEntry=ee.date; rf.aDate=ee.date; rf.aAmount=ee.amount!=null?String(ee.amount):""; rf.aSoxl=ee.soxlPrice!=null?String(ee.soxlPrice):"";
-    render(); var af=$("a-amount"); if(af){ af.scrollIntoView({behavior:"smooth",block:"center"}); af.focus(); } return true;
-  }
-  if(act==="rec-entry-cancel"){ rf.editEntry=null; rf.aAmount=""; rf.aSoxl=""; render(); return true; }
-  if(act==="rec-entry-del"){
-    var dd=b.getAttribute("data-date"), k2="e:"+dd;
-    if(!armed[k2]){ Object.keys(armed).forEach(function(x){delete armed[x];}); armed[k2]=1; setTimeout(function(){ if(armed[k2]){ delete armed[k2]; render(); } },3000); render(); return true; }
-    delete armed[k2];
-    var uE=snap([entPath(L,dd)]);
-    db.doc(entPath(L,dd)).delete().then(function(){ toast(dd+" 기록을 삭제했어요."); pushUndo(dd+" 기록 삭제",uE); if(rf.editEntry===dd) rf.editEntry=null; render(); });
-    return true;
-  }
   if(act==="rec-del-cycle"){
     if(!armed.cycle){ armed.cycle=1; setTimeout(function(){ if(armed.cycle){ delete armed.cycle; render(); } },4000); render(); return true; }
     delete armed.cycle;
@@ -2063,33 +2096,29 @@ function recAct(act, b, a){
 function saveInline(el){
   var k=el.getAttribute("data-k"), raw=el.value.trim(), ra=selected?accounts[selected]:null; rf.inline=null;
   if(!db||raw===""){ render(); return; }
+  if(k==="astart"){ var av=parseFloat(raw), apv=assetStart(); if(!isNaN(av)&&av!==apv){ var uAs=snap([ASSET_META]); db.doc(ASSET_META).set({startAmount:av},{merge:true}).then(function(){ toast("시작평가액을 "+krw(av)+"원으로 고쳤어요."); pushUndo("시작평가액 수정",uAs); render(); }); } render(); return; }
   syncRec(); var mp=ra&&trk.meta?recPath(ra):null;
-  if(k==="title"&&mp&&raw!==trk.meta.label){ var uT=snap([mp]); db.doc(mp).update({label:raw}).then(function(){ pushUndo("사이클 이름 변경",uT); render(); }); }
-  else if(k==="start"&&mp){ var v=parseFloat(raw), pv=trk.meta.startAmount==null?null:trk.meta.startAmount; if(!isNaN(v)&&v!==pv){ var uS=snap([mp]); db.doc(mp).update({startAmount:v}).then(function(){ toast("시작평가액을 "+krw(v)+"원으로 고쳤어요."); pushUndo("시작평가액 수정",uS); render(); }); } }
-  else if(k.indexOf("alabel:")===0){ var uA=snap(["cycles/"+k.slice(7)]); db.doc("cycles/"+k.slice(7)).update({label:raw}).then(function(){ pushUndo("지난 사이클 이름 변경",uA); render(); }); }
+  if(k.indexOf("alabel:")===0){ var uA=snap(["cycles/"+k.slice(7)]); db.doc("cycles/"+k.slice(7)).update({label:raw}).then(function(){ pushUndo("지난 사이클 이름 변경",uA); render(); }); }
   else if(k.indexOf("afx:")===0){ var f=parseFloat(raw), uF=snap(["cycles/"+k.slice(4)]); if(!isNaN(f)) db.doc("cycles/"+k.slice(4)).update({fxLoss:f}).then(function(){ pushUndo("환차손 수정",uF); render(); }); }
   render();
 }
 function saveAmount(){
-  var L=selected?accounts[selected]:null; if(!L||L.type!=="INF"||!L.linked||!db) return;
-  syncRec();
-  var d=rf.aDate, amt=parseFloat(rf.aAmount), sx=rf.aSoxl;
+  if(!db) return;
+  var d=rf.aDate, amt=parseFloat(rf.aAmount), ents=assetEntries();
   if(!d||isNaN(amt)){ toast("일시와 평가액을 넣어주세요."); return; }
   if(rf.editEntry){
-    var od=rf.editEntry, orig=trk.entries.filter(function(e){return e.date===od;})[0]; if(!orig){ rf.editEntry=null; render(); return; }
-    if(d!==od&&trk.entries.some(function(e){return e.date===d;})){ toast("이미 "+d+" 기록이 있어요."); return; }
-    var uEd=snap([entPath(L,od)].concat(d!==od?[entPath(L,d)]:[]));
-    var data=entData(L,{date:d,amount:amt}); if(sx!=="") data.soxlPrice=parseFloat(sx);
-    var task = d===od ? db.doc(entPath(L,od)).set(data) : db.doc(entPath(L,od)).delete().then(function(){ return db.doc(entPath(L,d)).set(data); });
-    task.then(function(){ toast(d+" 평가액 기록을 고쳤어요."); pushUndo(d+" 평가액 수정",uEd); rf.editEntry=null; rf.aAmount=""; rf.aSoxl=""; render(); });
+    var od=rf.editEntry;
+    if(!ents.some(function(e){return e.date===od;})){ rf.editEntry=null; render(); return; }
+    if(d!==od&&ents.some(function(e){return e.date===d;})){ toast("이미 "+d+" 기록이 있어요."); return; }
+    var uEd=snap([assetPath(od)].concat(d!==od?[assetPath(d)]:[])), data={date:d,amount:amt,acct:"assets"};
+    var task = d===od ? db.doc(assetPath(od)).set(data) : db.doc(assetPath(od)).delete().then(function(){ return db.doc(assetPath(d)).set(data); });
+    task.then(function(){ toast(d+" 평가액 기록을 고쳤어요."); pushUndo(d+" 총자산 수정",uEd); rf.editEntry=null; rf.aAmount=""; render(); });
     return;
   }
-  var ex=trk.entries.filter(function(e){return e.date===d;})[0], had=ex&&ex.amount!=null, pa=had?ex.amount:null, hadS=ex&&ex.soxlPrice!=null, ps=hadS?ex.soxlPrice:null;
-  var data2=entData(L,{date:d,amount:amt}); if(sx!=="") data2.soxlPrice=parseFloat(sx);
-  var uN=snap([entPath(L,d)]);
-  db.doc(entPath(L,d)).set(data2,{merge:true}).then(function(){
-    toast(d+" 평가액을 저장했어요."); rf.aAmount=""; rf.aSoxl="";
-    pushUndo(d+" 평가액 기록",uN);
+  var uN=snap([assetPath(d)]);
+  db.doc(assetPath(d)).set({date:d,amount:amt,acct:"assets"}).then(function(){
+    toast(d+" 평가액을 저장했어요."); rf.aAmount="";
+    pushUndo(d+" 총자산 기록",uN);
     render();
   }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
 }
@@ -2128,7 +2157,7 @@ document.addEventListener("click", function(ev){
   if(ev.target.closest("summary")&&(ev.target.closest("[data-act]")||ev.target.id==="inline-edit")) ev.preventDefault();
   var b=ev.target.closest("[data-act]"); if(!b) return;
   if(b.getAttribute("data-act")==="undo"){ recAct("undo",b,null); return; }
-  var a=accounts[selected]; if(!a) return;
+  var a=accounts[selected]; if(!a){ if(curType==="ASSET") recAct(b.getAttribute("data-act"),b,null); return; }
   syncRec();
   var act=b.getAttribute("data-act");
   if(recAct(act,b,a)) return;
@@ -2693,10 +2722,10 @@ window.DeskApp = {
     db=adapter; loaded=false; accounts={}; prices={};
     trk={meta:null,metas:{},metaLoaded:false,entries:[],allEntries:[],entriesLoaded:false,cycles:[],migrated:false}; undoStack=[]; rf.aDate=rf.tDate=todayKR(); rf.editTrade=rf.editEntry=rf.inline=null;
     render();
-    db.collection("cycle").onSnapshot(function(s){ var mm={}; s.docs.forEach(function(d){ mm[d.id]=d.data(); }); trk.metas=mm; trk.metaLoaded=true; syncRec(); if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); renderSoon(); }, function(e){ console.error("cycle",e); });
-    db.collection("entries").onSnapshot(function(s){ trk.allEntries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; syncRec(); if(trk.metaLoaded) maybeMigrate(); renderSoon(); }, function(e){ console.error("entries",e); });
+    db.collection("cycle").onSnapshot(function(s){ var mm={}; s.docs.forEach(function(d){ mm[d.id]=d.data(); }); trk.metas=mm; trk.metaLoaded=true; syncRec(); if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); migrateAssets(); renderSoon(); }, function(e){ console.error("cycle",e); });
+    db.collection("entries").onSnapshot(function(s){ trk.allEntries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; syncRec(); if(trk.metaLoaded) maybeMigrate(); migrateAssets(); renderSoon(); }, function(e){ console.error("entries",e); });
     db.collection("undo").onSnapshot(function(s){ undoStack=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).filter(function(u){ return u.ops&&u.ops.length; }); slimOldUndo(undoStack); renderSoon(); }, function(e){ console.error("undo",e); });
-    db.collection("cycles").onSnapshot(function(s){ trk.cyclesLoaded=true; trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); renderSoon(); }, function(e){ console.error("cycles",e); });
+    db.collection("cycles").onSnapshot(function(s){ trk.cyclesLoaded=true; trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); migrateAssets(); renderSoon(); }, function(e){ console.error("cycles",e); });
     db.collection("accounts").onSnapshot(function(snap){
       var next={};
       snap.docs.forEach(function(doc){ var v=JSON.parse(JSON.stringify(doc.data())); v.id=doc.id; next[doc.id]=v; });
