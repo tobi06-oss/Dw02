@@ -718,8 +718,8 @@ function banners(a){
       var stale = lb && lb.d > p.session, past = stale ? null : pastPlan(a);
       out+='<div class="banner '+(stale?"warn":"info")+'"><div class="bt">'+(stale?dlabel(p.session)+" 거래 기록이 없어요":dlabel(p.session)+" 체결 대기 중")+'</div>'+
         '<div class="bd">'+(stale?"휴장일이었거나 종가가 빠졌어요. 휴장일이면 건너뛰고, 거래가 있었다면 아래에서 그날 종가를 입력하세요.":"주문을 넣었다고 기록해 두었어요. 미국장 마감 후 종가가 들어오면 체결을 자동으로 판정합니다.")+'</div>'+
-        (past?'<div class="bd">'+dlabel(past.session)+' 장 마감 뒤에 눌러서 다음 장 주문으로 기록됐다면, 아래 버튼으로 '+dlabel(past.session)+' 주문표로 바꿔 그날 종가로 체결을 확인하세요.</div>':'')+
-        '<div class="actions" style="margin-top:0">'+(past?'<button class="btn primary" data-act="place-past">'+dlabel(past.session)+' 주문이었어요</button>':'')+'<button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button></div></div>';
+        (past?'<div class="bd">'+(a.type==="VR"?'회차 주문을 '+dlabel(past.session)+' 장 전에 증권사에 넣었는데 앱 기록만 늦었다면, 아래 버튼으로 '+dlabel(past.session)+'부터 넣은 회차 주문으로 바꿔 지난 체결을 차례로 확인하세요.':dlabel(past.session)+' 장 마감 뒤에 눌러서 다음 장 주문으로 기록됐다면, 아래 버튼으로 '+dlabel(past.session)+' 주문표로 바꿔 그날 종가로 체결을 확인하세요.')+'</div>':'')+
+        '<div class="actions" style="margin-top:0">'+(past?'<button class="btn primary" data-act="place-past">'+dlabel(past.session)+(a.type==="VR"?'부터 넣은 주문이었어요':' 주문이었어요')+'</button>':'')+'<button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button></div></div>';
     }
   }
   return out;
@@ -835,6 +835,7 @@ function vrCarry(a, st, fromD){
 // 지난 장 주문을 장 마감 뒤에 기록할 때: 마지막 종가가 나온 날의 주문표를 그 전날 종가 기준으로 다시 만든다.
 // 무매만. 그 날을 이미 반영했거나 건너뛴 계좌면 null.
 function pastPlan(a){
+  if(a.type==="VR") return vrPastPlan(a);
   if(a.type!=="INF") return null;
   var b=bars(a.ticker); if(b.length<2) return null;
   var d=b[b.length-1].d;
@@ -843,6 +844,20 @@ function pastPlan(a){
   var p=E.infPlan(a,b.slice(0,-1));
   if(!p||!p.orders.length) return null;
   p.session=d;
+  return p;
+}
+// VR: 회차 주문을 V 갱신 뒤 첫 장 전에 증권사에 넣었는데 앱 기록이 늦은 경우. 회차 첫 장(V 갱신한 종가의 다음 장)부터 넣은 주문표를 다시 만든다.
+// 그 사이 직접 기록한 매매가 있으면 되돌린 상태(회차 시작 상태)로 주문표를 계산한다. 첫 장 종가가 아직 없으면 null (보통 "넣었어요"로 충분)
+function vrPastPlan(a){
+  if(!(a.cycle>=1)||!a.nextUpdate) return null;
+  var waiting=a.pending&&a.pending.cycleOrder&&!a.pending.carried&&!barOn(a.ticker,a.pending.session);
+  if(vrOrdered(a)&&!waiting) return null;
+  var d0=a.lastRoll&&a.lastRoll.d?a.lastRoll.d:E.vrDue(E.addDays(a.nextUpdate,-14));
+  var b=bars(a.ticker), lb=b[b.length-1], b0=b.filter(function(x){ return x.d<=d0; });
+  if(!lb||!b0.length||E.nextSession(d0)>lb.d) return null;
+  var s=Object.assign({},a), later=(a.log||[]).filter(function(l){ return (l.side==="BUY"||l.side==="SELL")&&l.d>d0; });
+  for(var i=0;i<later.length;i++){ var u=E.vrUnapply(s,later[i]); if(u.error) return null; s=Object.assign(s,u.next); }
+  var p=E.vrPlan(s,b0); if(!p||p.due||!p.orders.length) return null;
   return p;
 }
 function pendingOf(p){
@@ -863,8 +878,8 @@ function slip(a, plan, buyHtml, sellHtml, notes){
     '<div class="col sell"><h3>매도</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
     (vrLock&&vrMsg?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
-    '<div class="actions">'+(placed||vrLock||plan.blocked||!plan.orders.length?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+(shownOrders(a).length?'<button class="btn" data-act="copy">주문 복사</button>':'')+(a.type==="VR"&&!placed&&vrOrdered(a)&&!plan.due?'<button class="btn ghost" data-act="vr-reorder">'+(plan.zero?'첫 매수 다시 내기':'회차 주문 다시 내기')+'</button>':'')+(past?'<button class="btn ghost" data-act="place-past">'+dlabel(past.session)+' 주문으로 기록</button>':'')+'</div>'+
-    (past?'<div class="small muted" style="margin-top:6px">'+dlabel(past.session)+' 주문을 넣고 기록을 못 했다면 "'+dlabel(past.session)+' 주문으로 기록"을 누르세요. 그날 주문표로 기록하고 바로 체결을 확인해요.</div>':'')+'</section>';
+    '<div class="actions">'+(placed||vrLock||plan.blocked||!plan.orders.length?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+(shownOrders(a).length?'<button class="btn" data-act="copy">주문 복사</button>':'')+(a.type==="VR"&&!placed&&vrOrdered(a)&&!plan.due?'<button class="btn ghost" data-act="vr-reorder">'+(plan.zero?'첫 매수 다시 내기':'회차 주문 다시 내기')+'</button>':'')+(past?'<button class="btn ghost" data-act="place-past">'+dlabel(past.session)+(a.type==="VR"?'부터 넣은 회차 주문으로 기록':' 주문으로 기록')+'</button>':'')+'</div>'+
+    (past?'<div class="small muted" style="margin-top:6px">'+(a.type==="VR"?'V 갱신 뒤 '+dlabel(past.session)+' 장 전에 회차 주문을 넣고 기록을 못 했다면 "'+dlabel(past.session)+'부터 넣은 회차 주문으로 기록"을 누르세요. 그때 주문표로 기록하고 지난 체결을 차례로 확인해요.':dlabel(past.session)+' 주문을 넣고 기록을 못 했다면 "'+dlabel(past.session)+' 주문으로 기록"을 누르세요. 그날 주문표로 기록하고 바로 체결을 확인해요.')+'</div>':'')+'</section>';
 }
 
 function renderINF(a){
@@ -2119,7 +2134,9 @@ document.addEventListener("click", function(ev){
     // 대기 중인 다음 장 기록이 있으면 그것을 지난 장 주문표로 바꾼다 (이미 종가가 나온 기록은 건드리지 않음)
     var ps=pastPlan(a); if(!ps||(a.pending&&barOn(a.ticker,a.pending.session))) return;
     var prevS=snapA(); delete fillEdits[a.id];
-    save(a,{pending:pendingOf(ps),events:[]}).then(function(){ toast(dlabel(ps.session)+" 주문으로 기록했어요. 그날 종가로 체결을 확인하세요."); undoSet(dlabel(ps.session)+" 주문 넣음 (마감 후 기록)",prevS); render(); });
+    var pps={pending:pendingOf(ps),events:[]};
+    if(a.type==="VR"){ pps.cycleOrdered=true; pps.pending.cycleOrder=true; pps.cycleOrders=vrNumber(pps.pending.orders,pps.pending.placedAt); pps.cycleEdited=false; }
+    save(a,pps).then(function(){ toast(dlabel(ps.session)+(a.type==="VR"?"부터 넣은 회차 주문으로 기록했어요. 지난 체결을 차례로 확인하세요.":" 주문으로 기록했어요. 그날 종가로 체결을 확인하세요.")); undoSet(dlabel(ps.session)+" 주문 넣음 (마감 후 기록)",prevS); render(); });
   } else if(act==="vr-csv"){
     downloadCSV("VR_"+a.name+"_회차기록_"+todayKR(),["회차","마감일","종가","수량","평가금E","V","최소밴드","최대밴드","Pool(적립 전)","다음 회차 Pool","투입원금","다음 V","매수 주수","매도 주수"],vrRows(a,null).map(function(r){return [r.c,r.d,r.close,r.qty,r.E,r.V,r.min,r.max,r.pool,r.poolNext,r.invested,r.Vnext,r.buyQ,r.sellQ];}));
   } else if(act==="copy"){
