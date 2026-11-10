@@ -29,14 +29,15 @@ async function main() {
     const setRef = db.collection("users").doc(uid).collection("settings").doc("push");
     const set = (await setRef.get()).data() || {};
     const at = /^\d\d:\d\d$/.test(set.time || "") ? set.time : DEFAULT_TIME;
-    if (!TEST && (hm < at || set.lastSent === session)) { console.log(`${uid.slice(0, 6)}…: 알림 ${at}, ${set.lastSent === session ? "오늘 이미 보냄" : "아직 시간 전"}`); continue; }
+    // 공개 저장소라 실행 기록은 누구나 본다: 사용자·계좌 내용은 찍지 않고 개수만 남긴다
+    if (!TEST && (hm < at || set.lastSent === session)) { console.log(`사용자 1명: ${set.lastSent === session ? "오늘 이미 보냄" : "아직 시간 전"}`); continue; }
     const { accts, manual } = await userAccounts(db, uid);
     const todo = [];
     for (const a of accts) {
       const st = E.orderStatus(a, mergeBars(shared[a.ticker], manual[a.ticker]));
       if (st) todo.push(`${a.name || a.ticker} ${st.txt}`);
     }
-    console.log(`${uid.slice(0, 6)}…: ${todo.length ? todo.join(", ") : "모두 주문함"} (기기 ${toks.length}대)`);
+    console.log(`사용자 1명: 주문 전 계좌 ${todo.length}개 (기기 ${toks.length}대)`);
     if (!TEST) await setRef.set({ lastSent: session }, { merge: true }); // 하루 한 번만 확인 (그 뒤에 넣은 주문은 다시 안 알림)
     if (!todo.length && !TEST) continue;
 

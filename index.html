@@ -227,6 +227,19 @@ details.panel[open]>summary{margin-bottom:12px}
 .join-seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .vr-import{flex:1 1 100%;margin:4px 0;padding:12px;border:1px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;gap:8px}
 .vr-import[hidden]{display:none}
+.form .fee-field{flex:1 1 100%}
+.fee-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fee-row input{max-width:110px}
+.fee-chip{background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:5px 10px;font-size:12px;color:var(--ink-2);font-family:var(--sans);cursor:pointer}
+.fee-chip.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+details.adv{flex:1 1 100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+details.adv[hidden]{display:none}
+details.adv summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--ink-2)}
+details.adv .adv-body{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+details.adv .adv-body .field{flex:1 1 120px}
+.chk{flex:1 1 100%;display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--ink-2)}
+.chk[hidden]{display:none}
+.chk input{margin-top:2px}
 .vr-import .vi-h{font-size:13px;font-weight:600}
 .vr-import .vi-d{font-size:11px;color:var(--ink-3)}
 .vr-import textarea{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--ink);font-family:var(--mono);width:100%;resize:vertical;box-sizing:border-box}
@@ -428,11 +441,24 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
     <form id="auth-form" class="form">
       <div class="field"><label for="auth-email">이메일</label><input id="auth-email" type="email" autocomplete="email" required></div>
       <div class="field"><label for="auth-pw">비밀번호 (6자 이상)</label><input id="auth-pw" type="password" autocomplete="current-password" minlength="6" required></div>
+      <div class="field" id="auth-code-field" hidden><label for="auth-code">초대 코드 (운영자에게 받은 코드)</label><input id="auth-code" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
       <button class="btn primary" type="submit" id="auth-submit">로그인</button>
       <button class="btn ghost" type="button" id="auth-toggle">처음이면 계정 만들기</button>
+      <button class="btn ghost" type="button" id="auth-reset" style="font-size:12px">비밀번호를 잊었어요</button>
     </form>
     <div class="hint" id="auth-err" style="color:var(--buy)"></div>
-    <div class="hint">기록은 내 Firebase 프로젝트에 저장되고, 어느 기기에서 로그인해도 같은 계좌가 보입니다.</div>
+    <div class="hint" id="auth-ok" style="color:var(--ok)"></div>
+    <div class="hint">기록은 이 앱 운영자의 Firebase에 계정별로 저장돼요. 다른 사용자는 내 기록을 볼 수 없고, 어느 기기에서 로그인해도 같은 계좌가 보여요. 운영자는 관리 화면에서 저장된 기록을 볼 수 있어요.</div>
+  </section>
+  <section class="panel auth" id="gate-panel" hidden>
+    <h2>초대 코드 확인</h2>
+    <div class="hint" id="gate-msg">이 앱은 초대받은 사람만 쓸 수 있어요. 운영자에게 받은 초대 코드를 넣어 주세요.</div>
+    <form id="gate-form" class="form">
+      <div class="field"><label for="gate-code">초대 코드</label><input id="gate-code" autocomplete="off" autocapitalize="characters" spellcheck="false" required></div>
+      <button class="btn primary" type="submit" id="gate-submit">확인</button>
+      <button class="btn ghost" type="button" id="gate-out">로그아웃</button>
+    </form>
+    <div class="hint" id="gate-err" style="color:var(--buy)"></div>
   </section>
   <div id="app-body" hidden style="display:contents">
 
@@ -473,18 +499,30 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="field inf-only join-only" hidden><label for="n-icash">잔금 ($, 무매 몫만)</label><input id="n-icash" type="number" step="0.01" inputmode="decimal"></div>
       <div class="field inf-only join-only" hidden><label for="n-iT">T (비우면 추정값)</label><input id="n-iT" type="number" step="any" inputmode="decimal"></div>
       <div class="field inf-only join-only" hidden><label for="n-imode">모드</label><select id="n-imode"><option value="NORMAL">일반모드</option><option value="REVERSE">리버스모드 진행 중</option></select></div>
-      <div class="field vr-only" hidden><label for="n-V" id="n-V-label">시작 V ($)</label><input id="n-V" type="number" step="0.01" inputmode="decimal"></div>
-      <div class="field vr-only" hidden><label for="n-pool">Pool ($)</label><input id="n-pool" type="number" step="0.01" inputmode="decimal"></div>
-      <div class="field vr-only" hidden><label for="n-qty">보유 수량</label><input id="n-qty" type="number" step="1" inputmode="numeric" value="0"></div>
-      <div class="field vr-only" hidden><label for="n-avg">평단 ($, 보유 있을 때)</label><input id="n-avg" type="number" step="0.0001" inputmode="decimal"></div>
-      <div class="field vr-only" hidden><label for="n-contrib">2주 적립금 ($)</label><input id="n-contrib" type="number" step="0.01" value="150"></div>
-      <div class="field vr-only" hidden><label for="n-next">다음 V 갱신일</label><input id="n-next" type="date"></div>
+      <div class="field vr-only" hidden><label for="n-vrType">운용 방식</label><select id="n-vrType"><option value="INSTALLMENT">적립식</option><option value="LUMPSUM">거치식</option><option value="WITHDRAWAL">인출식</option></select></div>
+      <div class="field vr-only join-only" hidden><label for="n-V">지금 V ($)</label><input id="n-V" type="number" step="0.01" inputmode="decimal"></div>
+      <div class="field vr-only" hidden><label for="n-pool" id="n-pool-label">Pool ($)</label><input id="n-pool" type="number" step="0.01" inputmode="decimal"></div>
+      <div class="field vr-only join-only" hidden><label for="n-qty">보유 수량</label><input id="n-qty" type="number" step="1" inputmode="numeric" value="0"></div>
+      <div class="field vr-only join-only" hidden><label for="n-avg">평단 ($, 보유 있을 때)</label><input id="n-avg" type="number" step="0.0001" inputmode="decimal"></div>
+      <div class="field vr-only" hidden><label for="n-contrib" id="n-contrib-label">2주 적립금 ($)</label><input id="n-contrib" type="number" step="0.01" value="150"></div>
+      <div class="field vr-only join-only" hidden><label for="n-next">다음 V 갱신일</label><input id="n-next" type="date"></div>
       <div class="field vr-only join-only" hidden><label for="n-vcycle">지금 회차</label><input id="n-vcycle" type="number" step="1" min="1" inputmode="numeric" placeholder="예: 5"></div>
       <div class="field vr-only join-only" hidden><label for="n-vinv">지금까지 넣은 돈 ($, 선택)</label><input id="n-vinv" type="number" step="0.01" inputmode="decimal"></div>
+      <div class="field fee-field"><label for="n-fee">수수료 (%) <span class="muted">· 한 번 사고팔 때마다, 나중에 상태 수정에서 바꿀 수 있어요</span></label>
+        <div class="fee-row"><input id="n-fee" type="number" step="0.001" min="0" inputmode="decimal" value="0.07">
+          <button type="button" class="fee-chip" data-fee="0.07">메리츠 0.07</button><button type="button" class="fee-chip" data-fee="0.1">토스 0.1</button><button type="button" class="fee-chip" data-fee="0.1">카카오페이 0.1</button><button type="button" class="fee-chip" data-fee="0.25">키움 0.25</button><button type="button" class="fee-chip" data-fee="0.25">한투 0.25</button><button type="button" class="fee-chip" data-fee="0.25">삼성 0.25</button><button type="button" class="fee-chip" data-fee="0">0</button></div>
+        <div class="small muted">증권사 기본 수수료 예시예요. 이벤트·등급에 따라 다르니 내 계좌 수수료를 확인해 넣으세요.</div></div>
+      <details class="adv" id="n-adv"><summary>고급 설정</summary><div class="adv-body">
+        <div class="field inf-only"><label for="n-basePct">매도 기준 % <span class="muted">(SOXL 20 · TQQQ 15)</span></label><input id="n-basePct" type="number" step="0.1" inputmode="decimal" placeholder="자동"></div>
+        <div class="field inf-only"><label for="n-bigMult">처음매수 큰수 배율</label><input id="n-bigMult" type="number" step="0.01" inputmode="decimal" value="1.12"></div>
+        <div class="field vr-only" hidden><label for="n-band">밴드 ± %</label><input id="n-band" type="number" step="0.5" inputmode="decimal" value="15"></div>
+        <div class="field vr-only" hidden><label for="n-G">G</label><input id="n-G" type="number" step="1" inputmode="numeric" value="10"></div>
+        <label class="chk vr-only new-only" hidden><input id="n-fromZero" type="checkbox"><span>0원부터 모아 가는 적립식 VR (라오어 글의 예외: 첫 1년은 Pool 매수 한도 100%, 그다음부터 75%에서 6개월마다 5%씩 줄여요). 거치식·인출식에는 적용하지 않고, 끄면 처음부터 75%예요.</span></label>
+      </div></details>
       <div class="field" style="align-self:end"><button class="btn primary" type="submit">계좌 만들기</button></div>
     </form>
     <div class="hint join-only" id="join-hint" hidden></div>
-    <div class="hint vr-only" hidden>VR을 0에서 시작할 때는 시작 V와 Pool에 첫 적립금을 넣고, 보유 수량 0으로 만드세요. 첫 매수표는 V 기준으로 계산됩니다.</div>
+    <div class="hint vr-only new-only" hidden>VR은 주식이 1주라도 있어야 V 공식으로 매수·매도 지점이 나와요. 그래서 새로 시작하면 먼저 <b>0회차(첫 매수)</b>로 시작해요. 0회차는 라오어 글에 정해진 규칙이 아니라, 0주에서 시작할 수 있게 이 앱이 정한 방법이에요. 주문표가 시작 Pool의 매수 한도 안에서 첫 매수 수량을 알려 주고, 이번 주 마지막 장이 끝나면 그때 평가금으로 V를 정해 1회차를 시작해요. 시작 Pool에는 첫 적립금까지 넣어 주세요. 다음 적립금은 1회차 마감(첫 V 갱신) 때부터 더해져요. 이미 TQQQ를 갖고 VR을 하고 있다면 "이어서 하기"를 고르세요.</div>
   </section>
   <main id="view" class="wrap" style="gap:14px"></main>
 
@@ -502,7 +540,8 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
     <div class="hint">종가는 매일 아침 GitHub Actions가 자동으로 넣습니다. 늦거나 빠졌을 때만 쓰세요. 직접 넣은 값은 내 계정에만 저장되고 같은 날짜의 자동 종가보다 우선합니다. 고가·시가는 지정가 매도 체결 판정에 쓰이며, 비우면 종가로 대신합니다.</div>
   </details>
 
-  <details class="panel" id="push-panel">
+  <!-- 주문 알림은 보류 중 (2026-11-09): GitHub 예약 실행이 하루 두 번만 돌아 제시간에 못 보냄. 다시 켤 때 hidden과 PUSH_OFF를 지운다 -->
+  <details class="panel" id="push-panel" hidden>
     <summary>주문 알림 <span id="push-time-label">밤 9:00</span></summary>
     <div class="hint" id="push-status">확인 중…</div>
     <div class="field" style="margin-top:10px;max-width:220px"><label for="push-time">알림 시간 (한국시간)</label><select id="push-time"></select></div>
@@ -511,6 +550,18 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <button class="btn ghost" type="button" id="push-off" hidden>이 기기 알림 끄기</button>
     </div>
     <div class="hint">미국장이 열리는 평일 고른 시간쯤(몇 분 늦을 수 있음), 탭에 "주문 전"·"체결 확인"·"V 갱신 필요"가 남은 계좌가 있으면 알림을 보냅니다. 휴장일에는 보내지 않습니다. 아이폰은 사파리에서 "홈 화면에 추가"로 설치한 앱에서 켜야 합니다(iOS 16.4 이상).</div>
+  </details>
+
+  <details class="panel" id="invite-panel" hidden>
+    <summary>초대 코드 <span class="muted">(운영자만 보여요)</span></summary>
+    <div class="hint">코드를 만들어 지인에게 보내면, 그 사람이 "처음이면 계정 만들기"에서 코드를 넣고 가입해요. 가입 인원만큼 쓰이면 코드가 막혀요. 단톡방에는 인원을 그 방 사람 수로 정한 코드 하나만 올리면 돼요. 회원을 빼면 그 사람은 더 이상 기록을 읽고 쓸 수 없어요 (기록 자체는 남아요).</div>
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="flex:1 1 180px"><label for="inv-note">메모 (누구에게 줄지, 선택)</label><input id="inv-note" maxlength="40" placeholder="예: 철수, 투자 단톡방"></div>
+      <div class="field" style="flex:0 1 110px"><label for="inv-max">가입 인원</label><input id="inv-max" type="number" min="1" max="50" step="1" value="1" inputmode="numeric"></div>
+      <button class="btn primary" type="button" id="inv-make">초대 코드 만들기</button>
+    </div>
+    <div id="inv-list" style="margin-top:12px"></div>
+    <div id="mem-list" style="margin-top:12px"></div>
   </details>
 
   <footer class="foot" id="foot"></footer>
@@ -632,16 +683,14 @@ function render(){
 }
 function renderView(){
   renderTickers(); renderTabs(); undoFab();
-  $("add-panel").hidden=!addMode; ["view","price-panel","push-panel","foot"].forEach(function(id){ $(id).hidden=addMode; });
+  $("add-panel").hidden=!addMode; ["view","price-panel","foot"].forEach(function(id){ $(id).hidden=addMode; }); if(window.DeskOwner) $("invite-panel").hidden=addMode;
   var a = selected ? accounts[selected] : null;
   var v = $("view"); chartReg={}; chartSeq=0;
   var openSet = {}; v.querySelectorAll("details[id]").forEach(function(d){ if(d.open) openSet[d.id]=1; });
   if(!loaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
   if(!a){
     if(!trk.metaLoaded||!trk.cyclesLoaded){ v.innerHTML='<div class="panel empty">계좌를 불러오는 중…</div>'; return; }
-    v.innerHTML = !Object.keys(accounts).length&&isOwner()
-      ? '<div class="panel"><div class="empty">계좌가 없습니다. 위 "+ 계좌 추가"로 만들거나, 지금까지 정한 두 계좌(SOXL 무매 20/20 · VR 1호)를 불러오세요.</div><div class="actions"><button class="btn primary" type="button" id="seed-btn">내 계좌 두 개 불러오기</button></div></div>'
-      : '<div class="panel"><div class="empty">'+(curType==="VR"
+    v.innerHTML = '<div class="panel"><div class="empty">'+(curType==="VR"
           ? '아직 VR 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 VR을 하고 있으면 "이어서 하기"로 지금 V·Pool·보유 수량(또는 VR 기록표 파일)을 넣어 합류하세요.'
           : '아직 무한매수 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 무매를 하고 있으면 "이어서 하기"로 지금 보유·평단·잔금(또는 매매내역 파일)을 넣어 합류하세요.')+
         '</div><div class="actions"><button class="btn primary" type="button" data-add="new">'+kindName(curType)+' 계좌 만들기</button><button class="btn primary" type="button" data-add="join">이어서 하기 <span style="font-weight:400;opacity:.8">(이미 진행 중)</span></button></div></div>'+
@@ -748,12 +797,40 @@ function bigEdit(a,plan){
 
 // VR은 2주 회차마다 기간 예약주문을 한 번만 넣는다. 그 뒤로는 같은 주문이 유지된다고 보고 매일 체결만 확인한다.
 function vrOrdered(a){ return a.type==="VR" && a.cycleOrdered===true; }
+// VR 회차 주문은 증권사에 2주 기간 지정가로 한 번 넣고 그대로 둔다. 그래서 체결 뒤에도 주문표를 다시 계산하지 않는다.
+// 넣을 때 주문마다 번호(oid)와 넣은 수량(qty0)을 적어 cycleOrders에 남기고, 매매내역 중 같은 번호가 붙은 체결만 빼서 잔량을 센다.
+// (보유가 바뀌면 vrPlan의 반대쪽 가격이 달라지므로, 다시 계산하면 증권사에 없는 주문이 생긴다. GPT 4차 L1)
+// 주문(f)의 남은 수량: 넣은 수량 − 매매내역에서 이 주문(oid)의 체결로 기록한 수량
+function vrLeft(f, log){
+  var done=(log||[]).reduce(function(t,l){ return t+(l.oid!=null&&l.oid===f.oid&&l.side===f.side?(l.q||0):0); },0);
+  return (f.qty0!=null?f.qty0:f.qty)-done;
+}
+// 이번 회차에 넣은 주문 전체 (번호 붙은 원래 목록). 예전 기록은 cycleOrders가 없어 유지 중인 주문을 그 자리에서 기준으로 삼는다
+function vrBase(s){
+  if(Array.isArray(s.cycleOrders)&&s.cycleOrders.length) return s.cycleOrders;
+  var src=(s.pending&&s.pending.orders)||[], t=(s.pending&&s.pending.placedAt)||Date.now();
+  return src.map(function(o,i){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; if(c.oid==null) c.oid=t*100+i+1; if(c.qty0==null) c.qty0=c.qty; return c; });
+}
+// 넣을 때 주문마다 번호와 넣은 수량을 붙인다 (0회차 첫 매수는 예전과 같이 placedAt 하나)
+function vrNumber(orders, t){
+  orders.forEach(function(o,i){ o.oid=o.kind==="vr-first"?t:t*100+i+1; o.qty0=o.qty; });
+  return orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
+}
+// 넣은 주문 중 아직 남은 것을 다음 장에 이어 확인한다. 회차가 끝났거나 다 체결되면 null (새 주문을 만들지 않는다)
 function vrCarry(a, st, fromD){
   if(!vrOrdered(a) || !a.nextUpdate) return null;
   var ns=E.nextSession(fromD); if(ns>a.nextUpdate) return null;
-  var p=E.vrPlan(Object.assign({},a,st), barsUpTo(a.ticker,fromD)); if(!p) return null;
-  var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
-  return {session:ns,basis:fromD,orders:orders,placedAt:Date.now(),carried:true};
+  var s=Object.assign({},a,st), base=vrBase(s); if(!base.length) return null;
+  var log=st&&st.log?st.log:a.log, fee=(s.fee||0)/100, pool=s.pool||0, cum=0, sc=0, orders=[];
+  base.forEach(function(f){
+    var rem=vrLeft(f, log); if(!(rem>0)) return;
+    var o={}; for(var k in f) if(f[k]!==undefined) o[k]=f[k];
+    o.qty=rem;
+    if(o.side==="BUY"){ cum+=o.price*rem*(1+fee); o.left=E.r2(pool-cum); } else { sc+=o.price*rem*(1-fee); o.left=E.r2(pool+sc); }
+    orders.push(o);
+  });
+  if(!orders.length) return null;
+  return {session:ns,basis:fromD,orders:orders,placedAt:(a.pending&&a.pending.placedAt)||Date.now(),carried:true};
 }
 
 // 지난 장 주문을 장 마감 뒤에 기록할 때: 마지막 종가가 나온 날의 주문표를 그 전날 종가 기준으로 다시 만든다.
@@ -779,15 +856,15 @@ function slip(a, plan, buyHtml, sellHtml, notes){
   var carried = placed && a.pending.carried;
   var vrLock = a.type==="VR" && !placed && (vrOrdered(a) || plan.due);
   var past = !placed && !a.pending ? pastPlan(a) : null;
-  var vrMsg = plan.due ? "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요." : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(a.nextUpdate):"-")+") 후에 넣어요.";
+  var vrMsg = plan.due ? (plan.zero ? "0회차 마감(시작 V 정하기)을 먼저 반영하면 1회차 주문을 넣을 수 있어요." : "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요.") : plan.zero ? "" : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+") 후에 넣어요.";
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
     '<div class="when">'+dlabel(plan.session)+' 미국장 주문</div></div>'+
-    (carried?'<span class="placed"><i>✓</i>회차 주문 유지 중 · '+dlabel(a.nextUpdate)+'까지</span>':placed?'<span class="placed"><i>✓</i>주문 넣음 · '+dlabel(plan.session)+'<button type="button" class="placed-x" data-act="cancel-pending">취소</button></span>':'')+'</div>'+
+    (carried?'<span class="placed"><i>✓</i>'+(plan.zero?'첫 매수 주문 유지 중 · ':'회차 주문 유지 중 · ')+dlabel(E.vrDue(a.nextUpdate))+'까지'+'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button></span>':placed?'<span class="placed"><i>✓</i>주문 넣음 · '+dlabel(plan.session)+(a.type==="VR"?'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button>':'<button type="button" class="placed-x" data-act="cancel-pending">취소</button>')+'</span>':'')+'</div>'+
     '<div class="cols"><div class="col buy"><h3>매수</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
     '<div class="col sell"><h3>매도</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
-    (vrLock?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
-    '<div class="actions">'+(placed||vrLock||plan.blocked?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+'<button class="btn" data-act="copy">주문 복사</button>'+(past?'<button class="btn ghost" data-act="place-past">'+dlabel(past.session)+' 주문으로 기록</button>':'')+'</div>'+
+    (vrLock&&vrMsg?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
+    '<div class="actions">'+(placed||vrLock||plan.blocked||!plan.orders.length?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+(shownOrders(a).length?'<button class="btn" data-act="copy">주문 복사</button>':'')+(a.type==="VR"&&!placed&&vrOrdered(a)&&!plan.due?'<button class="btn ghost" data-act="vr-reorder">'+(plan.zero?'첫 매수 다시 내기':'회차 주문 다시 내기')+'</button>':'')+(past?'<button class="btn ghost" data-act="place-past">'+dlabel(past.session)+' 주문으로 기록</button>':'')+'</div>'+
     (past?'<div class="small muted" style="margin-top:6px">'+dlabel(past.session)+' 주문을 넣고 기록을 못 했다면 "'+dlabel(past.session)+' 주문으로 기록"을 누르세요. 그날 주문표로 기록하고 바로 체결을 확인해요.</div>':'')+'</section>';
 }
 
@@ -839,13 +916,38 @@ function renderVR(a){
   var X=function(x){ return Math.max(0,Math.min(100,(x-lo)/(hi-lo)*100)); };
   var state = plan.E<plan.min?"밴드 아래 · 매수 구간":(plan.E>plan.max?"밴드 위 · 매도 구간":"밴드 안 · 대기");
   var roll="";
+  var vt=function(list){ return list.length?'<table class="vtable">'+list.map(function(o,i){return '<tr><td class="idx">'+(o.kind==="vr-first"?'첫':(i+1))+'</td><td class="r"><b>'+n2(o.price)+'</b> × '+(o.qty||1)+'</td><td class="r muted">Pool '+usd(o.left)+'</td></tr>';}).join("")+'</table>':''; };
   var pendBlock = a.pending && a.nextUpdate && a.pending.session<=a.nextUpdate;
-  if(plan.due && !pendBlock){
-    var rb=barsUpTo(a.ticker,a.nextUpdate); rb=rb[rb.length-1]||lb;
+  // 마감 날(휴장이면 그 전 장) 종가가 있어야 마감한다. 그날 시세가 빠지고 다음 장이 먼저 들어오면 기다린다
+  var dueD=E.vrDue(a.nextUpdate), dueBar=a.nextUpdate?barOn(a.ticker,dueD):null;
+  if(plan.due && !pendBlock && !dueBar)
+    roll='<div class="banner warn"><div class="bt">'+(plan.zero?'0회차 마감':(a.cycle||1)+'회차 마감')+' 대기</div><div class="bd">'+dlabel(dueD)+' 종가가 아직 없어 마감을 미뤄요. 종가 데이터가 들어오면 자동으로 마감 화면이 떠요.</div></div>';
+  if(plan.due && !pendBlock && dueBar){
+    var rb=dueBar;
     var r=E.vrRoll(a, rb.c, rb.d);
-    roll='<div class="banner warn"><div class="bt">'+(a.cycle||1)+'회차 마감 · V 갱신</div>'+
+    if(r.zero) roll='<div class="banner warn"><div class="bt">0회차 마감 · '+(r.extended?'아직 첫 매수 전':'시작 V 정하기')+'</div>'+
+      '<div class="bd num">'+(r.extended?'아직 1주도 사지 않았어요. 0회차를 한 주 늘려 '+dlabel(E.vrDue(r.next.nextUpdate))+'까지 첫 매수를 이어 가요.'
+        :dlabel(rb.d)+' 종가 '+usd(rb.c)+' × 보유 '+a.qty+'주 = 평가금 E '+usd(r.E)+'<br>이 평가금을 1회차 V로 잡아요: <b>V '+usd(r.next.V)+'</b> · 밴드 '+usd(r.next.V*(1-(a.band||0.15)))+' ~ '+usd(r.next.V*(1+(a.band||0.15)))+' · 다음 V 갱신 '+dlabel(E.vrDue(r.next.nextUpdate)))+'</div>'+
+      '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="roll">'+(r.extended?'0회차 한 주 늘리기':'V 정하고 1회차 시작')+'</button></div></div>';
+    else roll='<div class="banner warn"><div class="bt">'+(a.cycle||1)+'회차 마감 · V 갱신</div>'+
       '<div class="bd num">'+dlabel(rb.d)+' 종가 '+usd(rb.c)+' · E '+usd(r.E)+'<br>다음 V = '+usd(a.V)+' + Pool/G '+usd(a.pool/(a.G||10))+' + (E−V)÷2√G '+usd((r.E-a.V)/(2*Math.sqrt(a.G||10)))+(r.contrib?' + 적립 '+usd(r.contrib):'')+' = <b>'+usd(r.next.V)+'</b></div>'+
       '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="roll">V 갱신 반영</button></div></div>';
+  }
+  if(plan.zero){
+    var zLim=plan.cap?Math.min(100,Math.max(0,plan.used/plan.cap*100)):0;
+    var zhero='<section class="panel"><div class="hero"><div><span class="pill first">0회차 · 첫 매수</span> <span class="small muted">'+esc(a.ticker)+' '+({INSTALLMENT:"적립식",LUMPSUM:"거치식",WITHDRAWAL:"인출식"}[a.vrType||"INSTALLMENT"])+' · G '+(a.G||10)+' · '+(a.nextUpdate?dlabel(E.vrDue(a.nextUpdate))+' 마감 후 1회차':'')+'</span>'+
+      '<div class="bigT">'+Math.round(zLim)+'% <small>매수 진행</small></div></div>'+
+      '<div class="pl"><div class="v '+signCls(v.pl)+'">'+pct(v.pl)+'</div><div class="s num">평가 '+usd(v.eq,0)+' / 투자 '+usd(v.base,0)+'</div></div></div>'+
+      '<div class="vm-bar" style="height:8px;margin:6px 0 2px"><i style="width:'+zLim+'%"></i></div><div class="small muted num">매수 '+usd(plan.used)+' / 한도 '+usd(plan.cap)+' ('+plan.limitPct+'%)</div>'+
+      '<div class="stats" style="margin-top:14px">'+stat("보유 · 평단",(a.qty||0)+"주"+'<div class="small muted">'+(a.avg&&a.qty?'평단 '+usd(a.avg):'-')+'</div>')+stat("평가금 E",usd(plan.E))+stat("Pool",usd(a.pool))+stat("남은 매수 한도",usd(plan.limit))+stat("0회차 마감",a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+stat("V",'<span class="small muted">0회차 마감 때 정해요</span>')+'</div>'+
+      '<div class="small muted" style="margin-top:10px">VR은 보유 주식이 있어야 V 공식으로 매수·매도 지점이 나와요. 0회차에는 시작 Pool의 매수 한도 안에서 TQQQ를 사 두고, 마감 날 종가 기준 평가금을 1회차 V로 잡아요.</div></section>';
+    var zPlaced=a.pending&&a.pending.session===plan.session, zDone=vrOrdered(a)&&!zPlaced&&!a.pending;
+    var znotes=zPlaced||zDone?[]:plan.notes.slice();
+    if(zPlaced&&a.pending.carried) znotes.push("처음 넣은 첫 매수 주문(지정가 "+usd(a.pending.orders[0].price)+")의 남은 "+a.pending.orders[0].qty+"주를 0회차 마감까지 이어서 확인해요. 증권사에서 주문을 취소했다면 '주문 취소·다시 내기'를 누르세요.");
+    if(zDone) znotes.push((a.qty>0?"첫 매수 주문이 끝났어요. ":"")+"0회차 마감("+dlabel(E.vrDue(a.nextUpdate))+") 종가로 V를 정하고 1회차 주문표를 보여 드려요. 증권사에 아직 남은 주문이 있다면 '첫 매수 다시 내기'로 다시 기록하세요.");
+    znotes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
+    var zList=vrOrdered(a)?shownOrders(a):plan.buys;
+    return banners(a)+roll+zhero+slip(a,plan,vt(zList),"",znotes)+undoPanel()+vrManual(a)+vrTradeLog(a)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
   }
   var hero='<section class="panel"><div class="hero"><div><span class="pill">'+esc(state)+'</span> <span class="small muted">'+esc(a.ticker)+' '+({INSTALLMENT:"적립식",LUMPSUM:"거치식",WITHDRAWAL:"인출식"}[a.vrType||"INSTALLMENT"])+' · G '+(a.G||10)+' · '+(a.cycle||1)+'회차</span>'+
     '<div class="bigT">E/V '+(plan.ratio!=null?plan.ratio.toFixed(3):"-")+'</div></div>'+
@@ -854,10 +956,14 @@ function renderVR(a){
       '<div class="bandz" style="left:'+X(plan.min)+'%;width:'+(X(plan.max)-X(plan.min))+'%"></div>'+
       '<div class="vt" style="left:'+X(a.V)+'%"></div><div class="et" style="left:'+X(plan.E)+'%" title="E"></div>'+
       '<span class="gl" style="left:'+X(plan.min)+'%">'+usd(plan.min,0)+'</span><span class="gl" style="left:'+X(a.V)+'%">V '+usd(a.V,0)+'</span><span class="gl" style="left:'+X(plan.max)+'%">'+usd(plan.max,0)+'</span></div>'+
-    '<div class="stats" style="margin-top:14px">'+stat("V",usd(a.V))+stat("평가금 E",usd(plan.E))+stat("Pool",usd(a.pool))+stat("이번 사이클 매수 한도 "+plan.limitPct+"%",usd(plan.limit)+' <span class="small muted">/ '+usd(plan.cap)+'</span>')+stat("보유 · 평단",a.qty+"주"+'<div class="small muted">'+(a.avg&&a.qty?'평단 '+usd(a.avg)+' <span class="'+signCls(lb.c-a.avg)+'">'+pct(lb.c/a.avg-1)+'</span>':'평단 미입력 (상태 수정)')+'</div>')+stat("다음 V 갱신",a.nextUpdate?dlabel(a.nextUpdate):"-")+'</div></section>';
-  var vt=function(list){ return list.length?'<table class="vtable">'+list.map(function(o,i){return '<tr><td class="idx">'+(i+1)+'</td><td class="r"><b>'+n2(o.price)+'</b> × 1</td><td class="r muted">Pool '+usd(o.left)+'</td></tr>';}).join("")+'</table>':''; };
-  var buyHtml=vt(plan.buys), sellHtml=vt(plan.sells);
+    '<div class="stats" style="margin-top:14px">'+stat("V",usd(a.V))+stat("평가금 E",usd(plan.E))+stat("Pool",usd(a.pool))+stat("이번 사이클 매수 한도 "+plan.limitPct+"%",usd(plan.limit)+' <span class="small muted">/ '+usd(plan.cap)+'</span>')+stat("보유 · 평단",a.qty+"주"+'<div class="small muted">'+(a.avg&&a.qty?'평단 '+usd(a.avg)+' <span class="'+signCls(lb.c-a.avg)+'">'+pct(lb.c/a.avg-1)+'</span>':'평단 미입력 (상태 수정)')+'</div>')+stat("다음 V 갱신",a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+'</div></section>';
+  // 회차 주문을 넣었으면 화면도 복사도 증권사에 남아 있는 그 주문(shownOrders)으로. 상태 수정으로 지금 계산과 달라졌으면 알려 준다
+  var rPlaced=vrOrdered(a)&&!!a.pending, rList=vrOrdered(a)?shownOrders(a):plan.orders;
+  var side=function(sd){ return rList.filter(function(o){ return o.side===sd; }); };
+  var buyHtml=vt(side("BUY")), sellHtml=vt(side("SELL"));
   var notes=plan.notes.slice();
+  var sig=function(l){ return l.map(function(o){ return o.side+o.price+"x"+o.qty; }).join(","); };
+  if(rPlaced&&a.cycleEdited&&sig(rList)!==sig(plan.orders)) notes.unshift("이미 넣은 회차 주문을 보여 드려요. 상태 수정 뒤라 지금 상태로 계산한 주문표와 달라요. 증권사 주문을 새로 넣었다면 위 '주문 취소·다시 내기'로 다시 기록하세요.");
   notes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
   return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+undoPanel()+vrManual(a)+vrTradeLog(a)+vrRecords(a,plan)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
 }
@@ -1016,9 +1122,11 @@ function vrNotes(a){
 function vrPatchOf(s){ var p={qty:s.qty,avg:s.avg==null?null:s.avg,pool:s.pool,cycleUsed:s.cycleUsed==null?0:s.cycleUsed}; if(s.cycleCap!=null) p.cycleCap=s.cycleCap; return p; }
 function vrInsertLog(log, l){ var i=0; while(i<log.length&&log[i].d>l.d) i++; log.splice(i,0,l); return log; }
 function vrCommit(a, patch, log, label, msg, b){
-  // 회차 주문을 유지 중이면 바뀐 보유수량으로 다음 장 주문표를 다시 만든다
-  if(a.pending&&a.pending.carried){ patch.pending=vrCarry(a,patch,a.pending.basis); delete fillEdits[a.id]; }
+  // 회차 주문을 유지 중이면(다 체결돼 비었어도) 넣은 주문에서 이 주문들의 체결 기록만 빼서 남은 주문을 다시 센다.
+  // 직접 넣은 매매(번호 없음)는 증권사 주문을 바꾸지 않으므로 잔량도 그대로다
   patch.log=log.slice(0,400);
+  var lbK=lastBar(a.ticker), fromK=a.pending&&a.pending.carried?a.pending.basis:(!a.pending&&vrOrdered(a)&&Array.isArray(a.cycleOrders)&&a.cycleOrders.length&&lbK?lbK.d:null);
+  if(fromK){ patch.pending=vrCarry(a,patch,fromK); delete fillEdits[a.id]; }
   var prev=JSON.parse(JSON.stringify(a)); delete prev._plan;
   if(b) b.disabled=true;
   return save(a,patch).then(function(){
@@ -1050,6 +1158,13 @@ function vrTradeUpdate(a, b){
   var ed=vmf.edit, old=ed&&vrLogAt(a,ed.i); if(!old){ vmf.edit=null; render(); return; }
   var un=E.vrUnapply(a,old); if(un.error){ toast(un.error); return; }
   var base=Object.assign({},a,un.next), v=vrFormVals(a,old.side,base); if(!v) return;
+  // 넣은 주문의 체결(oid)을 고칠 때: 같은 주문의 체결 합계가 넣은 수량(oq)을 넘으면 안 된다
+  if(old.oid!=null){
+    var po=(a.cycleOrders||(a.pending&&a.pending.orders)||[]).filter(function(o){ return o.oid===old.oid; })[0];
+    var cap=old.oq!=null?old.oq:po?(po.qty0!=null?po.qty0:po.qty):null;
+    var other=(a.log||[]).reduce(function(t,l,i){ return t+(i!==ed.i&&l.side===old.side&&l.oid===old.oid?(l.q||0):0); },0);
+    if(cap!=null&&other+v.q>cap){ toast((old.kind==="vr-first"?"첫 매수 주문은 ":"이 주문은 ")+cap+"주였어요. 이 주문의 다른 체결 "+other+"주와 합쳐 "+cap+"주까지만 넣을 수 있어요. 따로 산 것이면 새 "+(old.side==="BUY"?"매수":"매도")+" 기록으로 넣으세요."); return; }
+  }
   var r=vrAddTo(a,base,old.side,v.d,v.px,v.q), log=(a.log||[]).slice(); log.splice(ed.i,1);
   var nl=Object.assign({},old,{d:v.d,px:v.px,q:v.q,edited:true});
   vrCommit(a, r.patch, vrInsertLog(log,nl), dlabel(v.d)+" 거래 수정", "거래 기록을 수정했어요.", b);
@@ -1142,7 +1257,7 @@ function closeOn(tk, d){ var b=bars(tk), x=null; for(var i=0;i<b.length;i++){ if
 function computeRows(entries, trades, tk){
   var sorted=(entries||[]).slice().sort(function(a,b){return a.date<b.date?-1:1;});
   // 매매는 미국 장 날짜로 기록되고, 원화 기록은 한국 날짜라서 그 매매가 반영된 보유·평단은 다음 날(한국) 줄에 보인다
-  var tr = trades ? tradeRows(trades).map(function(r){ return Object.assign({}, r, {date: tk ? E.addDays(r.usDate||r.date,1) : r.date}); }) : [];
+  var tr = trades ? tradeRows(trades).map(function(r){ return Object.assign({}, r, {date: tk && !r.join ? E.addDays(r.usDate||r.date,1) : r.date}); }) : [];
   var per=[]; tr.forEach(function(r){ var l=per[per.length-1]; if(l&&l.date===r.date){ l.qty=r.cumQty; l.avg=r.avgPrice; } else per.push({date:r.date,qty:r.cumQty,avg:r.avgPrice}); });
   var asOf=function(d){ var x=null; for(var i=0;i<per.length;i++){ if(per[i].date<=d) x=per[i]; else break; } return x; };
   var dayInfo={}; tr.forEach(function(r){ dayInfo[r.date]={tradePrice:r.price, soxlPrice:r.soxlPrice!=null?r.soxlPrice:null}; });
@@ -1914,28 +2029,24 @@ function save(a, patch){
   if(!db){ toast("저장소에 연결되지 않았어요."); return Promise.reject(); }
   return db.doc("accounts/"+a.id).update(patch).catch(function(e){ toast("저장하지 못했어요: "+(e&&e.message||"")); throw e; });
 }
+// 화면 주문표와 같은 목록: 넣은 주문이 있으면 그 주문(VR은 체결 확인 중이어도 아직 남은 회차 주문), VR 회차 주문을 다 체결했거나 V 갱신 차례면 없음, 아니면 새 주문표
+function shownOrders(a){
+  var p=a._plan; if(!p) return [];
+  if(a.pending&&(a.pending.session===p.session||vrOrdered(a))) return a.pending.orders||[];
+  if(a.type==="VR"&&(vrOrdered(a)||p.due)) return [];
+  return p.orders||[];
+}
 function copyText(a){
-  var p=a._plan; if(!p) return "";
-  var lines=[a.name+" · "+a.ticker+" · "+dlabel(p.session)+" 미국장"];
-  p.orders.forEach(function(o){
+  var p=a._plan, list=shownOrders(a); if(!p||!list.length) return "";
+  var lines=[a.name+" · "+a.ticker+" · "+dlabel(p.session)+" 미국장"+(a.pending&&a.pending.carried?" (이미 넣은 주문 확인용)":"")];
+  list.forEach(function(o){
     var px=o.big?o.orig:o.price;
     lines.push("["+(o.side==="BUY"?"매수":"매도")+"] "+(o.type==="LIMIT"?"지정가":o.type)+" "+(px!=null?n2(px):"")+" × "+o.qty+" ("+o.label+")"+(o.big?" / 큰수 LOC "+n2(o.price):""));
   });
   return lines.join("\n");
 }
 
-// "내 계좌 두 개 불러오기"는 예전 트래커의 1~6차 기록이 있는 계정(= 만든 사람 계정)에서만 보인다
-var OWNER_CYCLE_IDS=["cycle_r1","cycle_r2","cycle_r3","cycle0","cycle_r5","cycle1"];
-function isOwner(){ return trk.cycles.some(function(c){ return OWNER_CYCLE_IDS.indexOf(c.id)>=0; }); }
-function seedDemo(){
-  if(!db||!isOwner()) return;
-  var ts=Date.now();
-  var inf={id:"acct-soxl",type:"INF",name:"SOXL 무매 20/20",ticker:"SOXL",createdAt:ts,order:0,N:20,basePct:20,principal:54400,initialPrincipal:54400,cash:54400,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:1.12,fee:0.07,realized:0,aside:0,pending:null,events:[],log:[]};
-  var vr={id:"acct-vr1",type:"VR",name:"VR 1호",ticker:"TQQQ",createdAt:ts+1,order:1,V:2834.39,pool:300,qty:37,G:10,band:0.15,contrib:150,vrType:"INSTALLMENT",invested:2387.06,nextUpdate:"2026-10-09",cycle:1,fee:0.07,pending:null,events:[],log:[]};
-  Promise.all([db.doc("accounts/acct-soxl").set(inf),db.doc("accounts/acct-vr1").set(vr)]).then(function(){ return linkAccount(inf,!!legacyFree()); }).then(function(){ toast("계좌 두 개를 불러왔어요"+(trk.metas.current?" (SOXL은 예전 트래커 기록으로 이어받음)":"")+". 값이 다르면 상태 수정에서 고치세요."); });
-}
 document.addEventListener("click", function(ev){
-  if(ev.target.closest("#seed-btn")){ seedDemo(); return; }
   var kt=ev.target.closest("[data-kind]"); if(kt){ var nk=kt.getAttribute("data-kind"); if(nk!==curType||addMode){ addMode=false; if(nk!==curType){ curType=nk; selected=null; } render(); } return; }
   var t=ev.target.closest("[data-id].tab"); if(t){ addMode=false; selected=t.getAttribute("data-id"); render(); return; }
   var ad=ev.target.closest("[data-add]");
@@ -1992,10 +2103,19 @@ document.addEventListener("click", function(ev){
     save(a,{ladMore:nn?{session:lp.session,n:nn}:null}).then(function(){ undoSet("사다리 칸 수 변경",prevL); render(); });
   } else if(act==="place"){
     var p=a._plan, prevP=snapA();
-    if(!p||p.blocked) return;
+    if(!p||p.blocked||!p.orders.length) return;
     var pp={pending:pendingOf(p), events:[]};
-    if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true; }
+    if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true;
+      // 모든 회차: 주문마다 번호(oid)와 넣은 수량(qty0)을 적어 cycleOrders에 남긴다. 체결 기록에 같은 번호를 붙여 잔량을 센다 (vrCarry)
+      pp.cycleOrders=vrNumber(pp.pending.orders, pp.pending.placedAt); pp.cycleEdited=false; }
     save(a,pp).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
+  } else if(act==="vr-reorder"){
+    // VR 주문을 증권사에서 취소했을 때: 유지 중인 주문을 지우고 지금 상태로 새 주문표를 낸다 (0회차는 오늘 종가 기준 첫 매수, 1회차부터는 이번 회차 남은 한도 안의 주문)
+    if(a.type!=="VR"||!vrOrdered(a)) return;
+    var zr=a.cycle===0, wn=zr?"첫 매수 주문":"회차 주문";
+    if(!confirm("증권사에서 "+wn+"이 취소된 것을 확인했나요?\n취소 전에 일부 체결됐다면 그 체결을 먼저 기록한 뒤 누르세요. 확인을 누르면 지금 상태로 새 주문표를 만들어요.")) return;
+    var prevZ=snapA(); delete fillEdits[a.id];
+    save(a,{pending:null,cycleOrdered:false,cycleOrders:null,cycleEdited:false}).then(function(){ toast(wn+"을 취소로 기록했어요. 새 주문표로 다시 넣으세요."); undoSet(wn+" 취소",prevZ); render(); });
   } else if(act==="place-past"){
     // 대기 중인 다음 장 기록이 있으면 그것을 지난 장 주문표로 바꾼다 (이미 종가가 나온 기록은 건드리지 않음)
     var ps=pastPlan(a); if(!ps||(a.pending&&barOn(a.ticker,a.pending.session))) return;
@@ -2005,6 +2125,7 @@ document.addEventListener("click", function(ev){
     downloadCSV("VR_"+a.name+"_회차기록_"+todayKR(),["회차","마감일","종가","수량","평가금E","V","최소밴드","최대밴드","Pool(적립 전)","다음 회차 Pool","투입원금","다음 V","매수 주수","매도 주수"],vrRows(a,null).map(function(r){return [r.c,r.d,r.close,r.qty,r.E,r.V,r.min,r.max,r.pool,r.poolNext,r.invested,r.Vnext,r.buyQ,r.sellQ];}));
   } else if(act==="copy"){
     var txt=copyText(a);
+    if(!txt){ toast("복사할 주문이 없어요."); return; }
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){toast("주문을 복사했어요.");},function(){toast("복사가 막혀 있어요. 주문표를 길게 눌러 복사하세요.");}); }
     else toast("복사가 막혀 있어요.");
   } else if(act==="fills-manual"){
@@ -2017,21 +2138,32 @@ document.addEventListener("click", function(ev){
     if(a.type==="INF"&&a.pending&&lbC&&lbC.d>=a.pending.session) cp.lastSession=a.pending.session;
     if(a.type==="VR"&&a.pending){
       var waiting=!barOn(a.ticker,a.pending.session);
-      if(a.pending.cycleOrder&&waiting&&!(lastBar(a.ticker)&&lastBar(a.ticker).d>a.pending.session)) cp.cycleOrdered=false;
+      if(a.pending.cycleOrder&&waiting&&!(lastBar(a.ticker)&&lastBar(a.ticker).d>a.pending.session)){ cp.cycleOrdered=false; cp.cycleOrders=null; }
       else cp.pending=vrCarry(a,{},a.pending.session);
     }
     save(a,cp).then(function(){toast("주문 기록을 지웠어요."); undoSet(lbl,prevC); render();});
   } else if(act==="apply-fills"){
     var p2=a.pending, bar=barOn(a.ticker,p2.session), fe=fillEdits[a.id];
     var fills=fe.fills;
+    var over=a.type==="VR"?fills.filter(function(f){ return f.filled&&f.qty>f.order.qty; })[0]:null;
+    if(over){ toast((over.order.label||"주문")+"의 남은 수량("+over.order.qty+"주)보다 많이 넣을 수 없어요. 다른 매매였다면 아래 매수/매도 기록에 따로 넣으세요."); return; }
     var res = a.type==="VR" ? E.vrApply(a,fills,bar) : E.infApply(a,fills,bar);
+    // 체결마다 넣은 주문의 번호(oid)와 넣은 수량(oq)을 붙인다. 예전 기록(번호 없음)은 지금 유지 중인 주문을 기준으로 이번에 번호를 붙인다
+    var vbase=a.type==="VR"&&vrOrdered(a)?vrBase(a):null;
+    if(vbase){
+      var vf=fills.filter(function(f){ return f.filled&&f.qty>0&&f.px>0; });
+      res.log.forEach(function(l,i){ var o=vf[i]&&vf[i].order; if(!o) return;
+        var bo=vbase.filter(function(x){ return o.oid!=null?x.oid===o.oid:(x.side===o.side&&x.label===o.label&&x.price===o.price); })[0];
+        if(bo){ l.oid=bo.oid; l.oq=bo.qty0!=null?bo.qty0:bo.qty; } });
+    }
     var n=res.next, patch={};
     var keys = a.type==="VR" ? ["qty","avg","pool","cycleCap","cycleUsed"] : ["T","cash","qty","avg","mode","revDay","realized","cycle","principal","aside"];
     keys.forEach(function(k){ patch[k]= n[k]===undefined?null:n[k]; });
-    patch.pending=a.type==="VR"?vrCarry(a,n,p2.session):null;
+    patch.log=res.log.slice().reverse().concat(a.log||[]).slice(0,400);
+    if(vbase&&!(Array.isArray(a.cycleOrders)&&a.cycleOrders.length)) patch.cycleOrders=vbase;
+    patch.pending=a.type==="VR"?vrCarry(a,Object.assign({},n,{log:patch.log},vbase?{cycleOrders:vbase}:{}),p2.session):null;
     if(a.type==="INF") patch.lastSession=p2.session;
     patch.events=res.events;
-    patch.log=res.log.slice().reverse().concat(a.log||[]).slice(0,400);
     b.disabled=true;
     var prevA=JSON.parse(JSON.stringify(a)); delete prevA._plan;
     var undoLabel=dlabel(p2.session)+" 체결 반영", done=function(msg){ delete fillEdits[a.id]; toast(msg||(res.log.length?res.log.length+"건을 반영했어요.":"체결 없음으로 기록했어요.")); };
@@ -2049,10 +2181,10 @@ document.addEventListener("click", function(ev){
       save(a,patch).then(function(){ done(); pushUndo(undoLabel,[{p:"accounts/"+a.id,d:prevA}]); render(); });
     }
   } else if(act==="roll"){
-    var rb=barsUpTo(a.ticker,a.nextUpdate); rb=rb[rb.length-1]||lastBar(a.ticker);
+    var rb=barOn(a.ticker,E.vrDue(a.nextUpdate)); if(!rb){ toast(dlabel(E.vrDue(a.nextUpdate))+" 종가가 아직 없어요."); return; }
     var r=E.vrRoll(a,rb.c,rb.d), nx=r.next, prevR=snapA();
-    var note={d:rb.d,side:"NOTE",text:(a.cycle||1)+"회차 마감: V "+usd(a.V)+" → "+usd(nx.V)+", Pool "+usd(nx.pool)+" (E "+usd(r.E)+")"};
-    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,hist:nx.hist,cycleOrdered:false,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast("V를 "+usd(nx.V)+"로 갱신했어요."); undoSet((a.cycle||1)+"회차 V 갱신",prevR); render();});
+    var note={d:rb.d,side:"NOTE",text:r.zero?(r.extended?"0회차 연장: 아직 첫 매수 전이라 "+dlabel(E.vrDue(nx.nextUpdate))+"까지 늘림":"0회차 마감: 보유 "+a.qty+"주 × 종가 "+usd(rb.c)+" = E "+usd(r.E)+" → 1회차 V "+usd(nx.V)+", Pool "+usd(nx.pool)):(a.cycle||1)+"회차 마감: V "+usd(a.V)+" → "+usd(nx.V)+", Pool "+usd(nx.pool)+" (E "+usd(r.E)+")"};
+    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,hist:nx.hist,cycleOrdered:false,cycleOrders:null,cycleEdited:false,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast(r.zero?(r.extended?"0회차를 한 주 늘렸어요.":"V를 "+usd(nx.V)+"로 정하고 1회차를 시작했어요."):"V를 "+usd(nx.V)+"로 갱신했어요."); undoSet(r.zero?"0회차 마감":(a.cycle||1)+"회차 V 갱신",prevR); render();});
   } else if(act==="del"){
     if(b.getAttribute("data-armed")!=="1"){ b.setAttribute("data-armed","1"); b.textContent="한 번 더 누르면 삭제됩니다"; return; }
     var prevD=snapA(), own=a.type==="INF"&&a.linked==="own", recP=own?[recPath(a)].concat(entriesOf(a).map(function(e){ return "entries/"+e.id; })):[], uD=snap(recP);
@@ -2091,6 +2223,7 @@ document.addEventListener("submit", function(ev){
     numKeys.forEach(function(k){ var v=num("e-"+k); if(v!==undefined) patch[k]=v; });
     if(a.type==="VR"){ patch.nextUpdate=$("e-nextUpdate").value||null; patch.vrType=$("e-vrType").value;
       // 이번 사이클 한도를 수정값으로 다시 잡는다: (지금 Pool + 이번 사이클에 쓴 돈) = 사이클 시작 Pool
+      if(vrOrdered(a)) patch.cycleEdited=true;
       var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); if(patch.qty===0) patch.avg=null; }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
     var pre=Promise.resolve(), prevA=JSON.parse(JSON.stringify(a)); delete prevA._plan;
@@ -2109,8 +2242,12 @@ document.addEventListener("submit", function(ev){
   } else if(f.id==="add-form"){
     var type=$("n-type").value, tk=$("n-ticker").value, name=$("n-name").value.trim();
     var id="acct-"+Date.now().toString(36);
-    var base={id:id,type:type,name:name,ticker:tk,createdAt:Date.now(),order:orderedAccounts().length,log:[],events:[],pending:null,fee:0.07};
+    var feeIn=parseFloat($("n-fee").value);
+    if(!(feeIn>=0)||feeIn>5){ toast("수수료(%)를 확인해주세요. 예: 0.07"); $("n-fee").focus(); return; }
+    var base={id:id,type:type,name:name,ticker:tk,createdAt:Date.now(),order:orderedAccounts().length,log:[],events:[],pending:null,fee:feeIn};
     var joining=$("n-join").checked, jd=todayKR();
+    var bpIn=parseFloat($("n-basePct").value), bmIn=parseFloat($("n-bigMult").value);
+    var infBase=bpIn>0&&bpIn<100?bpIn:(tk==="TQQQ"?15:20), infBig=bmIn>=1&&bmIn<2?bmIn:1.12;
     if(type==="INF"){
       var pr=parseFloat($("n-principal").value), N0=parseInt($("n-N").value,10);
       if(joining){
@@ -2127,7 +2264,7 @@ document.addEventListener("submit", function(ev){
         // 파일로 불러온 매매가 있으면 그 매매를 기록으로 남기고, 칸 값을 고쳤을 때만 마지막에 합류 줄로 맞춘다
         var imp=infImport&&infImport.seed===pr&&infImport.trades.length?infImport:null, jn={d:jd,qty:jq,avg:ja,cash:jc,T:jT};
         if(imp&&imp.qty===jq&&Math.abs(imp.cash-jc)<0.01&&(ja==null?imp.avg==null:imp.avg!=null&&Math.abs(imp.avg-ja)<0.0001)) jn=null;
-        Object.assign(base,{N:N0,basePct:tk==="TQQQ"?15:20,principal:pr,initialPrincipal:pr,cash:jc,T:jT,qty:jq,avg:ja,mode:jm,revDay:jm==="REVERSE"?1:0,cycle:jcy,compound:true,bigMult:1.12,realized:0,aside:0,
+        Object.assign(base,{N:N0,basePct:infBase,principal:pr,initialPrincipal:pr,cash:jc,T:jT,qty:jq,avg:ja,mode:jm,revDay:jm==="REVERSE"?1:0,cycle:jcy,compound:true,bigMult:infBig,realized:0,aside:0,
           join:jn,
           _imp:(imp?imp.trades.map(function(t){ var l={d:t.date,side:t.type==="buy"?"BUY":"SELL",kind:"import",px:t.price,q:t.qty,fee:0};
               if(t.type==="buy") l.tDelta=t.tDelta||0; else { l.tMult=t.tMult!=null?t.tMult:1; if(t.tTag) l.tTag=t.tTag; if(t.pnl!=null) l.pnl=t.pnl; } return l; }).reverse():[]),
@@ -2136,14 +2273,26 @@ document.addEventListener("submit", function(ev){
         base.log=base._note.concat(base._imp); delete base._note; delete base._imp;
       } else {
       if(!(pr>0)){ toast("원금을 넣어주세요."); return; }
-      Object.assign(base,{N:N0,basePct:tk==="TQQQ"?15:20,principal:pr,initialPrincipal:pr,cash:pr,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:1.12,realized:0,aside:0});
+      Object.assign(base,{N:N0,basePct:infBase,principal:pr,initialPrincipal:pr,cash:pr,T:0,qty:0,avg:null,mode:"NORMAL",revDay:0,cycle:1,compound:true,bigMult:infBig,realized:0,aside:0});
+      // 오늘 만든 계좌라 마지막 종가 날(지난 장)은 이미 지난 것으로 둔다 ("N/D 주문으로 기록" 버튼을 띄우지 않음)
+      var lbN=lastBar(tk); if(lbN) base.lastSession=lbN.d;
       }
+    } else if(!joining){
+      // VR 새로 시작: 0회차(첫 매수)로 만든다. V는 0회차 마감 때 그 평가금으로 정해진다 (engine vrRoll)
+      var pool0=parseFloat($("n-pool").value), vt0=$("n-vrType").value, lb0=lastBar(tk);
+      if(!(pool0>0)){ toast("시작 Pool(처음 넣는 돈)을 넣어주세요."); $("n-pool").focus(); return; }
+      if(!lb0){ toast(tk+" 종가가 아직 없어요. 종가가 들어온 뒤 다시 만들어주세요."); return; }
+      var band0=parseFloat($("n-band").value), G0=parseInt($("n-G").value,10);
+      Object.assign(base,{V:0,pool:pool0,qty:0,avg:null,G:G0>0?G0:10,band:band0>0&&band0<100?band0/100:0.15,contrib:vt0==="LUMPSUM"?0:(parseFloat($("n-contrib").value)||0),vrType:vt0,startWeek:0,fromZero:vt0==="INSTALLMENT"&&$("n-fromZero").checked,
+        invested:pool0,nextUpdate:zeroEnd(lb0.d),cycle:0,cycleOrdered:false,cycleOrders:null});
+      base.log=[{d:jd,side:"NOTE",text:"새로 시작: 0회차(첫 매수) · 시작 Pool "+usd(pool0)+" · "+dlabel(E.vrDue(base.nextUpdate))+" 마감 때 평가금으로 V를 정해요"}];
     } else {
       var V=parseFloat($("n-V").value), pool=parseFloat($("n-pool").value);
-      if(!(V>0)||!(pool>=0)){ toast("시작 V와 Pool을 넣어주세요."); return; }
+      if(!(V>0)||!(pool>=0)){ toast("지금 V와 Pool을 넣어주세요."); return; }
       var vq=parseInt($("n-qty").value,10)||0, vinv=parseFloat($("n-vinv").value), vcy=joining?parseInt($("n-vcycle").value,10):1;
       if(!(vcy>=1)){ toast("지금 몇 회차인지 넣어주세요."); $("n-vcycle").focus(); return; }
-      Object.assign(base,{V:V,pool:pool,qty:vq,avg:vq>0&&parseFloat($("n-avg").value)>0?parseFloat($("n-avg").value):null,G:10,band:0.15,contrib:parseFloat($("n-contrib").value)||0,vrType:"INSTALLMENT",startWeek:0,invested:joining&&vinv>0?vinv:pool+vq*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:vcy});
+      Object.assign(base,{V:V,pool:pool,qty:vq,avg:vq>0&&parseFloat($("n-avg").value)>0?parseFloat($("n-avg").value):null,G:10,band:0.15,contrib:$("n-vrType").value==="LUMPSUM"?0:(parseFloat($("n-contrib").value)||0),vrType:$("n-vrType").value,startWeek:0,invested:joining&&vinv>0?vinv:pool+vq*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:vcy});
+      var bandJ=parseFloat($("n-band").value), GJ=parseInt($("n-G").value,10); if(bandJ>0&&bandJ<100) base.band=bandJ/100; if(GJ>0) base.G=GJ;
       if(joining&&vrImport){ base.G=vrImport.G; base.band=vrImport.band; base.hist=vrImport.hist; if(vrImport.lastRoll) base.lastRoll=vrImport.lastRoll; }
       if(joining) base.log=[{d:jd,side:"NOTE",text:(vrImport?"기록표("+vrImport.rows+"회차)로 ":"")+"이어서 하기: "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
     }
@@ -2372,15 +2521,30 @@ $("n-principal").addEventListener("input", function(){ clearTimeout(iiTimer); va
 // 계좌 추가: 전략(무매/VR)과 "이어서 하기"에 따라 칸을 보이고 숨긴다
 function addFormRefresh(){
   var vr=$("n-type").value==="VR", jn=$("n-join").checked;
-  document.querySelectorAll("#add-panel .vr-only, #add-panel .inf-only, #add-panel .join-only").forEach(function(e){
-    var ok=(e.classList.contains("vr-only")?vr:e.classList.contains("inf-only")?!vr:true)&&(!e.classList.contains("join-only")||jn);
+  document.querySelectorAll("#add-panel .vr-only, #add-panel .inf-only, #add-panel .join-only, #add-panel .new-only").forEach(function(e){
+    var ok=(e.classList.contains("vr-only")?vr:e.classList.contains("inf-only")?!vr:true)&&(!e.classList.contains("join-only")||jn)&&(!e.classList.contains("new-only")||!jn);
     e.hidden=!ok;
   });
-  $("n-V-label").textContent=jn?"지금 V ($)":"시작 V ($)";
+  var vt=$("n-vrType").value;
+  $("n-pool-label").textContent=jn?"Pool ($)":"시작 Pool ($, 처음 넣는 돈)";
+  $("n-contrib-label").textContent=vt==="WITHDRAWAL"?"2주 인출금 ($)":"2주 적립금 ($)";
+  $("n-contrib").closest(".field").hidden=!vr||vt==="LUMPSUM";
+  feeChips();
   document.querySelectorAll("#add-form .join-seg button").forEach(function(b){ b.classList.toggle("on",(b.getAttribute("data-add")==="join")===jn); });
   joinHint();
 }
 // 이어서 하기 안내: 무매는 추정 T, VR은 지금 평가금 E와 V 비교 (라오어 중간합류 글: E가 직전 V보다 낮을 때 합류 추천)
+// 수수료 칸: 증권사 버튼을 누르면 값이 들어가고, 지금 값과 같은 버튼은 강조
+function feeChips(){ var v=parseFloat($("n-fee").value); document.querySelectorAll("#add-form .fee-chip").forEach(function(b){ b.classList.toggle("on",!isNaN(v)&&Math.abs(parseFloat(b.getAttribute("data-fee"))-v)<1e-9); }); }
+document.addEventListener("click", function(ev){ var c=ev.target.closest(".fee-chip"); if(!c) return; $("n-fee").value=c.getAttribute("data-fee"); feeChips(); });
+document.addEventListener("input", function(ev){ if(ev.target.id==="n-fee") feeChips(); });
+document.addEventListener("change", function(ev){ if(ev.target.id==="n-vrType") addFormRefresh(); });
+// VR 0회차 마감일: 다음 장이 있는 주의 마지막 장 (보통 금요일)
+// 금요일이 휴장일이면 그 전 장에 마감한다 (E.vrDue). 저장은 금요일로 해서 연장·1회차도 금요일 간격을 지킨다
+function zeroEnd(lastD){
+  var ns=E.nextSession(lastD), dow=new Date(ns+"T00:00:00Z").getUTCDay();
+  return E.addDays(ns,(5-dow+7)%7);
+}
 function joinEstT(N, q, avg, cash){ var held=q*avg; return held>0&&cash>=0 ? Math.round(N*held/(held+cash)*10000)/10000 : (q>0?null:0); }
 function joinHint(){
   var h=$("join-hint"); if(!h||!$("n-join").checked) return;
@@ -2439,9 +2603,9 @@ window.DeskApp = {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-import { FIREBASE_CONFIG, VAPID_KEY } from "./firebase-config.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { FIREBASE_CONFIG, VAPID_KEY, OWNER_UIDS } from "./firebase-config.js";
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -2507,6 +2671,7 @@ $("auth-toggle").addEventListener("click", () => {
   $("auth-title").textContent = signup ? "계정 만들기" : "로그인";
   $("auth-submit").textContent = signup ? "계정 만들기" : "로그인";
   $("auth-toggle").textContent = signup ? "이미 계정이 있으면 로그인" : "처음이면 계정 만들기";
+  $("auth-code-field").hidden = !signup; $("auth-reset").hidden = signup;
   $("auth-err").textContent = "";
 });
 const AUTH_MSG = {
@@ -2523,26 +2688,160 @@ $("auth-form").addEventListener("submit", async (e) => {
   const email = $("auth-email").value.trim(), pw = $("auth-pw").value;
   $("auth-submit").disabled = true; $("auth-err").textContent = "";
   try {
-    if (signup) await createUserWithEmailAndPassword(auth, email, pw);
+    if (signup) {
+      const code = normCode($("auth-code").value);
+      if (!code) { $("auth-err").textContent = "운영자에게 받은 초대 코드를 넣어 주세요."; $("auth-code").focus(); return; }
+      pendingCode = code || null;
+      await createUserWithEmailAndPassword(auth, email, pw);
+    }
     else await signInWithEmailAndPassword(auth, email, pw);
   } catch (err) {
     $("auth-err").textContent = AUTH_MSG[err.code] || ("로그인하지 못했어요 (" + err.code + ")");
   } finally { $("auth-submit").disabled = false; }
 }, true);
-$("signout").addEventListener("click", () => signOut(auth));
+// 로그아웃하면 이 기기에 받아 둔 기록(오프라인 저장소)까지 지운다. 남의 기기에서 로그인했다 나갈 때 기록이 남지 않게
+async function signOutAll() {
+  $("signout").disabled = true;
+  // 아직 서버에 못 올린 기록(오프라인 중 저장)이 있으면 지우기 전에 묻는다
+  const synced = await Promise.race([waitForPendingWrites(fs).then(() => true, () => true), new Promise((r) => setTimeout(() => r(false), 4000))]);
+  if (!synced && !confirm("아직 서버에 저장되지 않은 기록이 있어요. 인터넷 연결을 확인하고 잠시 뒤에 로그아웃하는 게 좋아요.\n그래도 지금 로그아웃할까요? (저장되지 않은 기록은 사라져요)")) { $("signout").disabled = false; return; }
+  let cleared = false;
+  try { await signOut(auth); await terminate(fs); await clearIndexedDbPersistence(fs); cleared = true; }
+  catch (e) { console.error("signout", e); }
+  // 다른 탭에 앱이 열려 있으면 기기 저장소를 못 지운다
+  if (!cleared) alert("로그아웃했어요. 다만 다른 탭(창)에 이 앱이 열려 있어 이 기기에 받아 둔 기록을 지우지 못했어요. 남의 기기라면 다른 탭을 모두 닫고 다시 로그인했다가 로그아웃해 주세요.");
+  location.reload();
+}
+$("signout").addEventListener("click", signOutAll);
+$("gate-out").addEventListener("click", signOutAll);
+// 비밀번호 재설정 메일
+$("auth-reset").addEventListener("click", async () => {
+  const email = $("auth-email").value.trim();
+  if (!email) { $("auth-err").textContent = "위 이메일 칸에 가입한 이메일을 넣고 다시 누르세요."; $("auth-email").focus(); return; }
+  $("auth-reset").disabled = true;
+  try { await sendPasswordResetEmail(auth, email); $("auth-err").textContent = ""; $("auth-ok").textContent = email + "로 비밀번호 재설정 메일을 보냈어요. 메일이 안 보이면 스팸함도 확인하세요."; }
+  catch (err) { $("auth-ok").textContent = ""; $("auth-err").textContent = err.code === "auth/invalid-email" ? "이메일 형식을 확인하세요." : err.code === "auth/too-many-requests" ? "잠시 뒤에 다시 시도하세요." : ("메일을 보내지 못했어요 (" + err.code + ")"); }
+  finally { $("auth-reset").disabled = false; }
+});
 
-onAuthStateChanged(auth, (user) => {
+/* ---------- 초대 코드: 운영자가 만든 코드로 등록한 회원만 기록을 읽고 쓴다 (firestore.rules에서 막음) ---------- */
+let pendingCode = null, authSeq = 0;
+const normCode = (c) => String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+// 운영자는 로그인 이메일이 아니라 계정 UID로 정한다 (firestore.rules isOwner()와 같은 값)
+const isOwnerUser = (u) => !!(u && u.uid) && OWNER_UIDS.indexOf(u.uid) >= 0;
+// 회원 등록과 코드 사용 인원(used) +1을 한 번에 (보안 규칙이 같은 일괄 쓰기에서 used가 1 올라야만 등록을 허락하고, max를 넘으면 막음)
+async function redeem(user, code) {
+  const c = normCode(code); if (!c) throw new Error("empty");
+  const b = writeBatch(fs);
+  b.set(doc(fs, "members", user.uid), { code: c, email: user.email || "", joinedAt: serverTimestamp() });
+  b.update(doc(fs, "invites", c), { used: increment(1) });
+  await b.commit();
+}
+// 회원이면 true, 운영자가 이용을 멈춘 계정이면 "revoked", 아직 등록 전이면 false
+async function memberOk(user) {
+  if (isOwnerUser(user)) return true;
+  try { const m = await getDoc(doc(fs, "members", user.uid)); return !m.exists() ? false : m.data().revoked === true ? "revoked" : true; }
+  catch (e) { console.error("member", e); return false; }
+}
+function startApp(user) {
+  $("gate-panel").hidden = true; $("app-body").hidden = false;
+  window.DeskOwner = isOwnerUser(user);
+  $("invite-panel").hidden = !window.DeskOwner;
+  if (window.DeskOwner) invRefresh();
+  window.DeskApp.start(makeAdapter(user.uid));
+  // 쓰는 중에 운영자가 이용을 멈추면 바로 화면을 닫는다 (다시 열면 이용 멈춤 안내가 뜸)
+  if (memberUnsub) { memberUnsub(); memberUnsub = null; }
+  if (!window.DeskOwner) memberUnsub = onSnapshot(doc(fs, "members", user.uid), (m) => { if (m.exists() && m.data().revoked === true && !m.metadata.fromCache) location.reload(); }, () => {});
+}
+let memberUnsub = null;
+$("gate-form").addEventListener("submit", async (e) => {
+  e.preventDefault(); e.stopPropagation();
+  const user = auth.currentUser; if (!user) return;
+  $("gate-submit").disabled = true; $("gate-err").textContent = "";
+  try { await redeem(user, $("gate-code").value); startApp(user); }
+  catch (err) { console.error("redeem", err); $("gate-err").textContent = "초대 코드가 맞지 않거나 가입 인원이 다 찬 코드예요. 운영자에게 새 코드를 받아 넣어 주세요."; }
+  finally { $("gate-submit").disabled = false; }
+}, true);
+// 운영자 화면: 남은 초대 코드와 회원 목록
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const newCode = () => [...crypto.getRandomValues(new Uint8Array(10))].map((x) => CODE_CHARS[x % CODE_CHARS.length]).join("");
+const escH = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+async function invRefresh() {
+  try {
+    const [iv, mb] = await Promise.all([getDocs(collection(fs, "invites")), getDocs(collection(fs, "members"))]);
+    const inv = iv.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    const left = (x) => Math.max(0, (x.max || 1) - (x.used || 0));
+    $("inv-list").innerHTML = '<div class="small muted">초대 코드 ' + inv.length + '개 (다 쓴 코드는 지워도 돼요)</div>' + inv.map((x) =>
+      '<div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><b class="num" style="font-size:16px;letter-spacing:.06em' + (left(x) ? '' : ';text-decoration:line-through;color:var(--ink-3)') + '">' + escH(x.id) + '</b><span class="small muted">' + (x.used || 0) + '/' + (x.max || 1) + '명 사용' + (left(x) ? '' : ' · 다 씀') + (x.note ? ' · ' + escH(x.note) : '') + ' · ' + escH((x.createdAt || "").slice(0, 10)) + '</span>' +
+      (left(x) ? '<button class="btn ghost" type="button" data-inv-copy="' + escH(x.id) + '" data-inv-left="' + left(x) + '">안내문 복사</button>' : '') + '<button class="btn ghost" type="button" data-inv-del="' + escH(x.id) + '">지우기</button></div>').join("");
+    // 예전 형식(문자열)이나 잘못 들어간 값이 있어도 목록 전체가 깨지지 않게 날짜를 따로 읽는다
+    const jd = (v) => { try { if (v && typeof v.toDate === "function") return v.toDate().toISOString().slice(0, 10); return typeof v === "string" ? v.slice(0, 10) : ""; } catch (e) { return ""; } };
+    const mem = mb.docs.map((d) => { const x = d.data() || {}; return { id: d.id, email: typeof x.email === "string" ? x.email : "", day: jd(x.joinedAt), revoked: x.revoked === true }; })
+      .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+    const live = mem.filter((x) => !x.revoked).length;
+    $("mem-list").innerHTML = '<div class="small muted">초대 코드로 가입한 회원 ' + live + '명' + (mem.length > live ? ' · 이용 멈춤 ' + (mem.length - live) + '명' : '') + '</div>' + mem.map((x) =>
+      '<div class="row" style="gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap"><span' + (x.revoked ? ' style="text-decoration:line-through;color:var(--ink-3)"' : '') + '>' + escH(x.email || x.id) + '</span><span class="small muted">' + escH(x.day ? x.day + ' 가입' : '') + (x.revoked ? ' · 이용 멈춤' : '') + '</span>' +
+      (x.revoked ? '<button class="btn ghost" type="button" data-mem-back="' + escH(x.id) + '">다시 들이기</button>' : '<button class="btn ghost" type="button" data-mem-del="' + escH(x.id) + '">회원에서 빼기</button>') + '</div>').join("");
+  } catch (e) { console.error("invites", e); $("inv-list").textContent = "초대 코드를 불러오지 못했어요. Firebase 보안 규칙을 새 버전으로 게시했는지 확인하세요."; }
+}
+$("inv-make").addEventListener("click", async () => {
+  $("inv-make").disabled = true;
+  const max = parseInt($("inv-max").value, 10);
+  if (!(max >= 1 && max <= 50)) { $("inv-list").textContent = "인원은 1~50명 사이로 넣어 주세요."; $("inv-make").disabled = false; return; }
+  try { await setDoc(doc(fs, "invites", newCode()), { createdAt: new Date().toISOString(), note: $("inv-note").value.trim().slice(0, 40), max, used: 0 }); $("inv-note").value = ""; $("inv-max").value = "1"; await invRefresh(); }
+  catch (e) { console.error("invite", e); $("inv-list").textContent = "코드를 만들지 못했어요: " + (e.code || e.message); }
+  finally { $("inv-make").disabled = false; }
+});
+$("invite-panel").addEventListener("click", async (ev) => {
+  const cp = ev.target.closest("[data-inv-copy]"), dl = ev.target.closest("[data-inv-del]"), md = ev.target.closest("[data-mem-del]"), mbk = ev.target.closest("[data-mem-back]");
+  if (cp) {
+    const c = cp.getAttribute("data-inv-copy"), n = +cp.getAttribute("data-inv-left") || 1, url = location.origin + location.pathname;
+    const txt = "무매·VR 주문 데스크 초대 코드: " + c + "\n주소: " + url + "\n들어가서 '처음이면 계정 만들기'를 누르고 이메일·비밀번호와 이 코드를 넣으면 돼요. " + (n > 1 ? "이 코드로 " + n + "명까지 가입할 수 있어요." : "코드는 한 번만 쓸 수 있어요.");
+    try { await navigator.clipboard.writeText(txt); cp.textContent = "복사했어요"; } catch (e) { prompt("아래 안내문을 복사하세요", txt); }
+  } else if (dl) {
+    try { await deleteDoc(doc(fs, "invites", dl.getAttribute("data-inv-del"))); await invRefresh(); } catch (e) { console.error(e); }
+  } else if (md) {
+    if (md.getAttribute("data-armed") !== "1") { md.setAttribute("data-armed", "1"); md.textContent = "한 번 더 누르면 빼요"; return; }
+    // 문서를 지우지 않고 이용 멈춤으로 바꾼다: 지우면 같은 계정이 남은 자리가 있는 코드로 다시 들어올 수 있다
+    try { await updateDoc(doc(fs, "members", md.getAttribute("data-mem-del")), { revoked: true }); await invRefresh(); } catch (e) { console.error(e); }
+  } else if (mbk) {
+    try { await updateDoc(doc(fs, "members", mbk.getAttribute("data-mem-back")), { revoked: false }); await invRefresh(); } catch (e) { console.error(e); }
+  }
+});
+
+onAuthStateChanged(auth, async (user) => {
+  const seq = ++authSeq;
   window.DeskApp.stop();
+  $("gate-panel").hidden = true; $("invite-panel").hidden = true; window.DeskOwner = false;
   const on = !!user;
   $("auth-panel").hidden = on;
-  $("app-body").hidden = !on;
+  $("app-body").hidden = true;
   $("userbar").hidden = !on;
-  if (on) { $("user-email").textContent = user.email; window.DeskApp.start(makeAdapter(user.uid)); }
-  // 알림 토큰 갱신은 화면이 뜬 뒤에 한다
-  setTimeout(() => { if (auth.currentUser === user) pushRefresh(user); }, user ? 4000 : 0);
+  if (on) {
+    $("user-email").textContent = user.email;
+    let ok = await memberOk(user);
+    if (ok === "revoked") {
+      pendingCode = null;
+      if (seq !== authSeq) return;
+      $("gate-msg").textContent = "운영자가 이 계정의 이용을 멈췄어요. 다시 쓰려면 운영자에게 말해 주세요.";
+      $("gate-code").closest(".field").hidden = true; $("gate-submit").hidden = true; $("gate-panel").hidden = false;
+      return;
+    }
+    if (!ok && pendingCode) {
+      try { await redeem(user, pendingCode); ok = true; }
+      catch (e) { console.error("redeem", e); $("gate-err").textContent = "초대 코드가 맞지 않거나 가입 인원이 다 찬 코드예요. 계정은 만들어졌으니, 운영자에게 새 코드를 받아 넣어 주세요."; }
+      pendingCode = null;
+    }
+    if (seq !== authSeq) return;
+    if (ok) startApp(user); else $("gate-panel").hidden = false;
+  }
+  // 알림 토큰 갱신은 화면이 뜬 뒤에 한다 (알림 보류 중에는 하지 않음)
+  if (!PUSH_OFF) setTimeout(() => { if (auth.currentUser === user) pushRefresh(user); }, user ? 4000 : 0);
 });
 
 /* ---------- 주문 알림 (웹 푸시) ---------- */
+// 보류 중: 패널을 숨기고 토큰도 저장하지 않는다. 다시 켜려면 false로 바꾸고 push-panel의 hidden을 지운다
+var PUSH_OFF = true;
 // 알림 시간은 계정마다 users/{uid}/settings/push {time:"HH:MM"}에 저장 (기본 21:00). 모든 기기에 같이 적용됩니다.
 const PUSH_TIMES = []; for (let h = 12; h < 24; h++) PUSH_TIMES.push(String(h).padStart(2, "0") + ":00", String(h).padStart(2, "0") + ":30");
 const timeLabel = (t) => { const h = +t.slice(0, 2); return (h < 18 ? "오후 " : "밤 ") + (h > 12 ? h - 12 : h) + ":" + t.slice(3); };
