@@ -797,27 +797,40 @@ function bigEdit(a,plan){
 
 // VR은 2주 회차마다 기간 예약주문을 한 번만 넣는다. 그 뒤로는 같은 주문이 유지된다고 보고 매일 체결만 확인한다.
 function vrOrdered(a){ return a.type==="VR" && a.cycleOrdered===true; }
-// 0회차 첫 매수 주문(f)의 남은 수량: 넣은 수량 − 매매내역에서 이 주문(oid)의 체결로 기록한 수량
-function zeroLeft(f, log){
-  var done=(log||[]).reduce(function(t,l){ return t+(l.side==="BUY"&&l.oid!=null&&l.oid===f.oid?(l.q||0):0); },0);
+// VR 회차 주문은 증권사에 2주 기간 지정가로 한 번 넣고 그대로 둔다. 그래서 체결 뒤에도 주문표를 다시 계산하지 않는다.
+// 넣을 때 주문마다 번호(oid)와 넣은 수량(qty0)을 적어 cycleOrders에 남기고, 매매내역 중 같은 번호가 붙은 체결만 빼서 잔량을 센다.
+// (보유가 바뀌면 vrPlan의 반대쪽 가격이 달라지므로, 다시 계산하면 증권사에 없는 주문이 생긴다. GPT 4차 L1)
+// 주문(f)의 남은 수량: 넣은 수량 − 매매내역에서 이 주문(oid)의 체결로 기록한 수량
+function vrLeft(f, log){
+  var done=(log||[]).reduce(function(t,l){ return t+(l.oid!=null&&l.oid===f.oid&&l.side===f.side?(l.q||0):0); },0);
   return (f.qty0!=null?f.qty0:f.qty)-done;
 }
+// 이번 회차에 넣은 주문 전체 (번호 붙은 원래 목록). 예전 기록은 cycleOrders가 없어 유지 중인 주문을 그 자리에서 기준으로 삼는다
+function vrBase(s){
+  if(Array.isArray(s.cycleOrders)&&s.cycleOrders.length) return s.cycleOrders;
+  var src=(s.pending&&s.pending.orders)||[], t=(s.pending&&s.pending.placedAt)||Date.now();
+  return src.map(function(o,i){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; if(c.oid==null) c.oid=t*100+i+1; if(c.qty0==null) c.qty0=c.qty; return c; });
+}
+// 넣을 때 주문마다 번호와 넣은 수량을 붙인다 (0회차 첫 매수는 예전과 같이 placedAt 하나)
+function vrNumber(orders, t){
+  orders.forEach(function(o,i){ o.oid=o.kind==="vr-first"?t:t*100+i+1; o.qty0=o.qty; });
+  return orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
+}
+// 넣은 주문 중 아직 남은 것을 다음 장에 이어 확인한다. 회차가 끝났거나 다 체결되면 null (새 주문을 만들지 않는다)
 function vrCarry(a, st, fromD){
   if(!vrOrdered(a) || !a.nextUpdate) return null;
   var ns=E.nextSession(fromD); if(ns>a.nextUpdate) return null;
-  var s=Object.assign({},a,st);
-  // 0회차 첫 매수는 종가로 다시 계산하지 않는다: 처음 넣은 가격 그대로, 넣은 수량(qty0)에서 이 주문의 체결로 기록한 수량만 뺀 잔량을 이어 간다.
-  // 이 주문의 체결 = 매매내역 중 같은 주문 번호(oid)가 붙은 줄. 직접 입력한 다른 매매나 상태 수정은 잔량을 바꾸지 않는다. 다 사면 끝
-  if(s.cycle===0){
-    var f=((a.pending&&a.pending.orders)||[]).filter(function(o){ return o.kind==="vr-first"; })[0]; if(!f||f.oid==null) return null;
-    var rem=zeroLeft(f, st&&st.log?st.log:a.log); if(!(rem>0)) return null;
+  var s=Object.assign({},a,st), base=vrBase(s); if(!base.length) return null;
+  var log=st&&st.log?st.log:a.log, fee=(s.fee||0)/100, pool=s.pool||0, cum=0, sc=0, orders=[];
+  base.forEach(function(f){
+    var rem=vrLeft(f, log); if(!(rem>0)) return;
     var o={}; for(var k in f) if(f[k]!==undefined) o[k]=f[k];
-    o.qty=rem; o.left=E.r2((s.pool||0)-f.price*rem*(1+(s.fee||0)/100));
-    return {session:ns,basis:fromD,orders:[o],placedAt:(a.pending&&a.pending.placedAt)||Date.now(),carried:true};
-  }
-  var p=E.vrPlan(s, barsUpTo(a.ticker,fromD)); if(!p) return null;
-  var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
-  return {session:ns,basis:fromD,orders:orders,placedAt:Date.now(),carried:true};
+    o.qty=rem;
+    if(o.side==="BUY"){ cum+=o.price*rem*(1+fee); o.left=E.r2(pool-cum); } else { sc+=o.price*rem*(1-fee); o.left=E.r2(pool+sc); }
+    orders.push(o);
+  });
+  if(!orders.length) return null;
+  return {session:ns,basis:fromD,orders:orders,placedAt:(a.pending&&a.pending.placedAt)||Date.now(),carried:true};
 }
 
 // 지난 장 주문을 장 마감 뒤에 기록할 때: 마지막 종가가 나온 날의 주문표를 그 전날 종가 기준으로 다시 만든다.
@@ -933,7 +946,7 @@ function renderVR(a){
     if(zPlaced&&a.pending.carried) znotes.push("처음 넣은 첫 매수 주문(지정가 "+usd(a.pending.orders[0].price)+")의 남은 "+a.pending.orders[0].qty+"주를 0회차 마감까지 이어서 확인해요. 증권사에서 주문을 취소했다면 '주문 취소·다시 내기'를 누르세요.");
     if(zDone) znotes.push((a.qty>0?"첫 매수 주문이 끝났어요. ":"")+"0회차 마감("+dlabel(E.vrDue(a.nextUpdate))+") 종가로 V를 정하고 1회차 주문표를 보여 드려요. 증권사에 아직 남은 주문이 있다면 '첫 매수 다시 내기'로 다시 기록하세요.");
     znotes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
-    var zList=zPlaced?a.pending.orders:zDone?[]:plan.buys;
+    var zList=vrOrdered(a)?shownOrders(a):plan.buys;
     return banners(a)+roll+zhero+slip(a,plan,vt(zList),"",znotes)+undoPanel()+vrManual(a)+vrTradeLog(a)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
   }
   var hero='<section class="panel"><div class="hero"><div><span class="pill">'+esc(state)+'</span> <span class="small muted">'+esc(a.ticker)+' '+({INSTALLMENT:"적립식",LUMPSUM:"거치식",WITHDRAWAL:"인출식"}[a.vrType||"INSTALLMENT"])+' · G '+(a.G||10)+' · '+(a.cycle||1)+'회차</span>'+
@@ -944,13 +957,13 @@ function renderVR(a){
       '<div class="vt" style="left:'+X(a.V)+'%"></div><div class="et" style="left:'+X(plan.E)+'%" title="E"></div>'+
       '<span class="gl" style="left:'+X(plan.min)+'%">'+usd(plan.min,0)+'</span><span class="gl" style="left:'+X(a.V)+'%">V '+usd(a.V,0)+'</span><span class="gl" style="left:'+X(plan.max)+'%">'+usd(plan.max,0)+'</span></div>'+
     '<div class="stats" style="margin-top:14px">'+stat("V",usd(a.V))+stat("평가금 E",usd(plan.E))+stat("Pool",usd(a.pool))+stat("이번 사이클 매수 한도 "+plan.limitPct+"%",usd(plan.limit)+' <span class="small muted">/ '+usd(plan.cap)+'</span>')+stat("보유 · 평단",a.qty+"주"+'<div class="small muted">'+(a.avg&&a.qty?'평단 '+usd(a.avg)+' <span class="'+signCls(lb.c-a.avg)+'">'+pct(lb.c/a.avg-1)+'</span>':'평단 미입력 (상태 수정)')+'</div>')+stat("다음 V 갱신",a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+'</div></section>';
-  // 넣은 회차 주문이 있으면 화면도 복사도 그 주문(shownOrders)으로. 상태 수정으로 지금 계산과 달라졌으면 알려 준다
-  var rPlaced=a.pending&&a.pending.session===plan.session, rList=rPlaced?shownOrders(a):plan.orders;
+  // 회차 주문을 넣었으면 화면도 복사도 증권사에 남아 있는 그 주문(shownOrders)으로. 상태 수정으로 지금 계산과 달라졌으면 알려 준다
+  var rPlaced=vrOrdered(a)&&!!a.pending, rList=vrOrdered(a)?shownOrders(a):plan.orders;
   var side=function(sd){ return rList.filter(function(o){ return o.side===sd; }); };
   var buyHtml=vt(side("BUY")), sellHtml=vt(side("SELL"));
   var notes=plan.notes.slice();
   var sig=function(l){ return l.map(function(o){ return o.side+o.price+"x"+o.qty; }).join(","); };
-  if(rPlaced&&sig(rList)!==sig(plan.orders)) notes.unshift("이미 넣은 회차 주문을 보여 드려요. 상태 수정 뒤라 지금 상태로 계산한 주문표와 달라요. 증권사 주문을 새로 넣었다면 위 '주문 취소·다시 내기'로 다시 기록하세요.");
+  if(rPlaced&&a.cycleEdited&&sig(rList)!==sig(plan.orders)) notes.unshift("이미 넣은 회차 주문을 보여 드려요. 상태 수정 뒤라 지금 상태로 계산한 주문표와 달라요. 증권사 주문을 새로 넣었다면 위 '주문 취소·다시 내기'로 다시 기록하세요.");
   notes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
   return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+undoPanel()+vrManual(a)+vrTradeLog(a)+vrRecords(a,plan)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
 }
@@ -1109,9 +1122,11 @@ function vrNotes(a){
 function vrPatchOf(s){ var p={qty:s.qty,avg:s.avg==null?null:s.avg,pool:s.pool,cycleUsed:s.cycleUsed==null?0:s.cycleUsed}; if(s.cycleCap!=null) p.cycleCap=s.cycleCap; return p; }
 function vrInsertLog(log, l){ var i=0; while(i<log.length&&log[i].d>l.d) i++; log.splice(i,0,l); return log; }
 function vrCommit(a, patch, log, label, msg, b){
-  // 회차 주문을 유지 중이면 바뀐 보유수량으로 다음 장 주문표를 다시 만든다
+  // 회차 주문을 유지 중이면(다 체결돼 비었어도) 넣은 주문에서 이 주문들의 체결 기록만 빼서 남은 주문을 다시 센다.
+  // 직접 넣은 매매(번호 없음)는 증권사 주문을 바꾸지 않으므로 잔량도 그대로다
   patch.log=log.slice(0,400);
-  if(a.pending&&a.pending.carried){ patch.pending=vrCarry(a,patch,a.pending.basis); delete fillEdits[a.id]; }
+  var lbK=lastBar(a.ticker), fromK=a.pending&&a.pending.carried?a.pending.basis:(!a.pending&&vrOrdered(a)&&Array.isArray(a.cycleOrders)&&a.cycleOrders.length&&lbK?lbK.d:null);
+  if(fromK){ patch.pending=vrCarry(a,patch,fromK); delete fillEdits[a.id]; }
   var prev=JSON.parse(JSON.stringify(a)); delete prev._plan;
   if(b) b.disabled=true;
   return save(a,patch).then(function(){
@@ -1143,12 +1158,12 @@ function vrTradeUpdate(a, b){
   var ed=vmf.edit, old=ed&&vrLogAt(a,ed.i); if(!old){ vmf.edit=null; render(); return; }
   var un=E.vrUnapply(a,old); if(un.error){ toast(un.error); return; }
   var base=Object.assign({},a,un.next), v=vrFormVals(a,old.side,base); if(!v) return;
-  // 0회차 첫 매수 체결(oid)을 고칠 때: 같은 주문의 체결 합계가 넣은 수량(oq)을 넘으면 안 된다
+  // 넣은 주문의 체결(oid)을 고칠 때: 같은 주문의 체결 합계가 넣은 수량(oq)을 넘으면 안 된다
   if(old.oid!=null){
-    var po=((a.pending&&a.pending.orders)||[]).filter(function(o){ return o.oid===old.oid; })[0];
+    var po=(a.cycleOrders||(a.pending&&a.pending.orders)||[]).filter(function(o){ return o.oid===old.oid; })[0];
     var cap=old.oq!=null?old.oq:po?(po.qty0!=null?po.qty0:po.qty):null;
-    var other=(a.log||[]).reduce(function(t,l,i){ return t+(i!==ed.i&&l.side==="BUY"&&l.oid===old.oid?(l.q||0):0); },0);
-    if(cap!=null&&other+v.q>cap){ toast("첫 매수 주문은 "+cap+"주였어요. 이 주문의 다른 체결 "+other+"주와 합쳐 "+cap+"주까지만 넣을 수 있어요. 따로 산 것이면 새 매수 기록으로 넣으세요."); return; }
+    var other=(a.log||[]).reduce(function(t,l,i){ return t+(i!==ed.i&&l.side===old.side&&l.oid===old.oid?(l.q||0):0); },0);
+    if(cap!=null&&other+v.q>cap){ toast((old.kind==="vr-first"?"첫 매수 주문은 ":"이 주문은 ")+cap+"주였어요. 이 주문의 다른 체결 "+other+"주와 합쳐 "+cap+"주까지만 넣을 수 있어요. 따로 산 것이면 새 "+(old.side==="BUY"?"매수":"매도")+" 기록으로 넣으세요."); return; }
   }
   var r=vrAddTo(a,base,old.side,v.d,v.px,v.q), log=(a.log||[]).slice(); log.splice(ed.i,1);
   var nl=Object.assign({},old,{d:v.d,px:v.px,q:v.q,edited:true});
@@ -2014,10 +2029,10 @@ function save(a, patch){
   if(!db){ toast("저장소에 연결되지 않았어요."); return Promise.reject(); }
   return db.doc("accounts/"+a.id).update(patch).catch(function(e){ toast("저장하지 못했어요: "+(e&&e.message||"")); throw e; });
 }
-// 화면 주문표와 같은 목록: 넣은 주문이 있으면 그 주문, VR 회차 주문을 이미 넣었으면(유지 중이 아니면) 없음, 아니면 새 주문표
+// 화면 주문표와 같은 목록: 넣은 주문이 있으면 그 주문(VR은 체결 확인 중이어도 아직 남은 회차 주문), VR 회차 주문을 다 체결했거나 V 갱신 차례면 없음, 아니면 새 주문표
 function shownOrders(a){
   var p=a._plan; if(!p) return [];
-  if(a.pending&&a.pending.session===p.session) return a.pending.orders||[];
+  if(a.pending&&(a.pending.session===p.session||vrOrdered(a))) return a.pending.orders||[];
   if(a.type==="VR"&&(vrOrdered(a)||p.due)) return [];
   return p.orders||[];
 }
@@ -2091,8 +2106,8 @@ document.addEventListener("click", function(ev){
     if(!p||p.blocked||!p.orders.length) return;
     var pp={pending:pendingOf(p), events:[]};
     if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true;
-      // 0회차 첫 매수: 주문 번호(oid)와 넣은 수량(qty0)을 적어 둔다. 체결 기록에 같은 번호를 붙여 잔량을 센다 (vrCarry)
-      if(p.zero) pp.pending.orders.forEach(function(o){ if(o.kind==="vr-first"){ o.oid=pp.pending.placedAt; o.qty0=o.qty; } }); }
+      // 모든 회차: 주문마다 번호(oid)와 넣은 수량(qty0)을 적어 cycleOrders에 남긴다. 체결 기록에 같은 번호를 붙여 잔량을 센다 (vrCarry)
+      pp.cycleOrders=vrNumber(pp.pending.orders, pp.pending.placedAt); pp.cycleEdited=false; }
     save(a,pp).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
   } else if(act==="vr-reorder"){
     // VR 주문을 증권사에서 취소했을 때: 유지 중인 주문을 지우고 지금 상태로 새 주문표를 낸다 (0회차는 오늘 종가 기준 첫 매수, 1회차부터는 이번 회차 남은 한도 안의 주문)
@@ -2100,7 +2115,7 @@ document.addEventListener("click", function(ev){
     var zr=a.cycle===0, wn=zr?"첫 매수 주문":"회차 주문";
     if(!confirm("증권사에서 "+wn+"이 취소된 것을 확인했나요?\n취소 전에 일부 체결됐다면 그 체결을 먼저 기록한 뒤 누르세요. 확인을 누르면 지금 상태로 새 주문표를 만들어요.")) return;
     var prevZ=snapA(); delete fillEdits[a.id];
-    save(a,{pending:null,cycleOrdered:false}).then(function(){ toast(wn+"을 취소로 기록했어요. 새 주문표로 다시 넣으세요."); undoSet(wn+" 취소",prevZ); render(); });
+    save(a,{pending:null,cycleOrdered:false,cycleOrders:null,cycleEdited:false}).then(function(){ toast(wn+"을 취소로 기록했어요. 새 주문표로 다시 넣으세요."); undoSet(wn+" 취소",prevZ); render(); });
   } else if(act==="place-past"){
     // 대기 중인 다음 장 기록이 있으면 그것을 지난 장 주문표로 바꾼다 (이미 종가가 나온 기록은 건드리지 않음)
     var ps=pastPlan(a); if(!ps||(a.pending&&barOn(a.ticker,a.pending.session))) return;
@@ -2123,21 +2138,30 @@ document.addEventListener("click", function(ev){
     if(a.type==="INF"&&a.pending&&lbC&&lbC.d>=a.pending.session) cp.lastSession=a.pending.session;
     if(a.type==="VR"&&a.pending){
       var waiting=!barOn(a.ticker,a.pending.session);
-      if(a.pending.cycleOrder&&waiting&&!(lastBar(a.ticker)&&lastBar(a.ticker).d>a.pending.session)) cp.cycleOrdered=false;
+      if(a.pending.cycleOrder&&waiting&&!(lastBar(a.ticker)&&lastBar(a.ticker).d>a.pending.session)){ cp.cycleOrdered=false; cp.cycleOrders=null; }
       else cp.pending=vrCarry(a,{},a.pending.session);
     }
     save(a,cp).then(function(){toast("주문 기록을 지웠어요."); undoSet(lbl,prevC); render();});
   } else if(act==="apply-fills"){
     var p2=a.pending, bar=barOn(a.ticker,p2.session), fe=fillEdits[a.id];
     var fills=fe.fills;
-    if(a.type==="VR"&&fills.some(function(f){ return f.filled&&f.order.kind==="vr-first"&&f.qty>f.order.qty; })){ toast("첫 매수 주문의 남은 수량("+p2.orders[0].qty+"주)보다 많이 넣을 수 없어요. 다른 매수였다면 아래 매수/매도 기록에 따로 넣으세요."); return; }
+    var over=a.type==="VR"?fills.filter(function(f){ return f.filled&&f.qty>f.order.qty; })[0]:null;
+    if(over){ toast((over.order.label||"주문")+"의 남은 수량("+over.order.qty+"주)보다 많이 넣을 수 없어요. 다른 매매였다면 아래 매수/매도 기록에 따로 넣으세요."); return; }
     var res = a.type==="VR" ? E.vrApply(a,fills,bar) : E.infApply(a,fills,bar);
-    if(a.type==="VR") res.log.forEach(function(l){ var fo=p2.orders.filter(function(o){ return o.kind==="vr-first"; })[0]; if(l.kind==="vr-first"&&fo&&fo.oid!=null){ l.oid=fo.oid; l.oq=fo.qty0!=null?fo.qty0:fo.qty; } });
+    // 체결마다 넣은 주문의 번호(oid)와 넣은 수량(oq)을 붙인다. 예전 기록(번호 없음)은 지금 유지 중인 주문을 기준으로 이번에 번호를 붙인다
+    var vbase=a.type==="VR"&&vrOrdered(a)?vrBase(a):null;
+    if(vbase){
+      var vf=fills.filter(function(f){ return f.filled&&f.qty>0&&f.px>0; });
+      res.log.forEach(function(l,i){ var o=vf[i]&&vf[i].order; if(!o) return;
+        var bo=vbase.filter(function(x){ return o.oid!=null?x.oid===o.oid:(x.side===o.side&&x.label===o.label&&x.price===o.price); })[0];
+        if(bo){ l.oid=bo.oid; l.oq=bo.qty0!=null?bo.qty0:bo.qty; } });
+    }
     var n=res.next, patch={};
     var keys = a.type==="VR" ? ["qty","avg","pool","cycleCap","cycleUsed"] : ["T","cash","qty","avg","mode","revDay","realized","cycle","principal","aside"];
     keys.forEach(function(k){ patch[k]= n[k]===undefined?null:n[k]; });
     patch.log=res.log.slice().reverse().concat(a.log||[]).slice(0,400);
-    patch.pending=a.type==="VR"?vrCarry(a,Object.assign({},n,{log:patch.log}),p2.session):null;
+    if(vbase&&!(Array.isArray(a.cycleOrders)&&a.cycleOrders.length)) patch.cycleOrders=vbase;
+    patch.pending=a.type==="VR"?vrCarry(a,Object.assign({},n,{log:patch.log},vbase?{cycleOrders:vbase}:{}),p2.session):null;
     if(a.type==="INF") patch.lastSession=p2.session;
     patch.events=res.events;
     b.disabled=true;
@@ -2160,7 +2184,7 @@ document.addEventListener("click", function(ev){
     var rb=barOn(a.ticker,E.vrDue(a.nextUpdate)); if(!rb){ toast(dlabel(E.vrDue(a.nextUpdate))+" 종가가 아직 없어요."); return; }
     var r=E.vrRoll(a,rb.c,rb.d), nx=r.next, prevR=snapA();
     var note={d:rb.d,side:"NOTE",text:r.zero?(r.extended?"0회차 연장: 아직 첫 매수 전이라 "+dlabel(E.vrDue(nx.nextUpdate))+"까지 늘림":"0회차 마감: 보유 "+a.qty+"주 × 종가 "+usd(rb.c)+" = E "+usd(r.E)+" → 1회차 V "+usd(nx.V)+", Pool "+usd(nx.pool)):(a.cycle||1)+"회차 마감: V "+usd(a.V)+" → "+usd(nx.V)+", Pool "+usd(nx.pool)+" (E "+usd(r.E)+")"};
-    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,hist:nx.hist,cycleOrdered:false,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast(r.zero?(r.extended?"0회차를 한 주 늘렸어요.":"V를 "+usd(nx.V)+"로 정하고 1회차를 시작했어요."):"V를 "+usd(nx.V)+"로 갱신했어요."); undoSet(r.zero?"0회차 마감":(a.cycle||1)+"회차 V 갱신",prevR); render();});
+    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,hist:nx.hist,cycleOrdered:false,cycleOrders:null,cycleEdited:false,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast(r.zero?(r.extended?"0회차를 한 주 늘렸어요.":"V를 "+usd(nx.V)+"로 정하고 1회차를 시작했어요."):"V를 "+usd(nx.V)+"로 갱신했어요."); undoSet(r.zero?"0회차 마감":(a.cycle||1)+"회차 V 갱신",prevR); render();});
   } else if(act==="del"){
     if(b.getAttribute("data-armed")!=="1"){ b.setAttribute("data-armed","1"); b.textContent="한 번 더 누르면 삭제됩니다"; return; }
     var prevD=snapA(), own=a.type==="INF"&&a.linked==="own", recP=own?[recPath(a)].concat(entriesOf(a).map(function(e){ return "entries/"+e.id; })):[], uD=snap(recP);
@@ -2199,6 +2223,7 @@ document.addEventListener("submit", function(ev){
     numKeys.forEach(function(k){ var v=num("e-"+k); if(v!==undefined) patch[k]=v; });
     if(a.type==="VR"){ patch.nextUpdate=$("e-nextUpdate").value||null; patch.vrType=$("e-vrType").value;
       // 이번 사이클 한도를 수정값으로 다시 잡는다: (지금 Pool + 이번 사이클에 쓴 돈) = 사이클 시작 Pool
+      if(vrOrdered(a)) patch.cycleEdited=true;
       var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); if(patch.qty===0) patch.avg=null; }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
     var pre=Promise.resolve(), prevA=JSON.parse(JSON.stringify(a)); delete prevA._plan;
@@ -2259,7 +2284,7 @@ document.addEventListener("submit", function(ev){
       if(!lb0){ toast(tk+" 종가가 아직 없어요. 종가가 들어온 뒤 다시 만들어주세요."); return; }
       var band0=parseFloat($("n-band").value), G0=parseInt($("n-G").value,10);
       Object.assign(base,{V:0,pool:pool0,qty:0,avg:null,G:G0>0?G0:10,band:band0>0&&band0<100?band0/100:0.15,contrib:vt0==="LUMPSUM"?0:(parseFloat($("n-contrib").value)||0),vrType:vt0,startWeek:0,fromZero:vt0==="INSTALLMENT"&&$("n-fromZero").checked,
-        invested:pool0,nextUpdate:zeroEnd(lb0.d),cycle:0,cycleOrdered:false});
+        invested:pool0,nextUpdate:zeroEnd(lb0.d),cycle:0,cycleOrdered:false,cycleOrders:null});
       base.log=[{d:jd,side:"NOTE",text:"새로 시작: 0회차(첫 매수) · 시작 Pool "+usd(pool0)+" · "+dlabel(E.vrDue(base.nextUpdate))+" 마감 때 평가금으로 V를 정해요"}];
     } else {
       var V=parseFloat($("n-V").value), pool=parseFloat($("n-pool").value);
