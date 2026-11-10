@@ -347,13 +347,8 @@ table.log.entries th:last-child{text-align:right}
 svg.chart{width:100%;height:auto;display:block;overflow:visible}
 .grid-line{stroke:var(--line);stroke-width:1}
 .axis-label{fill:var(--ink-3);font-size:9px;font-family:var(--mono)}
-.axis-label-price{fill:var(--price)}
-.line-path{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
-.area-path{fill:var(--accent);opacity:.08}
-.target-line{stroke:var(--ink-3);stroke-width:1.3;stroke-dasharray:4 4;fill:none}
 .dot-buy{fill:var(--buy);stroke:var(--surface);stroke-width:1.5}
 .dot-sell{fill:var(--sell);stroke:var(--surface);stroke-width:1.5}
-.price-line{fill:none;stroke:var(--price);stroke-width:1.6;stroke-linejoin:round;opacity:.85}
 .avgprice-line{fill:none;stroke:var(--avgprice);stroke-width:1.6;stroke-dasharray:5 3;opacity:.9}
 .legend-text{fill:var(--ink-2);font-size:8.5px;font-family:var(--sans)}
 table.log th,table.log td{white-space:nowrap}
@@ -636,7 +631,6 @@ function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); c
 function bars(tk){ var p=prices[tk]; if(!p||!p.bars) return []; return p.bars.map(function(b){return {d:b[0],o:b[1],h:b[2],l:b[3],c:b[4],xh:b.length>5?b[5]:null,xl:b.length>6?b[6]:null};}); }
 function lastBar(tk){ var b=bars(tk); return b[b.length-1]; }
 function barOn(tk,d){ var b=bars(tk); for(var i=0;i<b.length;i++) if(b[i].d===d) return b[i]; return null; }
-function barsUpTo(tk,d){ return bars(tk).filter(function(b){return b.d<=d;}); }
 
 function orderedAccounts(){ return Object.keys(accounts).map(function(k){return accounts[k];}).sort(function(a,b){return (a.order||0)-(b.order||0)||(a.createdAt||0)-(b.createdAt||0);}); }
 
@@ -1391,11 +1385,8 @@ function replay(list, seed){
   return { qty:q, avg: avg!=null?Math.round(avg*10000)/10000:null, cash:E.r2(cash), T:Math.round(T*10000)/10000, realized:E.r2(realized), totalBuy:E.r2(buy), totalSell:E.r2(sell) };
 }
 function statePatch(a, list){ var s=replay(list, seedOf(a)); return { qty:s.qty, avg:s.avg, cash:s.cash, T:s.T, realized:s.realized }; }
-function pickState(a){ return { qty:a.qty||0, avg:a.avg==null?null:a.avg, cash:a.cash, T:a.T||0, realized:a.realized||0, mode:a.mode||"NORMAL", revDay:a.revDay||0, pending:a.pending||null }; }
 
 // 날짜별 기록 행: 원화 평가액 + 그날 기준 보유수량·평단 (trades가 null이면 행에 저장된 값을 그대로 씀 — 지난 사이클용)
-// 그 날짜의 종가 봉 (휴장일·한국 날짜면 그 전 마지막 거래일)
-function closeOn(tk, d){ var b=bars(tk), x=null; for(var i=0;i<b.length;i++){ if(b[i].d<=d) x=b[i]; else break; } return x; }
 function computeRows(entries, trades, tk){
   var sorted=(entries||[]).slice().sort(function(a,b){return a.date<b.date?-1:1;});
   // 매매는 미국 장 날짜로 기록되고, 원화 기록은 한국 날짜라서 그 매매가 반영된 보유·평단은 다음 날(한국) 줄에 보인다
@@ -1601,46 +1592,6 @@ function svgLegend(items, x0){
   return out;
 }
 function chartWH(){ var w=window.innerWidth||800; return w<600?[420,300]:[720,340]; }
-function lineChart(rows, startAmount, trades, tk){
-  if(trades) trades=trades.filter(function(t){ return !t.join; });
-  var wh=chartWH(), W=wh[0], H=wh[1];
-  var rs=rows.filter(function(r){return r.amount!=null;});
-  if(!rs.length) return '<svg class="chart" viewBox="0 0 720 340"><text x="360" y="170" text-anchor="middle" class="axis-label">원화 평가액을 기록하면 추이가 그려집니다</text></svg>';
-  var hasPx=rs.some(function(r){return r.soxlPrice!=null;}), hasAvg=rs.some(function(r){return r.avgPrice!=null;});
-  var padL=W<720?44:64,padR=(hasPx||hasAvg)?(W<720?36:48):18,padT=34,padB=30,pw=W-padL-padR,ph=H-padT-padB;
-  var vals=rs.map(function(r){return r.amount;}), base=startAmount!=null?startAmount:vals[0], target=base*1.2;
-  var lo=Math.min.apply(null,vals.concat([base])), hi=Math.max.apply(null,vals.concat([target])), rg=hi-lo||1; lo-=rg*.08; hi+=rg*.08; rg=hi-lo;
-  var x=function(i){ return padL+(rs.length===1?pw/2:i/(rs.length-1)*pw); }, y=function(v){ return padT+ph-(v-lo)/rg*ph; };
-  var o="";
-  for(var g=0;g<=3;g++){ var gv=lo+rg*g/3, gy=y(gv); o+='<line x1="'+padL+'" x2="'+(W-padR)+'" y1="'+gy+'" y2="'+gy+'" class="grid-line"/><text x="'+(padL-6)+'" y="'+(gy+3)+'" text-anchor="end" class="axis-label">'+(gv/10000).toFixed(0)+'만</text>'; }
-  o+='<line x1="'+padL+'" x2="'+(W-padR)+'" y1="'+y(target)+'" y2="'+y(target)+'" class="target-line"/>';
-  var d="M"+x(0)+","+y(vals[0]); for(var i=1;i<rs.length;i++) d+=" L"+x(i)+","+y(vals[i]);
-  o+='<path d="'+d+" L"+x(rs.length-1)+","+(padT+ph)+" L"+x(0)+","+(padT+ph)+' Z" class="area-path"/>';
-  var pts=function(f){ var p=[]; rs.forEach(function(r,i){ if(r[f]!=null&&!isNaN(r[f])) p.push({i:i,v:r[f]}); }); return p; };
-  var sp=pts("soxlPrice"), ap=pts("avgPrice"), all=sp.concat(ap).map(function(p){return p.v;}), plo, phi, ready=all.length>=2;
-  if(ready){
-    plo=Math.min.apply(null,all); phi=Math.max.apply(null,all); var pad=(phi-plo)*.12||Math.abs(phi)*.1||1; plo-=pad; phi+=pad;
-    var ny=function(v){ return phi===plo?padT+ph/2:padT+ph-(v-plo)/(phi-plo)*ph; };
-    var pl=function(p,c){ if(p.length<2) return ""; var s="M"+x(p[0].i)+","+ny(p[0].v); for(var k=1;k<p.length;k++) s+=" L"+x(p[k].i)+","+ny(p[k].v); return '<path d="'+s+'" class="'+c+'"/>'; };
-    o+=pl(sp,"price-line")+pl(ap,"avgprice-line");
-    for(var r=0;r<=3;r++){ var rv=plo+(phi-plo)*r/3; o+='<text x="'+(W-padR+6)+'" y="'+(ny(rv)+3)+'" class="axis-label axis-label-price">$'+rv.toFixed(0)+'</text>'; }
-  }
-  o+='<path d="'+d+'" class="line-path"/>';
-  if(ready&&trades){
-    var idx={}; rs.forEach(function(r,i){idx[r.date]=i;});
-    trades.forEach(function(t){ var i2=idx[t.date]; if(i2==null) return;
-      // 그날 종가가 없으면(한국 일·월요일 등) 바로 앞의 종가 점에 붙여 찍는다 → 점이 항상 초록선 위에
-      while(i2>0&&rs[i2].soxlPrice==null) i2--;
-      var v=rs[i2].soxlPrice!=null?rs[i2].soxlPrice:t.price; if(v==null) return;
-      o+='<circle cx="'+x(i2)+'" cy="'+ny(v)+'" r="3.4" class="'+(t.type==="buy"?"dot-buy":"dot-sell")+'"><title>'+t.date+' · '+(t.type==="buy"?"매수":"매도")+' $'+t.price+' × '+t.qty+'주</title></circle>'; });
-  }
-  var ix=rs.length===1?[0]:[0,Math.floor((rs.length-1)/2),rs.length-1];
-  ix.forEach(function(i){ o+='<text x="'+x(i)+'" y="'+(H-6)+'" text-anchor="'+(i===0?"start":(i===rs.length-1?"end":"middle"))+'" class="axis-label">'+rs[i].date.slice(5)+'</text>'; });
-  var lg=[{label:"총자산",color:"var(--accent)"}]; if(hasPx) lg.push({label:(tk||"SOXL")+" 종가",color:"var(--price)"}); if(hasAvg) lg.push({label:"평단",color:"var(--avgprice)",dash:true});
-  if(trades){ lg.push({label:"매수",color:"var(--buy)",dot:true}); lg.push({label:"매도",color:"var(--sell)",dot:true}); }
-  o+=svgLegend(lg,padL);
-  return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="평가액 추이">'+o+'</svg>';
-}
 /* ----- 차트 v2: 원화 총자산 / 종가·평단을 두 장으로 나눔 (축 하나씩), 마우스·터치로 값 보기 ----- */
 var chartReg = {}, chartSeq = 0;
 function niceTicks(lo, hi, n){
