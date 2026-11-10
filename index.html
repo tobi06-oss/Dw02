@@ -972,7 +972,7 @@ function renderINF(a){
   var sellHtml=sells.map(ordRow).join("");
   var lk=!!a.linked, hasRec=lk&&!!trk.meta;
   var missing = lk&&trk.metaLoaded&&!trk.meta ? '<div class="banner warn"><div class="bt">기록 사이클이 없어요</div><div class="bd">원화 기록·매매내역을 담을 사이클을 새로 만듭니다. 지금까지 반영한 체결은 매매내역으로 옮겨져요.</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">사이클 새로 만들기</button></div></div>' : "";
-  return dayStrip(a)+banners(a)+linkBanner(a)+missing+(hasRec?recHead(a):"")+hero+slip(a,plan,buyHtml,sellHtml,plan.notes)+undoPanel()+
+  return banners(a)+linkBanner(a)+missing+(hasRec?recHead(a):"")+hero+slip(a,plan,buyHtml,sellHtml,plan.notes)+dayStrip(a)+undoPanel()+
     (hasRec?amountForm(a)+tradeForm(a)+tradeLog(a)+recCharts(a):"")+editorINF(a)+(lk?archiveSection():logPanel(a))+dangerZone(a,hasRec);
 }
 
@@ -1017,7 +1017,7 @@ function renderVR(a){
     if(zDone) znotes.push((a.qty>0?"첫 매수 주문이 끝났어요. ":"")+"0회차 마감("+dlabel(E.vrDue(a.nextUpdate))+") 종가로 V를 정하고 1회차 주문표를 보여 드려요. 증권사에 아직 남은 주문이 있다면 '첫 매수 다시 내기'로 다시 기록하세요.");
     znotes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
     var zList=vrOrdered(a)?shownOrders(a):plan.buys;
-    return dayStrip(a)+banners(a)+roll+zhero+slip(a,plan,vt(zList),"",znotes)+undoPanel()+vrManual(a)+vrTradeLog(a)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
+    return banners(a)+roll+zhero+slip(a,plan,vt(zList),"",znotes)+dayStrip(a)+undoPanel()+vrManual(a)+vrTradeLog(a)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
   }
   var hero='<section class="panel"><div class="hero"><div><span class="pill">'+esc(state)+'</span> <span class="small muted">'+esc(a.ticker)+' '+({INSTALLMENT:"적립식",LUMPSUM:"거치식",WITHDRAWAL:"인출식"}[a.vrType||"INSTALLMENT"])+' · G '+(a.G||10)+' · '+(a.cycle||1)+'회차</span>'+
     '<div class="bigT">E/V '+(plan.ratio!=null?plan.ratio.toFixed(3):"-")+'</div></div>'+
@@ -1035,7 +1035,7 @@ function renderVR(a){
   var sig=function(l){ return l.map(function(o){ return o.side+o.price+"x"+o.qty; }).join(","); };
   if(rPlaced&&a.cycleEdited&&sig(rList)!==sig(plan.orders)) notes.unshift("이미 넣은 회차 주문을 보여 드려요. 상태 수정 뒤라 지금 상태로 계산한 주문표와 달라요. 증권사 주문을 새로 넣었다면 위 '주문 취소·다시 내기'로 다시 기록하세요.");
   notes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
-  return dayStrip(a)+banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+undoPanel()+vrManual(a)+vrTradeLog(a)+vrRecords(a,plan)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
+  return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+dayStrip(a)+undoPanel()+vrManual(a)+vrTradeLog(a)+vrRecords(a,plan)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
 }
 
 /* ---------- VR 회차 기록: 요약 · 추이 차트 · 표 ---------- */
