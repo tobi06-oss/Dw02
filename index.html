@@ -185,6 +185,10 @@ details.panel[open]>summary{margin-bottom:12px}
 .vtable td.r{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
 .vtable td.r b{font-size:15px}
 .vtable td.idx{width:26px;color:var(--ink-3);font-family:var(--mono);font-size:12px}
+.vtable th{font-size:11.5px;font-weight:600;color:var(--ink-2);text-align:left;padding:0 0 6px;border-bottom:1px solid var(--line)}
+.vtable th.idx{width:26px}.vtable th.r{text-align:right}
+.vtable td.p{font-family:var(--mono);font-variant-numeric:tabular-nums}.vtable td.p b{font-size:15px}
+.cols.vr .col h3{font-size:14px;margin-bottom:8px}
 .notes{margin:14px 0 0;padding:14px 0 0;list-style:none;display:flex;flex-direction:column;gap:4px;border-top:1px dashed var(--line)}
 .notes li{font-size:11.5px;color:var(--ink-3);padding-left:12px;position:relative}
 .notes li::before{content:"·";position:absolute;left:2px;top:0;color:var(--ink-3)}
@@ -958,8 +962,8 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
     '<div class="when">'+(a.type==="VR"?dlabel(plan.session).replace("(", " (")+' VR 주문':dlabel(plan.session)+' 미국장 주문')+'</div></div>'+
     (carried?'<span class="placed"><i>✓</i>'+(plan.zero?'첫 매수 주문 유지 중 · ':'회차 주문 유지 중 · ')+dlabel(E.vrDue(a.nextUpdate))+'까지'+'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button></span>':placed?'<span class="placed"><i>✓</i>주문 넣음 · '+dlabel(plan.session)+(a.type==="VR"?'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button>':'<button type="button" class="placed-x" data-act="cancel-pending">취소</button>')+'</span>':'')+'</div>'+
-    (sum||'')+'<div class="cols"><div class="col buy"><h3>매수</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
-    '<div class="col sell"><h3>매도</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
+    (sum||'')+'<div class="cols'+(a.type==="VR"?' vr':'')+'"><div class="col buy"><h3>'+(a.type==="VR"?'매수 주문':'매수')+'</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
+    '<div class="col sell"><h3>'+(a.type==="VR"?'매도 주문':'매도')+'</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
     (vrLock&&vrMsg?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
     '<div class="actions">'+(placed||vrLock||plan.blocked||!plan.orders.length?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+(shownOrders(a).length?'<button class="btn" data-act="copy">주문 복사</button>':'')+(a.type==="VR"&&!placed&&vrOrdered(a)&&!plan.due?'<button class="btn ghost" data-act="vr-reorder">'+(plan.zero?'첫 매수 다시 내기':'회차 주문 다시 내기')+'</button>':'')+'</div></section>';
@@ -1013,7 +1017,7 @@ function renderVR(a){
   var X=function(x){ return Math.max(0,Math.min(100,(x-lo)/(hi-lo)*100)); };
   var state = plan.E<plan.min?"밴드 아래 · 매수 구간":(plan.E>plan.max?"밴드 위 · 매도 구간":"밴드 안 · 대기");
   var roll="";
-  var vt=function(list){ return list.length?'<table class="vtable">'+list.map(function(o,i){return '<tr><td class="idx">'+(o.kind==="vr-first"?'첫':(i+1))+'</td><td class="r"><b>'+n2(o.price)+'</b> × '+(o.qty||1)+'</td><td class="r muted">Pool '+usd(o.left)+'</td></tr>';}).join("")+'</table>':''; };
+  var vt=function(list){ return list.length?'<table class="vtable"><thead><tr><th class="idx">#</th><th>지정가 × 수량</th><th class="r">체결 후 Pool</th></tr></thead><tbody>'+list.map(function(o,i){return '<tr><td class="idx">'+(o.kind==="vr-first"?'첫':(i+1))+'</td><td class="p"><b>'+usd(o.price)+'</b> <span class="muted">× '+(o.qty||1)+'</span></td><td class="r muted">'+usd(o.left)+'</td></tr>';}).join("")+'</tbody></table>':''; };
   var pendBlock = a.pending && a.nextUpdate && a.pending.session<=a.nextUpdate;
   // 마감 날(휴장이면 그 전 장) 종가가 있어야 마감한다. 그날 시세가 빠지고 다음 장이 먼저 들어오면 기다린다
   var dueD=E.vrDue(a.nextUpdate), dueBar=a.nextUpdate?barOn(a.ticker,dueD):null;
