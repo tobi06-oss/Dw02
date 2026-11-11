@@ -436,6 +436,29 @@ details.vr-hist summary{cursor:pointer;font-size:13px;color:var(--ink-2)}
 table.log.vrh{min-width:0} table.log.vrh td{font-family:var(--mono)} table.log.vrh tr.live td{color:var(--ink-2);font-style:italic}
 table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 @media (max-width:600px){ table.log.vrh th:nth-child(2),table.log.vrh td:nth-child(2),table.log.vrh th:nth-child(7),table.log.vrh td:nth-child(7){display:none} table.log.vrh th,table.log.vrh td{padding:6px 5px} }
+.vr-range{white-space:nowrap;color:var(--accent);font-weight:700;font-size:13px;margin-left:2px}
+.vr-sum{display:grid;grid-template-columns:1.4fr 1fr 1fr;margin:2px 0 12px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.vr-sum>div{padding:9px 12px}.vr-sum>div+div{border-left:1px solid var(--line)}
+.vr-sum .k{font-size:11.5px;color:var(--ink-3)}.vr-sum .v{font-family:var(--mono);font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+.vr-sum .s{font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.vr-check input{width:20px;height:20px;margin:0;accent-color:var(--accent);grid-row:1;align-self:center}
+.vr-check{font-family:var(--sans);display:grid;grid-template-columns:20px 1fr;column-gap:12px;row-gap:3px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.vr-check .k{font-weight:700;font-size:14px;color:var(--ink)}
+.vr-check .vals,.vr-check .h{grid-column:2}
+.vr-check .vals{font-size:14px;color:var(--ink-2)}.vr-check .vals b{color:var(--ink)}.vr-check .sep{margin:0 8px;color:var(--line-2)}
+.vr-check .h{font-size:12.5px;color:var(--ink-2)}
+.vr-roll{gap:14px}
+.vr-roll .bt{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.vr-roll .rt{color:var(--warn);font-size:14px;font-weight:700}
+.vr-roll .when{font-weight:500;font-size:13px;color:var(--ink-2)}
+.vr-roll .rv .k{font-size:13px;color:var(--ink-2);font-weight:600}.vr-roll .rv .k span{font-weight:400}
+.vr-roll .rv b{display:block;font-size:30px;letter-spacing:-0.01em;line-height:1.2}
+.vr-roll .rcalc summary{cursor:pointer;font-size:13px;color:var(--ink-2);font-weight:600}
+.vr-roll .rcalc>div{margin-top:8px;font-size:12.5px;color:var(--ink-2);display:grid;gap:4px;overflow-wrap:anywhere}
+.vr-roll .rcalc>div span{display:inline-block;min-width:52px;font-family:var(--sans);font-weight:600;color:var(--ink)}
+.vr-check .edit-go{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.vr-roll .rbtn{width:100%;padding:14px;font-size:16px;border-radius:12px}
+.vr-roll .rbtn:disabled{opacity:.45;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -927,7 +950,7 @@ function dayStrip(a){
   return '<div><div class="days" role="group" aria-label="날짜별 체결 기록"><span class="dl">기록</span>'+chips+'</div>'+box+'</div>';
 }
 
-function slip(a, plan, buyHtml, sellHtml, notes){
+function slip(a, plan, buyHtml, sellHtml, notes, sum){
   var placed = a.pending && a.pending.session===plan.session;
   var carried = placed && a.pending.carried;
   var vrLock = a.type==="VR" && !placed && (vrOrdered(a) || plan.due);
@@ -935,7 +958,7 @@ function slip(a, plan, buyHtml, sellHtml, notes){
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
     '<div class="when">'+dlabel(plan.session)+' 미국장 주문</div></div>'+
     (carried?'<span class="placed"><i>✓</i>'+(plan.zero?'첫 매수 주문 유지 중 · ':'회차 주문 유지 중 · ')+dlabel(E.vrDue(a.nextUpdate))+'까지'+'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button></span>':placed?'<span class="placed"><i>✓</i>주문 넣음 · '+dlabel(plan.session)+(a.type==="VR"?'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button>':'<button type="button" class="placed-x" data-act="cancel-pending">취소</button>')+'</span>':'')+'</div>'+
-    '<div class="cols"><div class="col buy"><h3>매수</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
+    (sum||'')+'<div class="cols"><div class="col buy"><h3>매수</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
     '<div class="col sell"><h3>매도</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
     (vrLock&&vrMsg?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
@@ -1003,9 +1026,11 @@ function renderVR(a){
       '<div class="bd num">'+(r.extended?'아직 1주도 사지 않았어요. 0회차를 한 주 늘려 '+dlabel(E.vrDue(r.next.nextUpdate))+'까지 첫 매수를 이어 가요.'
         :dlabel(rb.d)+' 종가 '+usd(rb.c)+' × 보유 '+a.qty+'주 = 평가금 E '+usd(r.E)+'<br>이 평가금을 1회차 V로 잡아요: <b>V '+usd(r.next.V)+'</b> · 밴드 '+usd(r.next.V*(1-(a.band||0.15)))+' ~ '+usd(r.next.V*(1+(a.band||0.15)))+' · 다음 V 갱신 '+dlabel(E.vrDue(r.next.nextUpdate)))+'</div>'+
       '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="roll">'+(r.extended?'0회차 한 주 늘리기':'V 정하고 1회차 시작')+'</button></div></div>';
-    else roll='<div class="banner warn"><div class="bt">'+(a.cycle||1)+'회차 마감 · V 갱신</div>'+
-      '<div class="bd num">'+dlabel(rb.d)+' 종가 '+usd(rb.c)+' · E '+usd(r.E)+'<br>다음 V = '+usd(a.V)+' + Pool/G '+usd(a.pool/(a.G||10))+' + (E−V)÷2√G '+usd((r.E-a.V)/(2*Math.sqrt(a.G||10)))+(r.contrib?' + 적립 '+usd(r.contrib):'')+' = <b>'+usd(r.next.V)+'</b></div>'+
-      '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="roll">V 갱신 반영</button></div></div>';
+    else roll='<div class="banner warn vr-roll"><div class="bt"><span class="rt">'+(a.cycle||1)+'회차 마감 · V 갱신</span><span class="when">'+dlabel(rb.d)+' 종가 '+usd(rb.c)+'</span></div>'+
+      '<div class="rv"><div class="k">다음 V <span>(갱신 후 새 기준)</span></div><b class="num">'+usd(r.next.V)+'</b></div>'+
+      '<label class="vr-check"><input type="checkbox" class="roll-ok" onchange="var b=this.closest(\'.vr-roll\').querySelector(\'[data-act=roll]\');b.disabled=!this.checked;"><span class="k">실제 증권사 잔고 확인 완료</span><span class="vals">보유수량 <b class="num">'+a.qty+'주</b><span class="sep">/</span>Pool <b class="num">'+usd(a.pool)+'</b></span><span class="h">다르면 <a href="#" class="edit-go" onclick="event.preventDefault();event.stopPropagation();var d=document.getElementById(\'ed-'+esc(a.id)+'\');if(d){d.open=true;d.scrollIntoView({behavior:\'smooth\',block:\'start\'});}">상태 수정</a>에서 먼저 고쳐 주세요</span></label>'+
+      '<details class="rcalc"><summary>V 계산 보기</summary><div class="num"><div><span>현재 E</span>'+usd(r.E)+' ('+a.qty+'주 × '+usd(rb.c)+')</div><div><span>현재 V</span>'+usd(a.V)+'</div><div><span>다음 V</span>'+usd(a.V)+' + Pool/G '+usd(a.pool/(a.G||10))+' + (E−V)÷2√G '+usd((r.E-a.V)/(2*Math.sqrt(a.G||10)))+(r.contrib?' + 적립 '+usd(r.contrib):'')+' = <b>'+usd(r.next.V)+'</b></div></div></details>'+
+      '<button class="btn primary rbtn" data-act="roll" disabled>V 갱신 반영</button></div>';
   }
   if(plan.zero){
     var zLim=plan.cap?Math.min(100,Math.max(0,plan.used/plan.cap*100)):0;
@@ -1023,7 +1048,7 @@ function renderVR(a){
     var zList=vrOrdered(a)?shownOrders(a):plan.buys;
     return banners(a)+roll+zhero+slip(a,plan,vt(zList),"",znotes)+dayStrip(a)+undoPanel()+vrManual(a)+vrTradeLog(a)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
   }
-  var hero='<section class="panel"><div class="hero"><div><span class="pill">'+esc(state)+'</span> <span class="small muted">'+esc(a.ticker)+' '+({INSTALLMENT:"적립식",LUMPSUM:"거치식",WITHDRAWAL:"인출식"}[a.vrType||"INSTALLMENT"])+' · G '+(a.G||10)+' · '+(a.cycle||1)+'회차</span>'+
+  var hero='<section class="panel"><div class="hero"><div><span class="pill">'+esc(state)+'</span> <span class="small muted">'+esc(a.ticker)+' '+({INSTALLMENT:"적립식",LUMPSUM:"거치식",WITHDRAWAL:"인출식"}[a.vrType||"INSTALLMENT"])+' · G '+(a.G||10)+' · '+(a.cycle||1)+'회차'+'</span>'+(a.nextUpdate?' <span class="vr-range num">['+mdLabel(E.addDays(a.nextUpdate,-14))+' - '+mdLabel(E.vrDue(a.nextUpdate))+']</span>':'')+
     '<div class="bigT">E/V '+(plan.ratio!=null?plan.ratio.toFixed(3):"-")+'</div></div>'+
     '<div class="pl"><div class="v '+signCls(v.pl)+'">'+pct(v.pl)+'</div><div class="s num">평가 '+usd(v.eq,0)+' / 투자 '+usd(v.base,0)+'</div></div></div>'+
     '<div class="gauge" role="img" aria-label="밴드와 평가금 위치"><div class="axis"></div>'+
@@ -1039,9 +1064,20 @@ function renderVR(a){
   var sig=function(l){ return l.map(function(o){ return o.side+o.price+"x"+o.qty; }).join(","); };
   if(rPlaced&&a.cycleEdited&&sig(rList)!==sig(plan.orders)) notes.unshift("이미 넣은 회차 주문을 보여 드려요. 상태 수정 뒤라 지금 상태로 계산한 주문표와 달라요. 증권사 주문을 새로 넣었다면 위 '주문 취소·다시 내기'로 다시 기록하세요.");
   notes.push("주문 방식: 지정가 (본장 고가·저가 기준 체결 판정)");
-  return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes)+dayStrip(a)+undoPanel()+vrManual(a)+vrTradeLog(a)+vrRecords(a,plan)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
+  return banners(a)+roll+hero+slip(a,plan,buyHtml,sellHtml,notes,vrSum(rList,plan))+dayStrip(a)+undoPanel()+vrManual(a)+vrTradeLog(a)+vrRecords(a,plan)+editorVR(a)+vrNotes(a)+dangerZone(a,false);
 }
 
+// 주문표 위 요약 칸: 매수 예약액(주수 · 이번 회차 한도) · 첫 매수가 · 첫 매도가. 증권사에 넣은 주문과 맞춰 보기용
+function vrSum(list, plan){
+  var b=list.filter(function(o){ return o.side==="BUY"; }), s=list.filter(function(o){ return o.side==="SELL"; });
+  if(!b.length&&!s.length) return "";
+  var q=0, amt=0; b.forEach(function(o){ q+=o.qty||1; amt+=o.price*(o.qty||1); });
+  var cell=function(k,v,sub,cls){ return '<div><div class="k">'+k+'</div><div class="v'+(cls?' '+cls:'')+'">'+v+'</div>'+(sub?'<div class="s">'+sub+'</div>':'')+'</div>'; };
+  return '<div class="vr-sum">'+
+    cell("매수 예약",b.length?usd(amt,0):"-",b.length?q+'주 · 한도 '+usd(plan.limit,0):'')+
+    cell("첫 매수",b.length?n2(Math.max.apply(null,b.map(function(o){return o.price;}))):"-","","up")+
+    cell("첫 매도",s.length?n2(Math.min.apply(null,s.map(function(o){return o.price;}))):"-","","down")+'</div>';
+}
 /* ---------- VR 회차 기록: 요약 · 추이 차트 · 표 ---------- */
 // 지난 회차 + 진행 중인 이번 회차(실시간 E, 지금 V·밴드·Pool)
 function vrRows(a, plan){
