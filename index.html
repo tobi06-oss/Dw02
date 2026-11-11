@@ -463,10 +463,6 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 .vr-check .edit-go{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .vr-roll .rbtn{width:100%;padding:14px;font-size:16px;border-radius:12px}
 .vr-roll .rbtn:disabled{opacity:.45;cursor:not-allowed}
-.px-time{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:10px;font-size:12.5px}
-.px-time .k{flex-basis:100%;color:var(--ink-2)}
-.px-time span:not(.k){background:var(--surface);border-radius:999px;padding:3px 10px;color:var(--ink-2)}
-.px-time b{font-family:var(--mono);color:var(--ink);margin-right:4px}
 </style>
 </head>
 <body>
@@ -764,8 +760,8 @@ function banners(a){
     else {
       var lb=lastBar(a.ticker);
       var stale = lb && lb.d > p.session;
-      out+='<div class="banner '+(stale?"warn":"info")+'"><div class="bt">'+(stale?dlabel(p.session)+" 거래 기록이 없어요":dlabel(p.session).replace("(", " (")+" 체결 대기 중")+'</div>'+
-        '<div class="bd">'+(stale?"휴장일이었거나 종가가 빠졌어요. 휴장일이면 건너뛰고, 거래가 있었다면 아래에서 그날 종가를 입력하세요.":"주문을 기록했어요.<br>종가가 들어오면 체결을 자동으로 확인해요.<div class=\"px-time\"><span class=\"k\">종가 업데이트 · 장 다음 날 아침 (한국시간)</span><span><b>06:30</b> 정규장</span><span><b>10:30</b> 시간외</span></div>")+'</div>'+
+      out+='<div class="banner '+(stale?"warn":"info")+'"><div class="bt">'+(stale?dlabel(p.session)+" 거래 기록이 없어요":dlabel(p.session).replace("(", " (")+" 체결 확인 대기")+'</div>'+
+        '<div class="bd">'+(stale?"휴장일이었거나 종가가 빠졌어요. 휴장일이면 건너뛰고, 거래가 있었다면 아래에서 그날 종가를 입력하세요.":"주문을 기록했어요.<br>종가가 들어오면 체결을 자동으로 확인해요.<div class=\"small\" style=\"margin-top:8px\">종가 반영 : 오전 06:30(정규) / 10:30(시간 외)</div>")+'</div>'+
         '<div class="actions" style="margin-top:0"><button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button></div></div>';
     }
   }
