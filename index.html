@@ -880,16 +880,22 @@ function dayKeys(a){ return DAY_KEYS[a.type==="VR"?"VR":"INF"]; }
 function dayMark(a, d, patch){
   var s={}; dayKeys(a).forEach(function(k){ if(a[k]!==undefined) s[k]=JSON.parse(JSON.stringify(a[k])); });
   patch.lastSession=d;
-  patch.dayStart=[{d:d,s:s}].concat((a.dayStart||[]).filter(function(x){ return x.d<d; })).slice(0,DAY_KEEP);
+  var keep=(a.dayStart||[]).filter(function(x){ return x.d<d; });
+  // 그날(또는 뒤) 날짜로 직접 기록한 매매가 이미 있으면 지금 상태는 장 시작 상태가 아니다. 그날은 다시 기록할 수 없게 시작 상태를 남기지 않는다 (GPT N2)
+  var tr=function(l){ return (l.side==="BUY"||l.side==="SELL")&&l.d>=d; };
+  var pre=(a.log||[]).some(tr)||(a.type==="INF"&&a.linked&&trk.meta&&getTrades().some(function(t){ return (t.usDate||t.date)>=d; }));
+  patch.dayStart=(pre?keep:[{d:d,s:s}].concat(keep)).slice(0,DAY_KEEP);
   return patch;
 }
 // 지난 날짜의 기록을 고치면 그 뒤 날들의 시작 상태는 더 이상 맞지 않으므로 버린다 (d 날 시작 상태는 d 날 기록과 무관해 남김. GPT M2)
 function dayCut(a, d){ return d?(a.dayStart||[]).filter(function(x){ return x.d<=d; }):[]; }
 // 두 기록 목록에서 달라진 줄 중 가장 이른 날짜 (같으면 null)
 function dayFirstDiff(before, after, key){
-  var ks=function(l){ var m={}; (l||[]).forEach(function(x){ m[JSON.stringify(normJ(x))]=1; }); return m; }, bm=ks(before), am=ks(after), d=null;
-  var see=function(x,m){ if(!m[JSON.stringify(normJ(x))]){ var v=key(x); if(v&&(!d||v<d)) d=v; } };
-  (before||[]).forEach(function(x){ see(x,am); }); (after||[]).forEach(function(x){ see(x,bm); });
+  // 같은 내용의 줄이 여러 개일 수 있어 줄마다 개수를 센다 (GPT N1)
+  var cnt={}, row={}, d=null;
+  (before||[]).forEach(function(x){ var k=JSON.stringify(normJ(x)); cnt[k]=(cnt[k]||0)+1; row[k]=x; });
+  (after||[]).forEach(function(x){ var k=JSON.stringify(normJ(x)); cnt[k]=(cnt[k]||0)-1; row[k]=x; });
+  Object.keys(cnt).forEach(function(k){ if(cnt[k]){ var v=key(row[k]); if(v&&(!d||v<d)) d=v; } });
   return d;
 }
 function dayStartOf(a, d){ return (a.dayStart||[]).filter(function(x){ return x.d===d; })[0]||null; }
