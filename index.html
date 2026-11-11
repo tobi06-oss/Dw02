@@ -188,7 +188,7 @@ details.panel[open]>summary{margin-bottom:12px}
 .vtable th{font-size:11.5px;font-weight:600;color:var(--ink-2);text-align:left;padding:0 0 6px;border-bottom:1px solid var(--line)}
 .vtable th.idx{width:26px}.vtable th.r{text-align:right}
 .vtable td.p{font-family:var(--mono);font-variant-numeric:tabular-nums}.vtable td.p b{font-size:15px}
-.cols.vr .col h3{font-size:14px;margin-bottom:8px}
+.cols .col h3{font-size:14px;margin-bottom:8px}
 .notes{margin:14px 0 0;padding:14px 0 0;list-style:none;display:flex;flex-direction:column;gap:4px;border-top:1px dashed var(--line)}
 .notes li{font-size:11.5px;color:var(--ink-3);padding-left:12px;position:relative}
 .notes li::before{content:"·";position:absolute;left:2px;top:0;color:var(--ink-3)}
@@ -440,7 +440,7 @@ details.vr-hist summary{cursor:pointer;font-size:13px;color:var(--ink-2)}
 table.log.vrh{min-width:0} table.log.vrh td{font-family:var(--mono)} table.log.vrh tr.live td{color:var(--ink-2);font-style:italic}
 table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 @media (max-width:600px){ table.log.vrh th:nth-child(2),table.log.vrh td:nth-child(2),table.log.vrh th:nth-child(7),table.log.vrh td:nth-child(7){display:none} table.log.vrh th,table.log.vrh td{padding:6px 5px} }
-.vr-range{white-space:nowrap;color:var(--accent);font-weight:700;font-size:13px;margin-left:2px}
+.vr-range{display:inline-block;white-space:nowrap;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:2px 10px;font-weight:700;font-size:12.5px;margin:4px 0 0}
 .vr-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:2px 0 12px}
 .vr-sum>div{background:var(--surface-2);border-radius:12px;padding:10px 6px;text-align:center;min-width:0}
 .vr-sum .k{font-size:11.5px;color:var(--ink-3)}.vr-sum .v{font-family:var(--mono);font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
@@ -960,10 +960,10 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
   var vrLock = a.type==="VR" && !placed && (vrOrdered(a) || plan.due);
   var vrMsg = plan.due ? (plan.zero ? "0회차 마감(시작 V 정하기)을 먼저 반영하면 1회차 주문을 넣을 수 있어요." : "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요.") : plan.zero ? "" : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+") 후에 넣어요.";
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
-    '<div class="when">'+(a.type==="VR"?dlabel(plan.session).replace("(", " (")+' VR 주문':dlabel(plan.session)+' 미국장 주문')+'</div></div>'+
+    '<div class="when">'+dlabel(plan.session).replace("(", " (")+(a.type==="VR"?' VR 주문':' 무매 주문')+'</div></div>'+
     (carried?'<span class="placed"><i>✓</i>'+(plan.zero?'첫 매수 주문 유지 중 · ':'회차 주문 유지 중 · ')+dlabel(E.vrDue(a.nextUpdate))+'까지'+'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button></span>':placed?'<span class="placed"><i>✓</i>주문 넣음 · '+dlabel(plan.session)+(a.type==="VR"?'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button>':'<button type="button" class="placed-x" data-act="cancel-pending">취소</button>')+'</span>':'')+'</div>'+
-    (sum||'')+'<div class="cols'+(a.type==="VR"?' vr':'')+'"><div class="col buy"><h3>'+(a.type==="VR"?'매수 주문':'매수')+'</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
-    '<div class="col sell"><h3>'+(a.type==="VR"?'매도 주문':'매도')+'</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
+    (sum||'')+'<div class="cols"><div class="col buy"><h3>매수 주문</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
+    '<div class="col sell"><h3>매도 주문</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
     (vrLock&&vrMsg?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
     '<div class="actions">'+(placed||vrLock||plan.blocked||!plan.orders.length?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>')+(shownOrders(a).length?'<button class="btn" data-act="copy">주문 복사</button>':'')+(a.type==="VR"&&!placed&&vrOrdered(a)&&!plan.due?'<button class="btn ghost" data-act="vr-reorder">'+(plan.zero?'첫 매수 다시 내기':'회차 주문 다시 내기')+'</button>':'')+'</div></section>';
