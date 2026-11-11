@@ -437,8 +437,8 @@ table.log.vrh{min-width:0} table.log.vrh td{font-family:var(--mono)} table.log.v
 table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 @media (max-width:600px){ table.log.vrh th:nth-child(2),table.log.vrh td:nth-child(2),table.log.vrh th:nth-child(7),table.log.vrh td:nth-child(7){display:none} table.log.vrh th,table.log.vrh td{padding:6px 5px} }
 .vr-range{white-space:nowrap;color:var(--accent);font-weight:700;font-size:13px;margin-left:2px}
-.vr-sum{display:grid;grid-template-columns:1.4fr 1fr 1fr;margin:2px 0 12px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.vr-sum>div{padding:9px 12px}.vr-sum>div+div{border-left:1px solid var(--line)}
+.vr-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:2px 0 12px}
+.vr-sum>div{background:var(--surface-2);border-radius:12px;padding:10px 6px;text-align:center;min-width:0}
 .vr-sum .k{font-size:11.5px;color:var(--ink-3)}.vr-sum .v{font-family:var(--mono);font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
 .vr-sum .s{font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .vr-check input{width:20px;height:20px;margin:0;accent-color:var(--accent);grid-row:1;align-self:center}
@@ -956,7 +956,7 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
   var vrLock = a.type==="VR" && !placed && (vrOrdered(a) || plan.due);
   var vrMsg = plan.due ? (plan.zero ? "0회차 마감(시작 V 정하기)을 먼저 반영하면 1회차 주문을 넣을 수 있어요." : "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요.") : plan.zero ? "" : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+") 후에 넣어요.";
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
-    '<div class="when">'+dlabel(plan.session)+' 미국장 주문</div></div>'+
+    '<div class="when">'+(a.type==="VR"?dlabel(plan.session).replace("(", " (")+' VR 주문':dlabel(plan.session)+' 미국장 주문')+'</div></div>'+
     (carried?'<span class="placed"><i>✓</i>'+(plan.zero?'첫 매수 주문 유지 중 · ':'회차 주문 유지 중 · ')+dlabel(E.vrDue(a.nextUpdate))+'까지'+'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button></span>':placed?'<span class="placed"><i>✓</i>주문 넣음 · '+dlabel(plan.session)+(a.type==="VR"?'<button type="button" class="placed-x" data-act="vr-reorder">주문 취소·다시 내기</button>':'<button type="button" class="placed-x" data-act="cancel-pending">취소</button>')+'</span>':'')+'</div>'+
     (sum||'')+'<div class="cols"><div class="col buy"><h3>매수</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
     '<div class="col sell"><h3>매도</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
@@ -1075,8 +1075,8 @@ function vrSum(list, plan){
   var cell=function(k,v,sub,cls){ return '<div><div class="k">'+k+'</div><div class="v'+(cls?' '+cls:'')+'">'+v+'</div>'+(sub?'<div class="s">'+sub+'</div>':'')+'</div>'; };
   return '<div class="vr-sum">'+
     cell("매수 예약",b.length?usd(amt,0):"-",b.length?q+'주 · 한도 '+usd(plan.limit,0):'')+
-    cell("첫 매수",b.length?n2(Math.max.apply(null,b.map(function(o){return o.price;}))):"-","","up")+
-    cell("첫 매도",s.length?n2(Math.min.apply(null,s.map(function(o){return o.price;}))):"-","","down")+'</div>';
+    cell("첫 매수",b.length?usd(Math.max.apply(null,b.map(function(o){return o.price;}))):"-","","up")+
+    cell("첫 매도",s.length?usd(Math.min.apply(null,s.map(function(o){return o.price;}))):"-","","down")+'</div>';
 }
 /* ---------- VR 회차 기록: 요약 · 추이 차트 · 표 ---------- */
 // 지난 회차 + 진행 중인 이번 회차(실시간 E, 지금 V·밴드·Pool)
