@@ -761,7 +761,7 @@ function banners(a){
       var lb=lastBar(a.ticker);
       var stale = lb && lb.d > p.session;
       out+='<div class="banner '+(stale?"warn":"info")+'"><div class="bt">'+(stale?dlabel(p.session)+" 거래 기록이 없어요":dlabel(p.session)+" 체결 대기 중")+'</div>'+
-        '<div class="bd">'+(stale?"휴장일이었거나 종가가 빠졌어요. 휴장일이면 건너뛰고, 거래가 있었다면 아래에서 그날 종가를 입력하세요.":"주문을 넣었다고 기록해 두었어요. 미국장 마감 후 종가가 들어오면 체결을 자동으로 판정합니다.")+'</div>'+
+        '<div class="bd">'+(stale?"휴장일이었거나 종가가 빠졌어요. 휴장일이면 건너뛰고, 거래가 있었다면 아래에서 그날 종가를 입력하세요.":"주문을 넣었다고 기록해 두었어요. 미국장 마감 후 종가가 들어오면 체결을 자동으로 판정합니다.<div class=\"small\" style=\"margin-top:6px\">종가는 미국장이 열린 다음 날 한국시간 아침 <b>6시 반쯤</b>과 <b>10시 반쯤</b>(시간외 가격까지) 들어와요.</div>")+'</div>'+
         '<div class="actions" style="margin-top:0"><button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button></div></div>';
     }
   }
