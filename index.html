@@ -860,6 +860,8 @@ function vrPastPlan(a){
   var s=Object.assign({},a), later=(a.log||[]).filter(function(l){ return (l.side==="BUY"||l.side==="SELL")&&l.d>d0; });
   for(var i=0;i<later.length;i++){ var u=E.vrUnapply(s,later[i]); if(u.error) return null; s=Object.assign(s,u.next); }
   var p=E.vrPlan(s,b0); if(!p||p.due||!p.orders.length) return null;
+  // 회차 첫 장부터 다시 확인하므로, 그 사이 직접 기록한 매매는 실제 계좌·기록에서도 지우고 회차 시작 상태로 돌린다 (안 지우면 같은 체결이 두 번 들어감. GPT M1)
+  p.rewind={d0:d0,n:later.length,state:s};
   return p;
 }
 function pendingOf(p){
@@ -881,6 +883,15 @@ function dayMark(a, d, patch){
   patch.dayStart=[{d:d,s:s}].concat((a.dayStart||[]).filter(function(x){ return x.d<d; })).slice(0,DAY_KEEP);
   return patch;
 }
+// 지난 날짜의 기록을 고치면 그 뒤 날들의 시작 상태는 더 이상 맞지 않으므로 버린다 (d 날 시작 상태는 d 날 기록과 무관해 남김. GPT M2)
+function dayCut(a, d){ return d?(a.dayStart||[]).filter(function(x){ return x.d<=d; }):[]; }
+// 두 기록 목록에서 달라진 줄 중 가장 이른 날짜 (같으면 null)
+function dayFirstDiff(before, after, key){
+  var ks=function(l){ var m={}; (l||[]).forEach(function(x){ m[JSON.stringify(normJ(x))]=1; }); return m; }, bm=ks(before), am=ks(after), d=null;
+  var see=function(x,m){ if(!m[JSON.stringify(normJ(x))]){ var v=key(x); if(v&&(!d||v<d)) d=v; } };
+  (before||[]).forEach(function(x){ see(x,am); }); (after||[]).forEach(function(x){ see(x,bm); });
+  return d;
+}
 function dayStartOf(a, d){ return (a.dayStart||[]).filter(function(x){ return x.d===d; })[0]||null; }
 // 어디까지 기록했는지: lastSession, 없으면(예전 계좌) 마지막 매매 날짜
 function dayThrough(a){
@@ -898,7 +909,10 @@ function dayNext(a){
   if(a.type!=="INF") return null;
   var th=dayThrough(a); if(!th) return null;
   var nb=bars(a.ticker).filter(function(b){ return b.d>th; })[0];
-  return nb&&infDayPlan(a,nb.d)?{d:nb.d,act:"day-place"}:null;
+  if(!nb) return null;
+  // 달력상 다음 장의 종가가 빠졌으면 건너뛰지 않고 멈춘다 (GPT M3)
+  var ex=E.nextSession(th); if(E.calKnown(ex)&&nb.d!==ex) return {d:ex,act:null,missing:true};
+  return infDayPlan(a,nb.d)?{d:nb.d,act:"day-place"}:null;
 }
 // 무매: d 장 주문표 = d 전날까지 종가로 계산한 주문표
 function infDayPlan(a, d){
@@ -918,7 +932,8 @@ function dayStrip(a){
     return '<button type="button" class="'+cls+'" data-act="day-pick" data-d="'+x.d+'"'+(can||isN?'':' disabled')+' title="'+(isN?'다음 기록할 날':done?(can?'기록함 · 눌러서 다시 기록':'기록함'):'')+'">'+dlabel(x.d).replace(/\(.\)/,"")+'<b>'+n2(x.c)+'</b></button>';
   }).join("");
   var box="";
-  if(sel&&dayStartOf(a,sel)&&th&&sel<=th){
+  if(nx&&nx.missing) box='<div class="dayx"><span>'+dlabel(nx.d)+' 종가가 없어요. 아래 "종가 직접 입력"에서 넣으면 이어서 기록할 수 있어요.</span><button type="button" class="btn" data-act="day-skip" data-d="'+nx.d+'">휴장이었으면 건너뛰기</button></div>';
+  else if(sel&&dayStartOf(a,sel)&&th&&sel<=th){
     var n=(a.log||[]).filter(function(l){ return l.d>=sel&&(l.side==="BUY"||l.side==="SELL"); }).length;
     var mine=(a.log||[]).filter(function(l){ return l.d===sel&&(l.side==="BUY"||l.side==="SELL"); });
     box='<div class="dayx"><span>'+dlabel(sel)+' 기록: '+(mine.length?esc(mine.map(function(l){ return (l.side==="BUY"?"매수 ":"매도 ")+n2(l.px)+"×"+l.q; }).join(", ")):"체결 없음")+'</span>'+
@@ -1199,6 +1214,7 @@ function vrCommit(a, patch, log, label, msg, b){
   // 회차 주문을 유지 중이면(다 체결돼 비었어도) 넣은 주문에서 이 주문들의 체결 기록만 빼서 남은 주문을 다시 센다.
   // 직접 넣은 매매(번호 없음)는 증권사 주문을 바꾸지 않으므로 잔량도 그대로다
   patch.log=log.slice(0,400);
+  var cd=dayFirstDiff(a.log,patch.log,function(l){ return l.side==="BUY"||l.side==="SELL"?l.d:null; }); if(cd) patch.dayStart=dayCut(a,cd);
   var lbK=lastBar(a.ticker), fromK=a.pending&&a.pending.carried?a.pending.basis:(!a.pending&&vrOrdered(a)&&Array.isArray(a.cycleOrders)&&a.cycleOrders.length&&lbK?lbK.d:null);
   if(fromK){ patch.pending=vrCarry(a,patch,fromK); delete fillEdits[a.id]; }
   var prev=JSON.parse(JSON.stringify(a)); delete prev._plan;
@@ -1918,8 +1934,9 @@ function linkBanner(a){
 
 /* ----- 저장 동작 ----- */
 function writeTrades(a, list, label, msg){
-  var u=snap([recPath(a),"accounts/"+a.id]);
-  return Promise.all([db.doc(recPath(a)).update({trades:list}), save(a, statePatch(a,list))]).then(function(){
+  var u=snap([recPath(a),"accounts/"+a.id]), sp=statePatch(a,list);
+  var cd=dayFirstDiff(getTrades(),list,function(t){ return t.usDate||t.date; }); if(cd) sp.dayStart=dayCut(a,cd);
+  return Promise.all([db.doc(recPath(a)).update({trades:list}), save(a, sp)]).then(function(){
     if(msg) toast(msg);
     pushUndo(label, u);
     render();
@@ -2228,6 +2245,13 @@ document.addEventListener("click", function(ev){
     else if(dn&&dn.d===pd){ window.scrollTo({top:0,behavior:"smooth"}); return; }
     else { daySel[a.id]=daySel[a.id]===pd?null:pd; render(); return; }
   }
+  if(act==="day-skip"){
+    var sd=b.getAttribute("data-d"), sn=dayNext(a); if(!sn||!sn.missing||sn.d!==sd) return;
+    if(!confirm(dlabel(sd)+"을 휴장으로 보고 건너뛸까요?\n거래가 있었다면 취소하고 그날 종가를 먼저 넣으세요.")) return;
+    var prevK=snapA();
+    save(a,dayMark(a,sd,{})).then(function(){ toast(dlabel(sd)+"을 건너뛰었어요."); undoSet(dlabel(sd)+" 건너뛰기",prevK); render(); });
+    return;
+  }
   if(act==="day-redo"){
     var rd=b.getAttribute("data-d"), rs=dayStartOf(a,rd); if(!rs) return;
     if(a.type==="INF"&&rs.s.cycle!=null&&rs.s.cycle!==(a.cycle||1)){ toast("그 뒤에 사이클이 끝나서 이 날부터 다시 기록할 수 없어요."); return; }
@@ -2241,15 +2265,21 @@ document.addEventListener("click", function(ev){
     var redoLbl=dlabel(rd)+"부터 다시 기록", redoMsg=dlabel(rd)+" 장 시작 상태로 돌렸어요. 이 날부터 다시 기록하세요.";
     if(a.type==="INF"&&a.linked&&trk.meta){
       var prevM2=curDoc(recPath(a)), keepT=getTrades().filter(function(t){ return (t.usDate||t.date)<rd; });
-      db.doc(recPath(a)).update({trades:keepT}).then(function(){ return save(a,rp); }).then(function(){ toast(redoMsg); pushUndo(redoLbl,[{p:recPath(a),d:prevM2},{p:"accounts/"+a.id,d:prevR2}]); render(); }).catch(function(e){ console.error(e); toast("되돌리지 못했어요."); });
+      // 매매내역과 계좌를 한 번에 저장한다 (한쪽만 저장되면 기록과 상태가 어긋남. GPT M4)
+      db.batchUpdate([[recPath(a),{trades:keepT}],["accounts/"+a.id,rp]]).then(function(){ toast(redoMsg); pushUndo(redoLbl,[{p:recPath(a),d:prevM2},{p:"accounts/"+a.id,d:prevR2}]); render(); }).catch(function(e){ console.error(e); toast("되돌리지 못했어요."); });
     } else save(a,rp).then(function(){ toast(redoMsg); pushUndo(redoLbl,[{p:"accounts/"+a.id,d:prevR2}]); render(); });
     return;
   }
   if(act==="place-past"){
     // VR 날짜 줄: 회차 첫 장부터 넣은 회차 주문으로 기록 (이미 종가가 나온 기록은 건드리지 않음)
     var ps=a.type==="VR"?vrPastPlan(a):null; if(!ps||(a.pending&&barOn(a.ticker,a.pending.session))) return;
+    var rw=ps.rewind;
+    if(rw&&rw.n&&!confirm(dlabel(ps.session)+"부터 넣은 회차 주문으로 기록할까요?\nV 갱신 뒤 직접 기록한 매매 "+rw.n+"건을 지우고 회차 시작 상태로 돌린 뒤, "+dlabel(ps.session)+"부터 체결을 차례로 다시 확인해요. 실행취소로 되돌릴 수 있어요.")) return;
     var prevS=snapA(); delete fillEdits[a.id];
     var pps={pending:pendingOf(ps),events:[]};
+    if(rw){ pps.lastSession=rw.d0; pps.dayStart=dayCut(a,rw.d0); }
+    if(rw&&rw.n){ Object.assign(pps,vrPatchOf(rw.state));
+      pps.log=(a.log||[]).filter(function(l){ return !((l.side==="BUY"||l.side==="SELL")&&l.d>rw.d0); }); }
     if(a.type==="VR"){ pps.cycleOrdered=true; pps.pending.cycleOrder=true; pps.cycleOrders=vrNumber(pps.pending.orders,pps.pending.placedAt); pps.cycleEdited=false; }
     save(a,pps).then(function(){ toast(dlabel(ps.session)+(a.type==="VR"?"부터 넣은 회차 주문으로 기록했어요. 지난 체결을 차례로 확인하세요.":" 주문으로 기록했어요. 그날 종가로 체결을 확인하세요.")); undoSet(dlabel(ps.session)+" 주문 넣음 (마감 후 기록)",prevS); render(); });
   } else if(act==="vr-csv"){
@@ -2369,6 +2399,8 @@ document.addEventListener("submit", function(ev){
     } else pushUndo("상태 수정",[{p:"accounts/"+a.id,d:prevA}]);
     // 무엇이 바뀌었는지 기타 기록에 남긴다 (예: 보유 42→43주). 매매 없이 숫자만 바뀐 걸 나중에 추적할 수 있게
     patch.log=[{d:new Date().toISOString().slice(0,10),side:"NOTE",text:editDiffText(a,patch)}].concat(a.log||[]).slice(0,400);
+    // 숫자를 직접 고쳤으니 저장해 둔 지난 날 시작 상태는 더 이상 맞지 않는다 (GPT M2)
+    patch.dayStart=[];
     pre.then(function(){ return save(a,patch); }).then(function(){ toast("저장했어요."); render(); });
   } else if(f.id==="add-form"){
     var type=$("n-type").value, tk=$("n-ticker").value, name=$("n-name").value.trim();
@@ -2779,6 +2811,8 @@ function makeAdapter(uid) {
   };
   return {
     deleteField: () => deleteField(),
+    // 여러 문서를 함께 고친다: 모두 저장되거나 하나도 저장되지 않는다
+    batchUpdate: (list) => { const b = writeBatch(fs); list.forEach(([p, d]) => b.update(ref(p), d)); return b.commit(); },
     doc: (p) => { const r = ref(p); return {
       set: (d, o) => setDoc(r, d && Array.isArray(d.bars) ? { ...d, bars: d.bars.map(toObj) } : d, o && o.merge ? { merge: true } : {}),
       update: (d) => updateDoc(r, d), delete: () => deleteDoc(r),
