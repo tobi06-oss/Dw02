@@ -21,10 +21,9 @@ jobs:
           node-version: 20
       - name: 패키지 설치
         working-directory: scripts
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: 종가 받아서 Firestore에 저장
         working-directory: scripts
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node update-prices.mjs
-      # 큰수 때문에 못 산 매수 알림(big-miss-alert.mjs)은 알림 기능 보류로 뺐습니다 (2026-11-09). 앱의 체결 확인 화면에는 그대로 보입니다.
