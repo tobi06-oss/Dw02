@@ -700,7 +700,7 @@ function renderTabs(){
   $("tabs").innerHTML=html;
   // 위 탭: 무한매수·VR(계좌가 없어도 늘 보임)과 자산(원화 총자산, 계좌와 상관없음). 주문·체결 확인이 남은 계좌가 있으면 빨간 점
   $("kind-tabs").innerHTML=["INF","VR","ASSET"].map(function(k){
-    if(k==="ASSET") return '<button type="button" role="tab" data-kind="ASSET" aria-selected="'+(curType==="ASSET")+'">자산</button>';
+    if(k==="ASSET") return '<button type="button" role="tab" data-kind="ASSET" aria-selected="'+(curType==="ASSET")+'">자산·기록</button>';
     var ks=all.filter(function(a){ return kindOf(a)===k; }), need=ks.some(function(a){ return !!orderBadge(a); });
     return '<button type="button" role="tab" data-kind="'+k+'" aria-selected="'+(curType===k)+'">'+kindName(k)+(loaded?'<span class="n">'+ks.length+'</span>':'')+(need?'<span class="dot" title="할 일이 남은 계좌가 있어요"></span>':'')+'</button>';
   }).join("");
