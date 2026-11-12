@@ -79,7 +79,9 @@ service cloud.firestore {
         && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 1000
         && request.resource.data.ver is string && request.resource.data.ver.size() <= 40
         && request.resource.data.createdAt == request.time;
-      allow read: if isOwner() || (isMember() && resource.data.uid == request.auth.uid);
+      // get: 아직 없는 문서는 회원도 읽을 수 있다 (보내기 재시도 때 이미 저장됐는지 확인용, 없는 문서라 보이는 내용은 없음)
+      allow get: if isOwner() || (isMember() && (resource == null || resource.data.uid == request.auth.uid));
+      allow list: if isOwner() || (isMember() && resource.data.uid == request.auth.uid);
       allow update: if isOwner()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer', 'answeredAt'])
         && request.resource.data.answer is string
