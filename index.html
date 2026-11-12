@@ -1250,12 +1250,11 @@ function vrCommit(a, patch, log, label, msg, b){
   var cd=dayFirstDiff(a.log,patch.log,function(l){ return l.side==="BUY"||l.side==="SELL"?l.d:null; }); if(cd) patch.dayStart=dayCut(a,cd);
   var lbK=lastBar(a.ticker), fromK=a.pending&&a.pending.carried?a.pending.basis:(!a.pending&&vrOrdered(a)&&Array.isArray(a.cycleOrders)&&a.cycleOrders.length&&lbK?lbK.d:null);
   if(fromK){ patch.pending=vrCarry(a,patch,fromK); delete fillEdits[a.id]; }
-  var prev=JSON.parse(JSON.stringify(a)); delete prev._plan;
   if(b) b.disabled=true;
-  return save(a,patch).then(function(){
-    toast(msg); pushUndo(label,[{p:"accounts/"+a.id,d:prev}]);
+  return save(a,patch,label).then(function(){
+    toast(msg);
     vmf.px=""; vmf.q=""; vmf.edit=null; render();
-  }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); if(b) b.disabled=false; });
+  }).catch(function(){ if(b) b.disabled=false; });
 }
 // 새 체결(side, vmf 값)을 base 상태에 넣는다. 지난 회차 체결은 이번 회차 한도와 상관없다.
 function vrAddTo(a, base, side, d, px, q){
@@ -1371,7 +1370,7 @@ function replay(list, seed){
   });
   return { qty:q, avg: avg!=null?Math.round(avg*10000)/10000:null, cash:E.r2(cash), T:Math.round(T*10000)/10000, realized:E.r2(realized), totalBuy:E.r2(buy), totalSell:E.r2(sell) };
 }
-function statePatch(a, list){ var s=replay(list, seedOf(a)); return { qty:s.qty, avg:s.avg, cash:s.cash, T:s.T, realized:s.realized }; }
+function statePatch(a, list, m){ var s=replay(list, seedOf(a, m)); return { qty:s.qty, avg:s.avg, cash:s.cash, T:s.T, realized:s.realized }; }
 
 // 날짜별 기록 행: 원화 평가액 + 그날 기준 보유수량·평단 (trades가 null이면 행에 저장된 값을 그대로 씀 — 지난 사이클용)
 function computeRows(entries, trades, tk){
@@ -1409,7 +1408,6 @@ function curDoc(path){
   else if(c==="cycles"){ var cy=trk.cycles.filter(function(y){return y.id===id;})[0]; if(cy){ x=JSON.parse(JSON.stringify(cy)); delete x.id; } }
   return x;
 }
-function snap(paths){ return paths.map(function(p){ return {p:p, d:curDoc(p)}; }); }
 // 작업 직전(d)과 직후(a) 상태를 같이 저장해 두고, 되돌릴 때는 "그 작업이 바꾼 부분만" 되돌린다.
 // 그 부분을 나중 작업이 다시 바꿨으면(충돌) 확인창을 띄운다.
 // 실행취소 목록은 무매와 VR을 따로 둔다: 계좌 문서는 그 계좌 유형, 원화 기록(cycle·entries·cycles)은 무매
@@ -1435,19 +1433,47 @@ function kindStack(){
   Object.keys(accounts).forEach(function(id){ has[accounts[id].type==="VR"?"VR":"INF"]=1; }); has.ASSET=1;
   return undoStack.filter(function(u){ var uk=undoKind(u); return uk===k||!has[uk]; });
 }
-function pushUndo(label, ops){
-  if(!db||!ops||!ops.length) return;
-  var id="u"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), t=Date.now();
-  var local={id:id,label:label,time:t,ops:ops}; local.kind=undoKind(local); undoStack.push(local);
-  Promise.all(ops.map(function(o){ return db.doc(o.p).get(); })).then(function(afters){
-    var full=ops.map(function(o,i){ return {p:o.p, d:o.d, a:afters[i]==null?null:afters[i]}; });
-    // 유형은 줄이기 전 문서로 판단한다 (줄인 문서에는 type이 빠질 수 있음)
-    var item={label:label,time:t,slim:true,kind:undoKind({ops:full}),ops:full.map(slimOp)};
-    local.ops=item.ops; local.kind=item.kind;
-    return db.doc("undo/"+id).set(item);
-  }).catch(function(e){ console.error("undo save",e); });
-  var old=undoStack.filter(function(u){ return undoKind(u)===local.kind; }).sort(function(a,b){return a.time-b.time;});
-  while(old.length>UNDO_MAX){ var o=old.shift(); undoStack=undoStack.filter(function(u){return u.id!==o.id;}); db.doc("undo/"+o.id).delete(); }
+// 문서 여러 개와 그 실행취소 기록을 한 번에 저장한다 (모두 저장되거나 하나도 안 됨). label이 없으면 실행취소 기록을 남기지 않는다.
+// 계좌·매매내역 문서는 이 화면이 알던 판(rev)과 서버의 판이 같을 때만 저장한다: 다른 창·기기에서 먼저 바꿨으면 덮어쓰지 않는다
+function commit(writes, label, quiet){
+  if(!db) return Promise.reject(new Error("저장소에 연결되지 않았어요."));
+  writes.forEach(function(w){
+    if(w.expect!==undefined||w.expectDoc!==undefined||w.op==="check") return;
+    var sp=w.p.split("/"), cur=sp[0]==="accounts"?accounts[sp[1]]:sp[0]==="cycle"?trk.metas[sp[1]]:undefined;
+    if(cur) w.expect=typeof cur.rev==="number"?cur.rev:0;
+  });
+  var t=Date.now(), undo=label?{id:"u"+t.toString(36)+Math.random().toString(36).slice(2,6), make:function(full){
+    return {label:label,time:t,slim:true,kind:undoKind({ops:full}),ops:full.map(slimOp)};
+  }}:null;
+  return db.commit(writes, undo).then(function(revs){ return waitRevs(revs||{}); }).catch(function(e){
+    if(e&&e.stale&&!quiet) toast("다른 창이나 기기에서 먼저 바뀌었어요. 최신 내용으로 바뀐 화면을 보고 다시 해 주세요.");
+    e=e||new Error("저장 실패"); e.shown=!!e.stale; throw e;
+  });
+}
+// 저장은 서버에서 끝나므로, 이 화면의 실시간 목록에 새 판이 들어올 때까지(최대 4초) 기다렸다가 다음 단계를 한다.
+// 그래야 저장 직후 화면이 새 내용으로 그려지고, 바로 이어서 누른 버튼이 옛 판으로 막히지 않는다
+var revWaits=[];
+function revSeen(p, rev){
+  var sp=p.split("/"), cur=sp[0]==="accounts"?accounts[sp[1]]:trk.metas[sp[1]];
+  if(rev==null) return !cur;
+  return !!cur&&typeof cur.rev==="number"&&cur.rev>=rev;
+}
+function revTick(){ revWaits=revWaits.filter(function(w){ if(Object.keys(w.revs).every(function(p){ return revSeen(p,w.revs[p]); })){ w.done(); return false; } return true; }); }
+function waitRevs(revs){
+  return new Promise(function(res){
+    var w={revs:revs, done:res}; revWaits.push(w); revTick();
+    setTimeout(function(){ revWaits=revWaits.filter(function(x){ return x!==w; }); res(); }, 4000);
+  });
+}
+// 실행취소 목록은 종류(무매·VR·자산)마다 최근 UNDO_MAX개만 남긴다
+function trimUndo(){
+  if(!db) return;
+  var by={};
+  undoStack.forEach(function(u){ var k=undoKind(u); (by[k]=by[k]||[]).push(u); });
+  Object.keys(by).forEach(function(k){
+    var l=by[k].sort(function(a,b){ return a.time-b.time; });
+    while(l.length>UNDO_MAX){ var o=l.shift(); db.doc("undo/"+o.id).delete().catch(function(){}); }
+  });
 }
 // 실행취소 기록에는 작업 전후로 달라진 필드만 남긴다. 매매 기록(log) 같은 큰 목록을 통째로 두 벌씩 저장하면
 // 실행취소 문서가 커져서 앱을 열 때마다 내려받는 양이 많아진다. 같은 필드는 planOp에서 어차피 건너뛴다.
@@ -1455,7 +1481,7 @@ function slimOp(o){
   if(!o.d||!o.a||typeof o.d!=="object"||typeof o.a!=="object") return o;
   var d={}, a={};
   Object.keys(o.d).concat(Object.keys(o.a)).forEach(function(k){
-    if(k in d||k in a||same(o.d[k],o.a[k])) return;
+    if(k==="rev"||k in d||k in a||same(o.d[k],o.a[k])) return;
     var bv=o.d[k], av=o.a[k];
     // 목록은 mergeList가 항목 단위로 비교하므로, 전후가 똑같은 항목은 빼도 결과가 같다
     if(Array.isArray(bv)&&Array.isArray(av)){
@@ -1512,7 +1538,7 @@ function planOp(op, cur, skipKeys){
   var patch={}, conflict=false, changed=false, keys={};
   Object.keys(b).concat(Object.keys(a)).forEach(function(k){ keys[k]=1; });
   Object.keys(keys).forEach(function(k){
-    if(same(b[k],a[k])||(skipKeys&&skipKeys.indexOf(k)>=0)) return;
+    if(k==="rev"||same(b[k],a[k])||(skipKeys&&skipKeys.indexOf(k)>=0)) return;
     changed=true;
     if((Array.isArray(b[k])||Array.isArray(a[k]))&&(cur[k]==null||Array.isArray(cur[k]))){ var m=mergeList(cur[k],b[k],a[k]); patch[k]=m.val; if(m.conflict) conflict=true; return; }
     if(!same(cur[k],a[k])) conflict=true;
@@ -1524,8 +1550,9 @@ function runUndo(u){
   var paths=u.ops.map(function(o){ return o.p; });
   return Promise.all(paths.map(function(p){ return db.doc(p).get(); })).then(function(curs){
     var cycIdx=-1; paths.forEach(function(p,i){ if(cycIdx<0&&p.indexOf("cycle/")===0) cycIdx=i; });
+    // 연결 여부도 지금 화면이 아니라 방금 서버에서 읽은 계좌 문서로 판단한다
     var plans=u.ops.map(function(o,i){
-      var sp=o.p.split("/"), acct=sp[0]==="accounts"?accounts[sp[1]]:null;
+      var sp=o.p.split("/"), acct=sp[0]==="accounts"&&curs[i]?Object.assign({},curs[i],{id:sp[1]}):null;
       var linkedWithTrades = acct&&acct.type==="INF"&&acct.linked&&cycIdx>=0&&paths[cycIdx]===recPath(acct);
       var pl=planOp(o, curs[i], linkedWithTrades?DERIVED:null); pl.p=o.p; pl.acct=linkedWithTrades?acct:null; return pl;
     });
@@ -1536,20 +1563,35 @@ function runUndo(u){
       var names=later.map(function(x){ return "· "+x.label; }).join("\n");
       if(!window.confirm("「"+u.label+"」 뒤에 같은 항목을 바꾼 작업이 있어요."+(names?"\n"+names:"")+"\n\n되돌리면 그 뒤의 변경 중 겹치는 부분도 함께 되돌아가요. 계속할까요?")) return false;
     }
-    // 연결된 무매 계좌: 매매내역을 되돌린 결과로 평단·보유·잔금·T를 다시 계산
-    var cyc=cycIdx>=0?plans[cycIdx]:null;
-    plans.forEach(function(pl){
+    // 연결된 무매 계좌: 되돌린 뒤의 매매내역 문서와 계좌 문서(서버에서 읽은 것 + 되돌릴 내용)로 평단·보유·잔금·T를 다시 계산.
+    // 기준원금도 그 매매내역 문서의 것을 쓴다 (화면에 지금 열린 기록이 아니라. GPT O1)
+    var cyc=cycIdx>=0?plans[cycIdx]:null, isDel=function(v){ return v!=null&&typeof v==="object"&&typeof v.isEqual==="function"&&v.isEqual(db.deleteField()); };
+    var finalOf=function(pl,cur){
+      if(pl.kind==="set") return pl.data; if(pl.kind==="delete") return null;
+      var x=Object.assign({},cur||{});
+      if(pl.kind==="update") Object.keys(pl.data).forEach(function(k){ if(isDel(pl.data[k])) delete x[k]; else x[k]=pl.data[k]; });
+      return cur||pl.kind==="update"?x:null;
+    };
+    plans.forEach(function(pl,i){
       if(!pl.acct||!cyc) return;
-      var trades = cyc.kind==="update"&&cyc.data.trades ? cyc.data.trades : (cyc.kind==="set"&&cyc.data ? cyc.data.trades||[] : ((metaOf(pl.acct)||{}).trades||[]));
-      var sp=statePatch(pl.acct, trades);
+      var m=finalOf(cyc,curs[cycIdx]), fa=finalOf(pl,curs[i]); if(!m||!fa) return;
+      var sp=statePatch(fa, m.trades||[], m);
       if(pl.kind==="update"){ Object.assign(pl.data, sp); } else if(pl.kind==="none"){ pl.kind="update"; pl.data=sp; }
     });
-    return Promise.all(plans.map(function(pl){
-      if(pl.kind==="set") return db.doc(pl.p).set(pl.data);
-      if(pl.kind==="delete") return db.doc(pl.p).delete();
-      if(pl.kind==="update"&&Object.keys(pl.data).length) return db.doc(pl.p).update(pl.data);
-      return null;
-    })).then(function(){ return db.doc("undo/"+u.id).delete(); }).then(function(){ return true; });
+    // 되돌리기도 한 번에: 문서들과 실행취소 기록 지우기가 모두 되거나 하나도 안 된다. 위에서 읽은 뒤 다른 곳에서 바뀌었으면 멈춘다
+    // 판 번호가 없는 문서(총자산 기록 등)도 있으므로, 위에서 읽은 문서 내용 그대로인지를 트랜잭션 안에서 확인한다 (GPT O3).
+    // 쓰지 않는 문서도 계산에 썼으면 확인만 한다
+    var ws=[];
+    plans.forEach(function(pl,i){
+      var ed=curs[i]==null?null:curs[i];
+      if(pl.kind==="set") ws.push({p:pl.p,op:"set",d:pl.data,expectDoc:ed});
+      else if(pl.kind==="delete"&&curs[i]!=null) ws.push({p:pl.p,op:"delete",expectDoc:ed});
+      else if(pl.kind==="update"&&Object.keys(pl.data).length) ws.push({p:pl.p,op:"update",d:pl.data,expectDoc:ed});
+      else ws.push({p:pl.p,op:"check",expectDoc:ed});
+    });
+    // 실행취소 기록이 아직 있어야 한다 (다른 창·기기에서 이미 되돌렸으면 멈춘다)
+    ws.push({p:"undo/"+u.id,op:"delete",expect:0});
+    return commit(ws,null).then(function(){ return true; });
   });
 }
 function undoFab(){
@@ -1924,11 +1966,10 @@ function linkBanner(a){
 
 /* ----- 저장 동작 ----- */
 function writeTrades(a, list, label, msg){
-  var u=snap([recPath(a),"accounts/"+a.id]), sp=statePatch(a,list);
+  var sp=statePatch(a,list);
   var cd=dayFirstDiff(getTrades(),list,function(t){ return t.usDate||t.date; }); if(cd) sp.dayStart=dayCut(a,cd);
-  return Promise.all([db.doc(recPath(a)).update({trades:list}), save(a, sp)]).then(function(){
+  return saveAll([{p:recPath(a),op:"update",d:{trades:list}},{p:"accounts/"+a.id,op:"update",d:sp}], label).then(function(){
     if(msg) toast(msg);
-    pushUndo(label, u);
     render();
   });
 }
@@ -1952,24 +1993,26 @@ function tradeFromFill(a, l, d, close, ts){
 // inherit: 예전 트래커 기록(cycle/current)을 이 계좌로 이어받는다. 아니면 이 계좌만의 기록을 새로 만든다
 // (기록이 지워진 예전 연결 계좌는 예전 자리에 다시 만든다)
 function linkTarget(a, inherit){ return inherit||a.linked==="tracker" ? "cycle/current" : "cycle/"+a.id; }
-function linkAccount(a, inherit){
-  var m=inherit?trk.metas.current||null:null, patch, metaW;
+// 기록 연결에 필요한 저장 목록: 매매내역 문서(없으면 빠짐)와 계좌 고칠 내용(patch)
+function linkWrites(a, inherit){
+  var m=inherit?trk.metas.current||null:null, patch, metaW=null;
   if(m){
     var seed=seedOf(a,m), list=m.trades||[], st=replay(list,seed), n=cycleNo(m.label);
     patch={ linked:"tracker", principal:seed, initialPrincipal:seed, qty:st.qty, avg:st.avg, cash:st.cash, T:st.T, realized:st.realized, cycle:n||a.cycle||1,
       mode: st.qty>0&&st.T>(a.N||20)-1?"REVERSE":"NORMAL", revDay:0, pending:null, fee:0,
       events:["예전 트래커의 매매 "+list.length+"건으로 T "+st.T+" · 보유 "+st.qty+"주 · 잔금 "+usd(st.cash)+"을 다시 계산했어요. 수수료는 0%로 두었으니 메리츠 수수료가 붙기 시작하면 상태 수정에서 0.07로 바꾸세요."] };
-    metaW = (!m.calc||m.calc.seedCapitalUsd==null) ? db.doc("cycle/current").set({calc:{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:seed}},{merge:true}) : Promise.resolve();
+    if(!m.calc||m.calc.seedCapitalUsd==null) metaW={p:"cycle/current",op:"update",d:{calc:Object.assign({},m.calc||{},{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:seed})}};
   } else {
     var tr=tradesFromLog(a), lk=a.linked==="tracker"?"tracker":"own";
     // 이어서 하기로 불러온 매매가 있으면 사이클 시작일을 첫 매매일로 잡아 그래프가 그날부터 그려지게 한다
     var sd=todayKR(); tr.forEach(function(t){ if(!t.join&&t.date&&t.date<sd) sd=t.date; });
-    metaW = db.doc(linkTarget(a,false)).set({ label:"무매법 V4.0 ["+(a.cycle||1)+"차]", startDate:sd, startAmount:null, calc:{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:a.principal}, trades:tr });
+    metaW={p:linkTarget(a,false),op:"set",d:{ label:"무매법 V4.0 ["+(a.cycle||1)+"차]", startDate:sd, startAmount:null, calc:{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:a.principal}, trades:tr }};
     patch={ linked:lk };
   }
-  return metaW.then(function(){ return save(a,patch); }).then(function(){ toast("기록을 연결했어요."); });
+  return {meta:metaW, patch:patch};
 }
-function archiveAndRoll(a, allTrades, endDate, next){
+// 사이클 마감에 필요한 저장 목록: 지난 사이클 보관, 이번 사이클 평가액 기록 지우기, 새 사이클 시작 (계좌 저장과 한 번에 한다)
+function rollWrites(a, allTrades, endDate, next){
   var m=metaOf(a), ents=entriesOf(a), seed=seedOf(a,m), rows=computeRows(ents,allTrades,a.ticker), tr=tradeRows(allTrades), st=replay(allTrades,seed);
   var last=null; if(!trk.metas.assets) for(var i=rows.length-1;i>=0;i--) if(rows[i].amountRecorded){ last=rows[i]; break; }
   var id="cycle_"+(m.startDate||endDate).replace(/-/g,"")+"_"+Date.now().toString(36);
@@ -1983,12 +2026,12 @@ function archiveAndRoll(a, allTrades, endDate, next){
   arc.acctId=a.id; arc.acctName=a.name||null; arc.ticker=a.ticker||null;
   var nextSeed = next.compound!==false ? next.principal : next.cash;
   var start = todayKR();
-  return db.doc("cycles/"+id).set(arc).then(function(){
-    return Promise.all(ents.map(function(e){ return db.doc("entries/"+e.id).delete(); }));
-  }).then(function(){
-    var nm={ label:nextLabel(m.label), startDate:start, startAmount:last?last.amount:null, calc:{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:nextSeed}, trades:[] };
-    return db.doc(recPath(a)).set(nm).then(function(){ return last ? db.doc(entPath(a,start)).set(entData(a,{date:start,amount:last.amount})) : null; });
-  });
+  var nm={ label:nextLabel(m.label), startDate:start, startAmount:last?last.amount:null, calc:{ticker:a.ticker,splitCount:a.N,seedCapitalUsd:nextSeed}, trades:[] };
+  var ws=[{p:"cycles/"+id,op:"set",d:arc}], np=last?entPath(a,start):null;
+  ents.forEach(function(e){ if("entries/"+e.id!==np) ws.push({p:"entries/"+e.id,op:"delete"}); });
+  ws.push({p:recPath(a),op:"set",d:nm});
+  if(np) ws.push({p:np,op:"set",d:entData(a,{date:start,amount:last.amount})});
+  return ws;
 }
 
 /* ----- 예전 방식(entries에 수량을 적어 둔 기록) → 매매내역으로 한 번만 옮기기 ----- */
@@ -2000,7 +2043,7 @@ function fixDeskTradeDates(){
   trk.fixedDates=true;
   if(!need) return;
   var out=list.map(function(t){ return bad(t) ? Object.assign({},t,{usDate:t.usDate||t.date,date:t.usDate||t.date}) : t; });
-  db.doc("cycle/current").update({trades:out}).catch(function(e){ console.error("fix dates",e); });
+  commit([{p:"cycle/current",op:"update",d:{trades:out}}],null,true).catch(function(e){ console.error("fix dates",e); });
 }
 function maybeMigrate(){
   var m=trk.metas.current;
@@ -2010,7 +2053,7 @@ function maybeMigrate(){
   s.forEach(function(e){ if(e.qty==null) return; var dq=e.qty-prev, px=e.tradePrice!=null?e.tradePrice:e.soxlPrice;
     if(dq!==0&&px!=null){ var t={id:genId(),date:e.date,type:dq>0?"buy":"sell",price:px,qty:Math.abs(dq),createdAt:new Date(e.date).getTime()}; if(e.soxlPrice!=null) t.soxlPrice=e.soxlPrice; if(dq>0) t.tDelta=1; out.push(t); }
     prev=e.qty; });
-  db.doc("cycle/current").update({trades:out}).catch(function(err){ console.error("migrate",err); });
+  commit([{p:"cycle/current",op:"update",d:{trades:out}}],null,true).catch(function(err){ console.error("migrate",err); });
 }
 
 function recAct(act, b, a){
@@ -2018,12 +2061,12 @@ function recAct(act, b, a){
   if(act==="undo"){
     var id=b.getAttribute("data-id"), it=undoStack.filter(function(u){return u.id===id;})[0]; if(!it) return true;
     b.disabled=true;
-    runUndo(it).then(function(ok){ if(!ok){ b.disabled=false; return; } undoStack=undoStack.filter(function(u){return u.id!==id;}); toast("실행취소 : "+it.label); render(); }).catch(function(e){ console.error(e); toast("실행취소에 실패했어요."); b.disabled=false; });
+    runUndo(it).then(function(ok){ if(!ok){ b.disabled=false; return; } undoStack=undoStack.filter(function(u){return u.id!==id;}); toast("실행취소 : "+it.label); render(); }).catch(function(e){ console.error(e); if(!(e&&e.shown)) toast("실행취소에 실패했어요."); b.disabled=false; });
     return true;
   }
   if(act==="link"){ b.disabled=true;
-    var inh=b.getAttribute("data-mode")==="inherit", uL=snap(["accounts/"+a.id,linkTarget(a,inh)]);
-    linkAccount(a,inh).then(function(){ pushUndo("기록 연결",uL); render(); }).catch(function(e){ console.error(e); toast("연결하지 못했어요."); b.disabled=false; }); return true; }
+    var lw=linkWrites(a,b.getAttribute("data-mode")==="inherit");
+    saveAll((lw.meta?[lw.meta]:[]).concat([{p:"accounts/"+a.id,op:"update",d:lw.patch}]), "기록 연결").then(function(){ toast("기록을 연결했어요."); render(); }).catch(function(){ b.disabled=false; }); return true; }
   if(act.indexOf("rec-")!==0) return false;
   if(act==="rec-inline"){ rf.inline=b.getAttribute("data-k"); render(); return true; }
   if(act==="rec-date"){ var tid=b.getAttribute("data-t"), el=$(tid), base=el&&el.value?new Date(el.value+"T12:00:00Z"):new Date(); base.setUTCDate(base.getUTCDate()+(+b.getAttribute("data-d"))); var v=base.toISOString().slice(0,10); if(tid==="a-date") rf.aDate=v; else rf.tDate=v; render(); return true; }
@@ -2041,8 +2084,7 @@ function recAct(act, b, a){
     var dd=b.getAttribute("data-date"), k2="e:"+dd;
     if(!armed[k2]){ Object.keys(armed).forEach(function(x){delete armed[x];}); armed[k2]=1; setTimeout(function(){ if(armed[k2]){ delete armed[k2]; render(); } },3000); render(); return true; }
     delete armed[k2]; if(!db) return true;
-    var uE=snap([assetPath(dd)]);
-    db.doc(assetPath(dd)).delete().then(function(){ toast(dd+" 기록을 삭제했어요."); pushUndo(dd+" 총자산 기록 삭제",uE); if(rf.editEntry===dd) rf.editEntry=null; render(); });
+    saveAll([{p:assetPath(dd),op:"delete"}], dd+" 총자산 기록 삭제").then(function(){ toast(dd+" 기록을 삭제했어요."); if(rf.editEntry===dd) rf.editEntry=null; render(); }).catch(function(){});
     return true;
   }
   if(act==="rec-csv-arc"||act==="rec-csv-arc-tr"){
@@ -2058,7 +2100,7 @@ function recAct(act, b, a){
     var t={id:genId(),date:d,type:act==="rec-buy"?"buy":"sell",price:px,qty:q,createdAt:Date.now(),fee:L.fee||0};
     if(t.type==="buy") t.tDelta=rf.tDelta; else { t.tMult=rf.sellMult; t.tTag=rf.sellTag; }
     b.disabled=true;
-    writeTrades(L, getTrades().concat([t]), d+" "+(t.type==="buy"?"매수":"매도")+" 기록", d+" "+(t.type==="buy"?"매수":"매도")+" 기록을 저장했어요.").then(function(){ rf.tPrice=""; rf.tQty=""; render(); }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); b.disabled=false; });
+    writeTrades(L, getTrades().concat([t]), d+" "+(t.type==="buy"?"매수":"매도")+" 기록", d+" "+(t.type==="buy"?"매수":"매도")+" 기록을 저장했어요.").then(function(){ rf.tPrice=""; rf.tQty=""; render(); }).catch(function(){ b.disabled=false; });
     return true;
   }
   if(act==="rec-trade-edit"){
@@ -2074,7 +2116,7 @@ function recAct(act, b, a){
     if(!up.date||isNaN(up.price)||!up.qty){ toast("일시·체결가·수량을 넣어주세요."); return true; }
     if(o.type==="buy") up.tDelta=rf.tDelta; else { up.tMult=rf.sellMult; up.tTag=rf.sellTag; }
     delete up.tAfter;
-    writeTrades(L, getTrades().map(function(x){return x.id===o.id?up:x;}), up.date+" 거래 수정", "거래 기록을 수정했어요.").then(function(){ rf.editTrade=null; rf.tPrice=""; rf.tQty=""; render(); });
+    writeTrades(L, getTrades().map(function(x){return x.id===o.id?up:x;}), up.date+" 거래 수정", "거래 기록을 수정했어요.").then(function(){ rf.editTrade=null; rf.tPrice=""; rf.tQty=""; render(); }).catch(function(){});
     return true;
   }
   if(act==="rec-trade-del"){
@@ -2082,21 +2124,21 @@ function recAct(act, b, a){
     if(!armed[k]){ Object.keys(armed).forEach(function(x){delete armed[x];}); armed[k]=1; setTimeout(function(){ if(armed[k]){ delete armed[k]; render(); } },3000); render(); return true; }
     delete armed[k];
     var dt=getTrades().filter(function(x){return x.id===did;})[0];
-    writeTrades(L, getTrades().filter(function(x){return x.id!==did;}), ((dt&&dt.date)||"")+" 거래 삭제", "거래 기록을 삭제했어요.");
+    writeTrades(L, getTrades().filter(function(x){return x.id!==did;}), ((dt&&dt.date)||"")+" 거래 삭제", "거래 기록을 삭제했어요.").catch(function(){});
     if(rf.editTrade===did) rf.editTrade=null;
     return true;
   }
   if(act==="rec-del-cycle"){
     if(!armed.cycle){ armed.cycle=1; setTimeout(function(){ if(armed.cycle){ delete armed.cycle; render(); } },4000); render(); return true; }
     delete armed.cycle;
-    var pm=JSON.parse(JSON.stringify(trk.meta)), ents=trk.entries.slice(), uC=snap([recPath(L),"accounts/"+L.id].concat(ents.map(function(e){ return "entries/"+e.id; })));
-    Promise.all(ents.map(function(e){ return db.doc("entries/"+e.id).delete(); })).then(function(){
-      return db.doc(recPath(L)).set({ label:pm.label||"무매법 V4.0", startDate:todayKR(), startAmount:null, calc:{ticker:L.ticker,splitCount:L.N,seedCapitalUsd:L.principal}, trades:[] });
-    }).then(function(){ return save(L,{qty:0,avg:null,cash:L.principal,T:0,realized:0,mode:"NORMAL",revDay:0,pending:null}); }).then(function(){
+    var pm=JSON.parse(JSON.stringify(trk.meta)), ents=trk.entries.slice();
+    saveAll(ents.map(function(e){ return {p:"entries/"+e.id,op:"delete"}; }).concat([
+      {p:recPath(L),op:"set",d:{ label:pm.label||"무매법 V4.0", startDate:todayKR(), startAmount:null, calc:{ticker:L.ticker,splitCount:L.N,seedCapitalUsd:L.principal}, trades:[] }},
+      {p:"accounts/"+L.id,op:"update",d:{qty:0,avg:null,cash:L.principal,T:0,realized:0,mode:"NORMAL",revDay:0,pending:null,dayStart:[]}}
+    ]), "사이클 기록 지우기").then(function(){
       toast("현재 사이클 기록을 지웠어요.");
-      pushUndo("사이클 기록 지우기", uC);
       render();
-    });
+    }).catch(function(){});
     return true;
   }
   return true;
@@ -2104,10 +2146,10 @@ function recAct(act, b, a){
 function saveInline(el){
   var k=el.getAttribute("data-k"), raw=el.value.trim(), ra=selected?accounts[selected]:null; rf.inline=null;
   if(!db||raw===""){ render(); return; }
-  if(k==="astart"){ var av=parseFloat(raw), apv=assetStart(); if(!isNaN(av)&&av!==apv){ var uAs=snap([ASSET_META]); db.doc(ASSET_META).set({startAmount:av},{merge:true}).then(function(){ toast("시작평가액을 "+krw(av)+"원으로 고쳤어요."); pushUndo("시작평가액 수정",uAs); render(); }); } render(); return; }
+  if(k==="astart"){ var av=parseFloat(raw), apv=assetStart(); if(!isNaN(av)&&av!==apv){ var am=curDoc(ASSET_META); saveAll([{p:ASSET_META,op:am?"update":"set",d:{startAmount:av}}], "시작평가액 수정").then(function(){ toast("시작평가액을 "+krw(av)+"원으로 고쳤어요."); render(); }).catch(function(){}); } render(); return; }
   syncRec(); var mp=ra&&trk.meta?recPath(ra):null;
-  if(k.indexOf("alabel:")===0){ var uA=snap(["cycles/"+k.slice(7)]); db.doc("cycles/"+k.slice(7)).update({label:raw}).then(function(){ pushUndo("지난 사이클 이름 변경",uA); render(); }); }
-  else if(k.indexOf("afx:")===0){ var f=parseFloat(raw), uF=snap(["cycles/"+k.slice(4)]); if(!isNaN(f)) db.doc("cycles/"+k.slice(4)).update({fxLoss:f}).then(function(){ pushUndo("환차손 수정",uF); render(); }); }
+  if(k.indexOf("alabel:")===0){ saveAll([{p:"cycles/"+k.slice(7),op:"update",d:{label:raw}}], "지난 사이클 이름 변경").then(function(){ render(); }).catch(function(){}); }
+  else if(k.indexOf("afx:")===0){ var f=parseFloat(raw); if(!isNaN(f)) saveAll([{p:"cycles/"+k.slice(4),op:"update",d:{fxLoss:f}}], "환차손 수정").then(function(){ render(); }).catch(function(){}); }
   render();
 }
 function saveAmount(){
@@ -2118,23 +2160,25 @@ function saveAmount(){
     var od=rf.editEntry;
     if(!ents.some(function(e){return e.date===od;})){ rf.editEntry=null; render(); return; }
     if(d!==od&&ents.some(function(e){return e.date===d;})){ toast("이미 "+d+" 기록이 있어요."); return; }
-    var uEd=snap([assetPath(od)].concat(d!==od?[assetPath(d)]:[])), data={date:d,amount:amt,acct:"assets"};
-    var task = d===od ? db.doc(assetPath(od)).set(data) : db.doc(assetPath(od)).delete().then(function(){ return db.doc(assetPath(d)).set(data); });
-    task.then(function(){ toast(d+" 평가액 기록을 고쳤어요."); pushUndo(d+" 총자산 수정",uEd); rf.editEntry=null; rf.aAmount=""; render(); });
+    var data={date:d,amount:amt,acct:"assets"};
+    saveAll((d===od?[]:[{p:assetPath(od),op:"delete"}]).concat([{p:assetPath(d),op:"set",d:data}]), d+" 총자산 수정").then(function(){ toast(d+" 평가액 기록을 고쳤어요."); rf.editEntry=null; rf.aAmount=""; render(); }).catch(function(){});
     return;
   }
-  var uN=snap([assetPath(d)]);
-  db.doc(assetPath(d)).set({date:d,amount:amt,acct:"assets"}).then(function(){
+  saveAll([{p:assetPath(d),op:"set",d:{date:d,amount:amt,acct:"assets"}}], d+" 총자산 기록").then(function(){
     toast(d+" 평가액을 저장했어요."); rf.aAmount="";
-    pushUndo(d+" 총자산 기록",uN);
     render();
-  }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
+  }).catch(function(){});
 }
 
 /* ---------- actions ---------- */
-function save(a, patch){
-  if(!db){ toast("저장소에 연결되지 않았어요."); return Promise.reject(); }
-  return db.doc("accounts/"+a.id).update(patch).catch(function(e){ toast("저장하지 못했어요 : "+(e&&e.message||"")); throw e; });
+// 계좌 하나를 고친다. label을 주면 실행취소 기록도 같은 묶음으로 남긴다
+function save(a, patch, label){
+  if(!db){ toast("저장소에 연결되지 않았어요."); return Promise.reject(new Error("no db")); }
+  return saveAll([{p:"accounts/"+a.id,op:"update",d:patch}], label);
+}
+// commit + 실패 안내 (안내를 이미 했으면 다시 하지 않는다)
+function saveAll(writes, label){
+  return commit(writes, label).catch(function(e){ console.error(e); if(!e.shown){ toast("저장하지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요."); e.shown=true; } throw e; });
 }
 // 화면 주문표와 같은 목록: 넣은 주문이 있으면 그 주문(VR은 체결 확인 중이어도 아직 남은 회차 주문), VR 회차 주문을 다 체결했거나 V 갱신 차례면 없음, 아니면 새 주문표
 function shownOrders(a){
@@ -2169,8 +2213,6 @@ document.addEventListener("click", function(ev){
   syncRec();
   var act=b.getAttribute("data-act");
   if(recAct(act,b,a)) return;
-  var snapA=function(){ var c=JSON.parse(JSON.stringify(a)); delete c._plan; return c; };
-  var undoSet=function(label,prev){ pushUndo(label,[{p:"accounts/"+prev.id,d:prev}]); };
   if(act==="vm-date"){ var vb=new Date((vmf.d||todayKR())+"T12:00:00Z"); vb.setUTCDate(vb.getUTCDate()+(+b.getAttribute("data-d"))); var vd=vb.toISOString().slice(0,10); if(vd<=todayKR()) vmf.d=vd; render(); return; }
   if(act==="vm-buy"||act==="vm-sell"){ if(a.type==="VR") vrManualSave(a,act==="vm-buy"?"BUY":"SELL",b); return; }
   if(a.type==="VR"&&act==="vm-edit"){ var vi=+b.getAttribute("data-i"), vl=vrLogAt(a,vi); if(!vl) return;
@@ -2189,8 +2231,7 @@ document.addEventListener("click", function(ev){
     pin=String(pin).replace(/[$,\s]/g,"");
     var pv=null;
     if(pin!==""){ pv=Math.round(parseFloat(pin)*100)/100; if(!(pv>0)){ toast("가격을 숫자로 넣어주세요."); return; } }
-    var prevP=snapA();
-    save(a,{bigOv:pv?{session:pp.session,price:pv}:null}).then(function(){ toast(pv?"큰수를 "+n2(pv)+"로 정했어요.":"큰수를 자동 값으로 돌렸어요."); undoSet("큰수 가격 변경",prevP); render(); });
+    save(a,{bigOv:pv?{session:pp.session,price:pv}:null},"큰수 가격 변경").then(function(){ toast(pv?"큰수를 "+n2(pv)+"로 정했어요.":"큰수를 자동 값으로 돌렸어요."); render(); }).catch(function(){});
     return;
   }
   if(act==="big-edit"||act==="big-reset"){
@@ -2202,33 +2243,32 @@ document.addEventListener("click", function(ev){
       inp=String(inp).replace(/[$,\s]/g,"");
       if(inp!==""){ nv=Math.round(parseFloat(inp)*100)/100; if(!(nv>0)){ toast("가격을 숫자로 넣어주세요."); return; } }
     }
-    var prevB=snapA();
-    save(a,{bigOv:nv?{session:bp.session,px:nv}:null}).then(function(){ toast(nv?"시세 "+n2(nv)+" 기준으로 큰수를 "+n2(Math.floor(nv*(100+pct)+1e-6)/100)+"로 바꿨어요.":"큰수를 자동 값으로 돌렸어요."); undoSet("큰수 가격 변경",prevB); render(); });
+    save(a,{bigOv:nv?{session:bp.session,px:nv}:null},"큰수 가격 변경").then(function(){ toast(nv?"시세 "+n2(nv)+" 기준으로 큰수를 "+n2(Math.floor(nv*(100+pct)+1e-6)/100)+"로 바꿨어요.":"큰수를 자동 값으로 돌렸어요."); render(); }).catch(function(){});
   } else if(act==="lad-more"||act==="lad-reset"){
     var lp=a._plan; if(!lp||(a.pending&&a.pending.session===lp.session)) return;
-    var curN=a.ladMore&&a.ladMore.session===lp.session?a.ladMore.n||0:0, nn=act==="lad-more"?curN+3:0, prevL=snapA();
-    save(a,{ladMore:nn?{session:lp.session,n:nn}:null}).then(function(){ undoSet("사다리 칸 수 변경",prevL); render(); });
+    var curN=a.ladMore&&a.ladMore.session===lp.session?a.ladMore.n||0:0, nn=act==="lad-more"?curN+3:0;
+    save(a,{ladMore:nn?{session:lp.session,n:nn}:null},"사다리 칸 수 변경").then(function(){ render(); }).catch(function(){});
   } else if(act==="place"){
-    var p=a._plan, prevP=snapA();
+    var p=a._plan;
     if(!p||p.blocked||!p.orders.length) return;
     var pp={pending:pendingOf(p), events:[]};
     if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true;
       // 모든 회차: 주문마다 번호(oid)와 넣은 수량(qty0)을 적어 cycleOrders에 남긴다. 체결 기록에 같은 번호를 붙여 잔량을 센다 (vrCarry)
       pp.cycleOrders=vrNumber(pp.pending.orders, pp.pending.placedAt); pp.cycleEdited=false; }
-    save(a,pp).then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); undoSet(dlabel(p.session)+" 주문 넣음",prevP); render();});
+    save(a,pp,dlabel(p.session)+" 주문 넣음").then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); render();}).catch(function(){});
   } else if(act==="vr-reorder"){
     // VR 주문을 증권사에서 취소했을 때: 유지 중인 주문을 지우고 지금 상태로 새 주문표를 낸다 (0회차는 오늘 종가 기준 첫 매수, 1회차부터는 이번 회차 남은 한도 안의 주문)
     if(a.type!=="VR"||!vrOrdered(a)) return;
     var zr=a.cycle===0, wn=zr?"첫 매수 주문":"회차 주문";
     if(!confirm("증권사에서 "+wn+"이 취소된 것을 확인했나요?\n취소 전에 일부 체결됐다면 그 체결을 먼저 기록한 뒤 누르세요. 확인을 누르면 지금 상태로 새 주문표를 만들어요.")) return;
-    var prevZ=snapA(); delete fillEdits[a.id];
-    save(a,{pending:null,cycleOrdered:false,cycleOrders:null,cycleEdited:false}).then(function(){ toast(wn+"을 취소로 기록했어요. 새 주문표로 다시 넣으세요."); undoSet(wn+" 취소",prevZ); render(); });
+    delete fillEdits[a.id];
+    save(a,{pending:null,cycleOrdered:false,cycleOrders:null,cycleEdited:false},wn+" 취소").then(function(){ toast(wn+"을 취소로 기록했어요. 새 주문표로 다시 넣으세요."); render(); }).catch(function(){});
   } else if(act==="day-pick"){
     var pd=b.getAttribute("data-d"), dn=dayNext(a);
     if(dn&&dn.d===pd&&dn.act==="day-place"){
       var dp=infDayPlan(a,pd); if(!dp) return;
-      var prevDP=snapA(); delete fillEdits[a.id]; delete daySel[a.id];
-      save(a,{pending:pendingOf(dp),events:[]}).then(function(){ toast(dlabel(pd)+" 주문표로 체결을 판정했어요. 확인하고 반영하세요."); undoSet(dlabel(pd)+" 주문 넣음 (지난 장)",prevDP); render(); window.scrollTo({top:0,behavior:"smooth"}); });
+      delete fillEdits[a.id]; delete daySel[a.id];
+      save(a,{pending:pendingOf(dp),events:[]},dlabel(pd)+" 주문 넣음 (지난 장)").then(function(){ toast(dlabel(pd)+" 주문표로 체결을 판정했어요. 확인하고 반영하세요."); render(); window.scrollTo({top:0,behavior:"smooth"}); }).catch(function(){});
       return;
     }
     if(dn&&dn.d===pd&&dn.act==="place-past"){ act="place-past"; }
@@ -2238,8 +2278,7 @@ document.addEventListener("click", function(ev){
   if(act==="day-skip"){
     var sd=b.getAttribute("data-d"), sn=dayNext(a); if(!sn||!sn.missing||sn.d!==sd) return;
     if(!confirm(dlabel(sd)+"을 휴장으로 보고 건너뛸까요?\n거래가 있었다면 취소하고 그날 종가를 먼저 넣으세요.")) return;
-    var prevK=snapA();
-    save(a,dayMark(a,sd,{})).then(function(){ toast(dlabel(sd)+"을 건너뛰었어요."); undoSet(dlabel(sd)+" 건너뛰기",prevK); render(); });
+    save(a,dayMark(a,sd,{}),dlabel(sd)+" 건너뛰기").then(function(){ toast(dlabel(sd)+"을 건너뛰었어요."); render(); }).catch(function(){});
     return;
   }
   if(act==="day-redo"){
@@ -2251,13 +2290,13 @@ document.addEventListener("click", function(ev){
     rp.log=(a.log||[]).filter(function(l){ return l.d<rd; });
     rp.dayStart=dayList(a).filter(function(x){ return x.d<rd; });
     if(a.type==="VR"&&Array.isArray(a.hist)) rp.hist=a.hist.filter(function(h){ return !(h.d>=rd); });
-    var prevR2=JSON.parse(JSON.stringify(a)); delete prevR2._plan; delete fillEdits[a.id]; delete daySel[a.id];
+    delete fillEdits[a.id]; delete daySel[a.id];
     var redoLbl=dlabel(rd)+"부터 다시 기록", redoMsg=dlabel(rd)+" 장 시작 상태로 돌렸어요. 이 날부터 다시 기록하세요.";
     if(a.type==="INF"&&a.linked&&trk.meta){
-      var prevM2=curDoc(recPath(a)), keepT=getTrades().filter(function(t){ return (t.usDate||t.date)<rd; });
+      var keepT=getTrades().filter(function(t){ return (t.usDate||t.date)<rd; });
       // 매매내역과 계좌를 한 번에 저장한다 (한쪽만 저장되면 기록과 상태가 어긋남. GPT M4)
-      db.batchUpdate([[recPath(a),{trades:keepT}],["accounts/"+a.id,rp]]).then(function(){ toast(redoMsg); pushUndo(redoLbl,[{p:recPath(a),d:prevM2},{p:"accounts/"+a.id,d:prevR2}]); render(); }).catch(function(e){ console.error(e); toast("되돌리지 못했어요."); });
-    } else save(a,rp).then(function(){ toast(redoMsg); pushUndo(redoLbl,[{p:"accounts/"+a.id,d:prevR2}]); render(); });
+      saveAll([{p:recPath(a),op:"update",d:{trades:keepT}},{p:"accounts/"+a.id,op:"update",d:rp}], redoLbl).then(function(){ toast(redoMsg); render(); }).catch(function(){});
+    } else save(a,rp,redoLbl).then(function(){ toast(redoMsg); render(); }).catch(function(){});
     return;
   }
   if(act==="place-past"){
@@ -2265,13 +2304,13 @@ document.addEventListener("click", function(ev){
     var ps=a.type==="VR"?vrPastPlan(a):null; if(!ps||(a.pending&&barOn(a.ticker,a.pending.session))) return;
     var rw=ps.rewind;
     if(rw&&rw.n&&!confirm(dlabel(ps.session)+"부터 넣은 회차 주문으로 기록할까요?\nV 갱신 뒤 직접 기록한 매매 "+rw.n+"건을 지우고 회차 시작 상태로 돌린 뒤, "+dlabel(ps.session)+"부터 체결을 차례로 다시 확인해요. 실행취소로 되돌릴 수 있어요.")) return;
-    var prevS=snapA(); delete fillEdits[a.id];
+    delete fillEdits[a.id];
     var pps={pending:pendingOf(ps),events:[]};
     if(rw){ pps.lastSession=rw.d0; pps.dayStart=dayCut(a,rw.d0); }
     if(rw&&rw.n){ Object.assign(pps,vrPatchOf(rw.state));
       pps.log=(a.log||[]).filter(function(l){ return !((l.side==="BUY"||l.side==="SELL")&&l.d>rw.d0); }); }
     if(a.type==="VR"){ pps.cycleOrdered=true; pps.pending.cycleOrder=true; pps.cycleOrders=vrNumber(pps.pending.orders,pps.pending.placedAt); pps.cycleEdited=false; }
-    save(a,pps).then(function(){ toast(dlabel(ps.session)+(a.type==="VR"?"부터 넣은 회차 주문으로 기록했어요. 지난 체결을 차례로 확인하세요.":" 주문으로 기록했어요. 그날 종가로 체결을 확인하세요.")); undoSet(dlabel(ps.session)+" 주문 넣음 (마감 후 기록)",prevS); render(); });
+    save(a,pps,dlabel(ps.session)+" 주문 넣음 (마감 후 기록)").then(function(){ toast(dlabel(ps.session)+(a.type==="VR"?"부터 넣은 회차 주문으로 기록했어요. 지난 체결을 차례로 확인하세요.":" 주문으로 기록했어요. 그날 종가로 체결을 확인하세요.")); render(); }).catch(function(){});
   } else if(act==="vr-csv"){
     downloadCSV("VR_"+a.name+"_회차기록_"+todayKR(),["회차","마감일","종가","수량","평가금E","V","최소밴드","최대밴드","Pool(적립 전)","다음 회차 Pool","투입원금","다음 V","매수 주수","매도 주수"],vrRows(a,null).map(function(r){return [r.c,r.d,r.close,r.qty,r.E,r.V,r.min,r.max,r.pool,r.poolNext,r.invested,r.Vnext,r.buyQ,r.sellQ];}));
   } else if(act==="copy"){
@@ -2284,7 +2323,7 @@ document.addEventListener("click", function(ev){
     render();
   } else if(act==="cancel-pending"){
     delete fillEdits[a.id];
-    var prevC=snapA(), lbl=a.pending?dlabel(a.pending.session)+" 주문 기록 취소":"주문 기록 취소";
+    var lbl=a.pending?dlabel(a.pending.session)+" 주문 기록 취소":"주문 기록 취소";
     var cp={pending:null}, lbC=lastBar(a.ticker);
     if(a.pending&&lbC&&lbC.d>=a.pending.session) dayMark(a,a.pending.session,cp);
     if(a.type==="VR"&&a.pending){
@@ -2292,7 +2331,7 @@ document.addEventListener("click", function(ev){
       if(a.pending.cycleOrder&&waiting&&!(lastBar(a.ticker)&&lastBar(a.ticker).d>a.pending.session)){ cp.cycleOrdered=false; cp.cycleOrders=null; }
       else cp.pending=vrCarry(a,{},a.pending.session);
     }
-    save(a,cp).then(function(){toast("주문 기록을 지웠어요."); undoSet(lbl,prevC); render();});
+    save(a,cp,lbl).then(function(){toast("주문 기록을 지웠어요."); render();}).catch(function(){});
   } else if(act==="apply-fills"){
     var p2=a.pending, bar=barOn(a.ticker,p2.session), fe=fillEdits[a.id];
     var fills=fe.fills;
@@ -2316,30 +2355,31 @@ document.addEventListener("click", function(ev){
     dayMark(a,p2.session,patch);
     patch.events=res.events;
     b.disabled=true;
-    var prevA=JSON.parse(JSON.stringify(a)); delete prevA._plan;
     var undoLabel=dlabel(p2.session)+" 체결 반영", done=function(msg){ delete fillEdits[a.id]; toast(msg||(res.log.length?res.log.length+"건을 반영했어요.":"체결 없음으로 기록했어요.")); };
     if(a.type==="INF"&&a.linked&&trk.meta){
       var ts=Date.now(), nt=res.log.map(function(l,i){ return tradeFromFill(a,l,bar.d,bar.c,ts+i); });
       var ended=(n.cycle||1)!==(a.cycle||1);
       if(nt.length&&!ended) nt[nt.length-1].tAfter=n.T;
-      var prevT=getTrades().slice(), all=prevT.concat(nt), prevM=curDoc(recPath(a));
-      (ended ? archiveAndRoll(a,all,bar.d,n) : db.doc(recPath(a)).update({trades:all})).then(function(){ return save(a,patch); }).then(function(){
+      var all=getTrades().slice().concat(nt);
+      // 계좌·매매내역(사이클 마감이면 지난 사이클 보관·새 사이클까지)·실행취소 기록을 한 번에 저장한다
+      var ws=(ended ? rollWrites(a,all,bar.d,n) : [{p:recPath(a),op:"update",d:{trades:all}}]).concat([{p:"accounts/"+a.id,op:"update",d:patch}]);
+      // 사이클 마감은 예전처럼 실행취소 기록을 남기지 않는다
+      saveAll(ws, ended?null:undoLabel).then(function(){
         done(ended?"사이클을 마감해 지난 사이클에 보관하고, 새 사이클을 시작했어요.":null);
-        if(!ended) pushUndo(undoLabel,[{p:recPath(a),d:prevM},{p:"accounts/"+a.id,d:prevA}]);
         render();
-      }).catch(function(e){ console.error(e); toast("반영하지 못했어요."); b.disabled=false; });
+      }).catch(function(){ b.disabled=false; });
     } else {
-      save(a,patch).then(function(){ done(); pushUndo(undoLabel,[{p:"accounts/"+a.id,d:prevA}]); render(); });
+      save(a,patch,undoLabel).then(function(){ done(); render(); }).catch(function(){ b.disabled=false; });
     }
   } else if(act==="roll"){
     var rb=barOn(a.ticker,E.vrDue(a.nextUpdate)); if(!rb){ toast(dlabel(E.vrDue(a.nextUpdate))+" 종가가 아직 없어요."); return; }
-    var r=E.vrRoll(a,rb.c,rb.d), nx=r.next, prevR=snapA();
+    var r=E.vrRoll(a,rb.c,rb.d), nx=r.next;
     var note={d:rb.d,side:"NOTE",text:r.zero?(r.extended?"0회차 연장 : 아직 첫 매수 전이라 "+dlabel(E.vrDue(nx.nextUpdate))+"까지 늘림":"0회차 마감 : 보유 "+a.qty+"주 × 종가 "+usd(rb.c)+" = E "+usd(r.E)+" → 1회차 V "+usd(nx.V)+", Pool "+usd(nx.pool)):(a.cycle||1)+"회차 마감 : V "+usd(a.V)+" → "+usd(nx.V)+", Pool "+usd(nx.pool)+" (E "+usd(r.E)+")"};
-    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,hist:nx.hist,cycleOrdered:false,cycleOrders:null,cycleEdited:false,log:[note].concat(a.log||[]).slice(0,400)}).then(function(){toast(r.zero?(r.extended?"0회차를 한 주 늘렸어요.":"V를 "+usd(nx.V)+"로 정하고 1회차를 시작했어요."):"V를 "+usd(nx.V)+"로 갱신했어요."); undoSet(r.zero?"0회차 마감":(a.cycle||1)+"회차 V 갱신",prevR); render();});
+    save(a,{V:nx.V,pool:nx.pool,cycleCap:nx.cycleCap,cycleUsed:0,invested:nx.invested==null?null:nx.invested,cycle:nx.cycle,nextUpdate:nx.nextUpdate,lastRoll:nx.lastRoll,hist:nx.hist,cycleOrdered:false,cycleOrders:null,cycleEdited:false,log:[note].concat(a.log||[]).slice(0,400)},r.zero?"0회차 마감":(a.cycle||1)+"회차 V 갱신").then(function(){toast(r.zero?(r.extended?"0회차를 한 주 늘렸어요.":"V를 "+usd(nx.V)+"로 정하고 1회차를 시작했어요."):"V를 "+usd(nx.V)+"로 갱신했어요."); render();}).catch(function(){});
   } else if(act==="del"){
     if(b.getAttribute("data-armed")!=="1"){ b.setAttribute("data-armed","1"); b.textContent="한 번 더 누르면 삭제됩니다"; return; }
-    var prevD=snapA(), own=a.type==="INF"&&a.linked==="own", recP=own?[recPath(a)].concat(entriesOf(a).map(function(e){ return "entries/"+e.id; })):[], uD=snap(recP);
-    db.doc("accounts/"+a.id).delete().then(function(){ return Promise.all(recP.map(function(p){ return db.doc(p).delete(); })); }).then(function(){ toast("계좌를 삭제했어요."); selected=null; pushUndo(prevD.name+" 계좌 삭제",[{p:"accounts/"+prevD.id,d:prevD}].concat(uD)); render(); });
+    var own=a.type==="INF"&&a.linked==="own", recP=own?[recPath(a)].concat(entriesOf(a).map(function(e){ return "entries/"+e.id; })):[];
+    saveAll([{p:"accounts/"+a.id,op:"delete"}].concat(recP.map(function(p){ return {p:p,op:"delete"}; })), a.name+" 계좌 삭제").then(function(){ toast("계좌를 삭제했어요."); selected=null; render(); }).catch(function(){});
   }
 });
 
@@ -2377,21 +2417,21 @@ document.addEventListener("submit", function(ev){
       if(vrOrdered(a)) patch.cycleEdited=true;
       var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); if(patch.qty===0) patch.avg=null; }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
-    var pre=Promise.resolve(), prevA=JSON.parse(JSON.stringify(a)); delete prevA._plan;
+    var ws=[];
     if(a.type==="INF"&&a.linked&&trk.meta){
       delete patch.qty; delete patch.cash; delete patch.avg;
       var list=getTrades().slice(), seedNew=patch.principal!=null?patch.principal:seedOf(a);
       if(patch.T!=null&&patch.T!==a.T&&list.length){ var srt=sortTrades(list), lastT=srt[srt.length-1]; list=list.map(function(t){ return t.id===lastT.id?Object.assign({},t,{tAfter:patch.T}):t; }); }
       var st=replay(list,seedNew); patch.cash=st.cash; patch.qty=st.qty; patch.avg=st.avg; patch.realized=st.realized; if(!list.length&&patch.T!=null) st.T=patch.T; patch.T=st.T;
       var mp={trades:list}; if(seedNew!==seedOf(a)){ mp.calc=Object.assign({},trk.meta.calc||{},{seedCapitalUsd:seedNew}); patch.initialPrincipal=seedNew; }
-      var prevMeta=curDoc(recPath(a)), mpath=recPath(a);
-      pre=db.doc(mpath).update(mp).then(function(){ pushUndo("상태 수정",[{p:mpath,d:prevMeta},{p:"accounts/"+a.id,d:prevA}]); });
-    } else pushUndo("상태 수정",[{p:"accounts/"+a.id,d:prevA}]);
+      ws.push({p:recPath(a),op:"update",d:mp});
+    }
     // 무엇이 바뀌었는지 기타 기록에 남긴다 (예: 보유 42→43주). 매매 없이 숫자만 바뀐 걸 나중에 추적할 수 있게
     patch.log=[{d:new Date().toISOString().slice(0,10),side:"NOTE",text:editDiffText(a,patch)}].concat(a.log||[]).slice(0,400);
     // 숫자를 직접 고쳤으니 저장해 둔 지난 날 시작 상태는 더 이상 맞지 않는다 (GPT M2)
     patch.dayStart=[];
-    pre.then(function(){ return save(a,patch); }).then(function(){ toast("저장했어요."); render(); });
+    // 매매내역·계좌·실행취소 기록을 한 번에 저장한다
+    saveAll(ws.concat([{p:"accounts/"+a.id,op:"update",d:patch}]), "상태 수정").then(function(){ toast("저장했어요."); render(); }).catch(function(){});
   } else if(f.id==="add-form"){
     var type=$("n-type").value, tk=$("n-ticker").value, name=$("n-name").value.trim();
     var id="acct-"+Date.now().toString(36);
@@ -2453,7 +2493,8 @@ document.addEventListener("submit", function(ev){
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
     // 새 무매 계좌는 처음부터 이 계좌만의 기록(원화 평가액·매매내역·그래프)을 켠다 (cycle/{계좌ID})
     var autoLink=type==="INF"&&trk.metaLoaded;
-    db.doc("accounts/"+id).set(base).then(function(){ return autoLink?linkAccount(base,false):null; }).then(function(){ selected=id; addMode=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); pushUndo(name+" 계좌 만들기",[{p:"accounts/"+id,d:null}].concat(autoLink?[{p:"cycle/"+id,d:null}]:[])); render(); }).catch(function(e){ console.error(e); toast("저장하지 못했어요."); });
+    var lw=autoLink?linkWrites(base,false):null;
+    saveAll((lw&&lw.meta?[lw.meta]:[]).concat([{p:"accounts/"+id,op:"set",d:lw?Object.assign({},base,lw.patch):base,expect:null}]), name+" 계좌 만들기").then(function(){ selected=id; addMode=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); render(); }).catch(function(){});
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
@@ -2745,14 +2786,14 @@ window.DeskApp = {
     db=adapter; loaded=false; accounts={}; prices={};
     trk={meta:null,metas:{},metaLoaded:false,entries:[],allEntries:[],entriesLoaded:false,cycles:[],migrated:false}; undoStack=[]; rf.aDate=rf.tDate=todayKR(); rf.editTrade=rf.editEntry=rf.inline=null;
     render();
-    db.collection("cycle").onSnapshot(function(s){ var mm={}; s.docs.forEach(function(d){ mm[d.id]=d.data(); }); trk.metas=mm; trk.metaLoaded=true; syncRec(); if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); migrateAssets(); renderSoon(); }, function(e){ console.error("cycle",e); });
+    db.collection("cycle").onSnapshot(function(s){ var mm={}; s.docs.forEach(function(d){ mm[d.id]=d.data(); }); trk.metas=mm; trk.metaLoaded=true; syncRec(); revTick(); if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); migrateAssets(); renderSoon(); }, function(e){ console.error("cycle",e); });
     db.collection("entries").onSnapshot(function(s){ trk.allEntries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; syncRec(); if(trk.metaLoaded) maybeMigrate(); migrateAssets(); renderSoon(); }, function(e){ console.error("entries",e); });
-    db.collection("undo").onSnapshot(function(s){ undoStack=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).filter(function(u){ return u.ops&&u.ops.length; }); slimOldUndo(undoStack); renderSoon(); }, function(e){ console.error("undo",e); });
+    db.collection("undo").onSnapshot(function(s){ undoStack=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).filter(function(u){ return u.ops&&u.ops.length; }); slimOldUndo(undoStack); trimUndo(); renderSoon(); }, function(e){ console.error("undo",e); });
     db.collection("cycles").onSnapshot(function(s){ trk.cyclesLoaded=true; trk.cycles=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }).sort(function(x,y){ return (y.startDate||"").localeCompare(x.startDate||""); }); migrateAssets(); renderSoon(); }, function(e){ console.error("cycles",e); });
     db.collection("accounts").onSnapshot(function(snap){
       var next={};
       snap.docs.forEach(function(doc){ var v=JSON.parse(JSON.stringify(doc.data())); v.id=doc.id; next[doc.id]=v; });
-      accounts=next; loaded=true; $("offline").hidden=true; syncRec(); renderSoon();
+      accounts=next; loaded=true; $("offline").hidden=true; syncRec(); revTick(); renderSoon();
     }, function(){ $("offline").hidden=false; });
     db.collection("prices").onSnapshot(function(snap){
       var next={};
@@ -2768,7 +2809,7 @@ window.DeskApp = {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, runTransaction, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { FIREBASE_CONFIG, OWNER_UIDS } from "./firebase-config.js";
 
 const app = initializeApp(FIREBASE_CONFIG);
@@ -2801,8 +2842,46 @@ function makeAdapter(uid) {
   };
   return {
     deleteField: () => deleteField(),
-    // 여러 문서를 함께 고친다: 모두 저장되거나 하나도 저장되지 않는다
-    batchUpdate: (list) => { const b = writeBatch(fs); list.forEach(([p, d]) => b.update(ref(p), d)); return b.commit(); },
+    // 여러 문서(+실행취소 기록)를 한 번에 저장한다: 모두 저장되거나 하나도 저장되지 않는다.
+    // writes: [{p, op:"update"|"set"|"delete"|"check", d, expect, expectDoc}]. check는 쓰지 않고 확인만 한다. 저장 직전에 서버 문서를 읽어서
+    // 계좌·매매내역 문서의 판 번호(rev)가 이 화면이 알던 값(expect)과 다르면 = 다른 창·기기에서 먼저 바뀌었으면 저장하지 않는다.
+    // expect가 null이면 "아직 없는 문서여야 함". 계좌·매매내역 문서는 저장할 때마다 rev를 1 올린다.
+    // undo: {id, make(ops)} — 서버에서 읽은 저장 전 문서와 저장 후 문서로 실행취소 기록을 만들어 같은 묶음에 넣는다.
+    commit: (writes, undo) => runTransaction(fs, async (tx) => {
+      const refs = writes.map((w) => ref(w.p));
+      const snaps = [];
+      for (const r of refs) snaps.push(await tx.get(r));
+      const befores = snaps.map((x) => (x.exists() ? x.data() : null));
+      const revOf = (x) => (x && typeof x.rev === "number" ? x.rev : 0);
+      const isDel = (v) => v != null && typeof v === "object" && typeof v.isEqual === "function" && v.isEqual(deleteField());
+      const norm = (x) => Array.isArray(x) ? x.map(norm) : (x && typeof x === "object" ? Object.fromEntries(Object.keys(x).sort().filter((k) => x[k] !== undefined).map((k) => [k, norm(x[k])])) : (x === undefined ? null : x));
+      const sameDoc = (x, y) => JSON.stringify(norm(x == null ? null : x)) === JSON.stringify(norm(y == null ? null : y));
+      writes.forEach((w, i) => {
+        const b = befores[i];
+        // expectDoc: 이 내용 그대로여야 함 (판 번호가 없는 문서도 확인할 수 있게)
+        if (w.expectDoc !== undefined && !sameDoc(b, w.expectDoc)) { const e = new Error("stale " + w.p); e.stale = true; throw e; }
+        if (w.expect === undefined) return;
+        if (w.expect === null ? b != null : (b == null || revOf(b) !== w.expect)) { const e = new Error("stale " + w.p); e.stale = true; throw e; }
+      });
+      const revs = {};
+      const afters = writes.map((w, i) => {
+        const b = befores[i], r = refs[i];
+        if (w.op === "check") return b == null ? null : JSON.parse(JSON.stringify(b));
+        // 지웠다가 되살린 문서는 예전 판보다 큰 번호로 (예전 화면의 판이 다시 맞지 않게. GPT O2)
+        const nrev = Math.max(revOf(b), revOf(w.d)) + 1;
+        if (/^(accounts|cycle)\//.test(w.p)) revs[w.p] = w.op === "delete" ? null : nrev;
+        if (w.op === "delete") { tx.delete(r); return null; }
+        if (w.op === "update" && !b) throw new Error("no document " + w.p);
+        const d = /^(accounts|cycle)\//.test(w.p) ? { ...w.d, rev: nrev } : w.d;
+        if (w.op === "set") tx.set(r, d); else tx.update(r, d);
+        if (w.op === "set") return JSON.parse(JSON.stringify(d));
+        const a = { ...(b || {}) };
+        Object.keys(d).forEach((k) => { if (isDel(d[k])) delete a[k]; else if (d[k] !== undefined) a[k] = d[k]; });
+        return JSON.parse(JSON.stringify(a));
+      });
+      if (undo) { const item = undo.make(writes.map((w, i) => ({ p: w.p, d: befores[i], a: afters[i] })).filter((o, i) => writes[i].op !== "check")); if (item) tx.set(ref("undo/" + undo.id), item); }
+      return revs;
+    }),
     doc: (p) => { const r = ref(p); return {
       set: (d, o) => setDoc(r, d && Array.isArray(d.bars) ? { ...d, bars: d.bars.map(toObj) } : d, o && o.merge ? { merge: true } : {}),
       update: (d) => updateDoc(r, d), delete: () => deleteDoc(r),
