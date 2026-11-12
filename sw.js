@@ -11,18 +11,3 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(fetch(e.request, { cache: "no-cache" }).then((r) => { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); return r; }).catch(() => caches.match(e.request)));
 });
 
-// 주문 알림 (GitHub Actions → Firebase Cloud Messaging). 받은 내용을 그대로 알림으로 띄웁니다.
-self.addEventListener("push", (e) => {
-  let m = {};
-  try { const j = e.data ? e.data.json() : {}; m = j.data || j.notification || j; } catch (_) {}
-  e.waitUntil(self.registration.showNotification(m.title || "주문 데스크", {
-    body: m.body || "", tag: m.tag || "order-reminder", renotify: true, icon: "icon-192.png", badge: "icon-192.png"
-  }));
-});
-self.addEventListener("notificationclick", (e) => {
-  e.notification.close();
-  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((cs) => {
-    for (const c of cs) if (c.url.startsWith(self.registration.scope) && "focus" in c) return c.focus();
-    return self.clients.openWindow("./");
-  }));
-});

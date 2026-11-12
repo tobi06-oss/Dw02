@@ -10,10 +10,6 @@ export const FIREBASE_CONFIG = {
   appId: "1:633281738874:web:d17c7560fb5cbe34f7a3c3"
 };
 
-// 밤 9시 주문 알림용 웹 푸시 공개키(VAPID). 공개되는 값이라 GitHub에 올려도 됩니다.
-// Firebase 콘솔 > 프로젝트 설정 > 클라우드 메시징 > 웹 푸시 인증서 > "키 쌍 생성" 후 나오는 긴 문자열을 넣으세요.
-export const VAPID_KEY = "BBz4jbWSa5xpoBWaHdUsicTzZkXXJ21lPQg0ai7ZYoFbtCsSGJ1YcE7nBKGPpu0nRTaeMjgO7gaTx37uyciWn00";
-
 // 운영자 계정 UID: 초대 코드를 만들고 회원을 볼 수 있어요. Firebase 콘솔 > Authentication > 사용자 탭의 "사용자 UID" 값입니다.
 // 비밀번호가 아니라 공개돼도 괜찮은 값이에요. firestore.rules의 isOwner()에도 같은 UID를 넣어야 합니다.
 export const OWNER_UIDS = ["ypIDstm7QsSbxrnxcr8vCeIDqQb2"];

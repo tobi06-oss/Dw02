@@ -294,7 +294,6 @@ table.log tbody tr:hover{background:var(--surface-2)}
   --positive:var(--buy); --positive-soft:var(--buy-soft); --negative:var(--sell); --negative-soft:var(--sell-soft); --avgprice:#B8860B; --vr-e:var(--buy); --vr-inv:var(--sell); --vr-pool:var(--ok); }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --avgprice:#E0B84D; } }
 :root[data-theme="dark"]{ --avgprice:#E0B84D; }
-.rec-title{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;margin-bottom:12px}
 .a-label{font-weight:600;font-size:15px}
 .a-period{font-size:11.5px;color:var(--ink-2);font-family:var(--mono)}
 .a-amounts{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:1px}
@@ -577,18 +576,6 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
     <div class="hint">종가는 매일 아침 GitHub Actions가 자동으로 넣습니다. 늦거나 빠졌을 때만 쓰세요. 직접 넣은 값은 내 계정에만 저장되고 같은 날짜의 자동 종가보다 우선합니다. 고가·시가는 지정가 매도 체결 판정에 쓰이며, 비우면 종가로 대신합니다.</div>
   </details>
 
-  <!-- 주문 알림은 보류 중 (2026-11-09): GitHub 예약 실행이 하루 두 번만 돌아 제시간에 못 보냄. 다시 켤 때 hidden과 PUSH_OFF를 지운다 -->
-  <details class="panel" id="push-panel" hidden>
-    <summary>주문 알림 <span id="push-time-label">밤 9:00</span></summary>
-    <div class="hint" id="push-status">확인 중…</div>
-    <div class="field" style="margin-top:10px;max-width:220px"><label for="push-time">알림 시간 (한국시간)</label><select id="push-time"></select></div>
-    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
-      <button class="btn primary" type="button" id="push-on" hidden>이 기기에서 알림 켜기</button>
-      <button class="btn ghost" type="button" id="push-off" hidden>이 기기 알림 끄기</button>
-    </div>
-    <div class="hint">미국장이 열리는 평일 고른 시간쯤(몇 분 늦을 수 있음), 탭에 "주문 전"·"체결 확인"·"V 갱신 필요"가 남은 계좌가 있으면 알림을 보냅니다. 휴장일에는 보내지 않습니다. 아이폰은 사파리에서 "홈 화면에 추가"로 설치한 앱에서 켜야 합니다(iOS 16.4 이상).</div>
-  </details>
-
   <details class="panel" id="invite-panel" hidden>
     <summary>초대 코드 <span class="muted">(운영자만 보여요)</span></summary>
     <div class="hint">코드를 만들어 지인에게 보내면, 그 사람이 "처음이면 계정 만들기"에서 코드를 넣고 가입해요. 가입 인원만큼 쓰이면 코드가 막혀요. 단톡방에는 인원을 그 방 사람 수로 정한 코드 하나만 올리면 돼요. 회원을 빼면 그 사람은 더 이상 기록을 읽고 쓸 수 없어요 (기록 자체는 남아요).</div>
@@ -663,7 +650,7 @@ function renderTickers(){
 }
 
 // 탭 배지: 무매는 다음 장 주문을 아직 안 넣었을 때, VR은 2주 주문일(V 갱신 후 새 표)에 아직 안 넣었을 때
-// 판정은 engine.js orderStatus — 주문 알림(scripts/order-reminder.mjs)도 같은 함수를 씁니다.
+// 판정은 engine.js orderStatus
 function orderBadge(a){ return E.orderStatus(a, bars(a.ticker)); }
 
 function kindOf(a){ return a&&a.type==="VR" ? "VR" : "INF"; }
@@ -2782,7 +2769,7 @@ window.DeskApp = {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
-import { FIREBASE_CONFIG, VAPID_KEY, OWNER_UIDS } from "./firebase-config.js";
+import { FIREBASE_CONFIG, OWNER_UIDS } from "./firebase-config.js";
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -3014,78 +3001,6 @@ onAuthStateChanged(auth, async (user) => {
     if (seq !== authSeq) return;
     if (ok) startApp(user); else $("gate-panel").hidden = false;
   }
-  // 알림 토큰 갱신은 화면이 뜬 뒤에 한다 (알림 보류 중에는 하지 않음)
-  if (!PUSH_OFF) setTimeout(() => { if (auth.currentUser === user) pushRefresh(user); }, user ? 4000 : 0);
-});
-
-/* ---------- 주문 알림 (웹 푸시) ---------- */
-// 보류 중: 패널을 숨기고 토큰도 저장하지 않는다. 다시 켜려면 false로 바꾸고 push-panel의 hidden을 지운다
-var PUSH_OFF = true;
-// 알림 시간은 계정마다 users/{uid}/settings/push {time:"HH:MM"}에 저장 (기본 21:00). 모든 기기에 같이 적용됩니다.
-const PUSH_TIMES = []; for (let h = 12; h < 24; h++) PUSH_TIMES.push(String(h).padStart(2, "0") + ":00", String(h).padStart(2, "0") + ":30");
-const timeLabel = (t) => { const h = +t.slice(0, 2); return (h < 18 ? "오후 " : "밤 ") + (h > 12 ? h - 12 : h) + ":" + t.slice(3); };
-$("push-time").innerHTML = PUSH_TIMES.map((t) => `<option value="${t}">${timeLabel(t)}</option>`).join("");
-function pushTimeShow(t) { $("push-time").value = t; $("push-time-label").textContent = timeLabel(t); }
-pushTimeShow("21:00");
-async function pushTimeLoad(user) {
-  try { const d = await getDoc(doc(fs, "users", user.uid, "settings", "push")); pushTimeShow((d.exists() && d.data().time) || "21:00"); }
-  catch (e) { console.error("push time", e); }
-}
-$("push-time").addEventListener("change", async () => {
-  const user = auth.currentUser, t = $("push-time").value; if (!user) return;
-  try { await setDoc(doc(fs, "users", user.uid, "settings", "push"), { time: t }, { merge: true }); pushTimeShow(t); }
-  catch (e) { console.error("push time", e); $("push-status").textContent = "알림 시간을 저장하지 못했어요 : " + (e.message || e.code || e); }
-});
-// 이 기기의 푸시 토큰을 users/{uid}/pushTokens/{토큰 해시}에 저장하면 GitHub Actions(order-reminder)가 보냅니다.
-// 알림 모듈은 필요할 때만 불러온다 (앱 첫 로딩에서 빼기)
-const fcm = () => import("https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging.js");
-const pushId = async (t) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)))].slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
-function pushUI(msg, onBtn, offBtn) { $("push-status").textContent = msg; $("push-on").hidden = !onBtn; $("push-off").hidden = !offBtn; }
-async function pushReady() {
-  if (!VAPID_KEY) return "설정이 아직 안 됐어요. firebase-config.js에 웹 푸시 키(VAPID)를 넣어야 합니다.";
-  if (!("serviceWorker" in navigator) || !("Notification" in window) || !(await fcm().then((m) => m.isSupported()).catch(() => false)))
-    return /iPhone|iPad/.test(navigator.userAgent) ? "아이폰은 사파리 공유 버튼 > 홈 화면에 추가로 설치한 앱에서 열어야 알림을 켤 수 있어요." : "이 브라우저는 푸시 알림을 지원하지 않아요.";
-  return null;
-}
-async function pushSave(user) {
-  const { getMessaging, getToken } = await fcm(), reg = await navigator.serviceWorker.ready;
-  const token = await getToken(getMessaging(app), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
-  if (!token) throw new Error("토큰을 받지 못했어요");
-  await setDoc(doc(fs, "users", user.uid, "pushTokens", await pushId(token)), { token, device: navigator.userAgent.slice(0, 160), updatedAt: new Date().toISOString() });
-  return token;
-}
-async function pushRefresh(user) {
-  if (!user) return;
-  pushTimeLoad(user);
-  const why = await pushReady();
-  if (why) return pushUI(why, false, false);
-  if (Notification.permission === "denied") return pushUI("이 기기에서 알림이 차단돼 있어요. 브라우저(또는 폰 설정)의 사이트 알림 권한을 허용으로 바꾼 뒤 새로 고쳐주세요.", false, false);
-  if (Notification.permission !== "granted") return pushUI("이 기기는 아직 알림을 받지 않아요.", true, false);
-  // 권한이 있으면 토큰을 다시 저장해 둔다 (토큰은 가끔 바뀜)
-  try { await pushSave(user); pushUI("이 기기에서 알림을 받고 있어요.", false, true); }
-  catch (e) { console.error("push", e); pushUI("알림 등록을 확인하지 못했어요 : " + (e.message || e.code || e), true, false); }
-}
-$("push-on").addEventListener("click", async () => {
-  const user = auth.currentUser; if (!user) return;
-  $("push-on").disabled = true;
-  try {
-    const perm = await Notification.requestPermission();
-    if (perm !== "granted") return pushRefresh(user);
-    await pushSave(user);
-    pushUI("켰어요. 이 기기에서 알림을 받고 있어요. GitHub Actions에서 테스트 알림을 보내 확인할 수 있어요.", false, true);
-  } catch (e) { console.error("push", e); pushUI("알림을 켜지 못했어요 : " + (e.message || e.code || e), true, false); }
-  finally { $("push-on").disabled = false; }
-});
-$("push-off").addEventListener("click", async () => {
-  const user = auth.currentUser; if (!user) return;
-  try {
-    const { getMessaging, getToken, deleteToken } = await fcm();
-    const m = getMessaging(app), reg = await navigator.serviceWorker.ready;
-    const token = await getToken(m, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg }).catch(() => null);
-    if (token) await deleteDoc(doc(fs, "users", user.uid, "pushTokens", await pushId(token)));
-    await deleteToken(m).catch(() => {});
-    pushUI("이 기기 알림을 껐어요.", true, false);
-  } catch (e) { console.error("push", e); pushUI("알림을 끄지 못했어요 : " + (e.message || e.code || e), false, true); }
 });
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

@@ -27,4 +27,3 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node update-prices.mjs
-      # 큰수 때문에 못 산 매수 알림(big-miss-alert.mjs)은 알림 기능 보류로 뺐습니다 (2026-11-09). 앱의 체결 확인 화면에는 그대로 보입니다.
