@@ -268,6 +268,12 @@ details.adv .adv-body .field{flex:1 1 120px}
 .chk input{margin-top:2px}
 .vr-import .vi-h{font-size:13px;font-weight:600}
 .vr-import .vi-d{font-size:11px;color:var(--ink-3)}
+.ask-text{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;color:var(--ink);font-family:var(--sans);width:100%;resize:vertical;box-sizing:border-box}
+.ask-text:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.ask-item{border-top:1px solid var(--line);padding:10px 0}
+.ask-item .q,.ask-item .a{white-space:pre-wrap;word-break:break-word;font-size:13px;margin-top:4px}
+.ask-item .a{background:var(--accent-soft);border-radius:8px;padding:8px 10px}
+.ask-badge{display:inline-block;min-width:16px;padding:0 5px;margin-left:4px;border-radius:10px;background:var(--buy);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
 .vr-import textarea{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--ink);font-family:var(--mono);width:100%;resize:vertical;box-sizing:border-box}
 .vr-import .vi-a{display:flex;gap:8px;flex-wrap:wrap}
 .vr-import .vi-r{font-size:12px;color:var(--ink-2);line-height:1.6}
@@ -476,7 +482,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="sub" id="sub">오늘 밤 걸 주문과 어제 체결을 한곳에서</div>
     </div>
     <div class="tickers" id="tickers"></div>
-    <div class="userbar" id="userbar" hidden><span id="user-email"></span><button class="btn ghost" type="button" id="signout" style="padding:4px 8px;font-size:12px">로그아웃</button></div>
+    <div class="userbar" id="userbar" hidden><span id="user-email"></span><button class="btn ghost" type="button" id="ask-open" hidden style="padding:4px 8px;font-size:12px">문의·오류 신고</button><button class="btn ghost" type="button" id="signout" style="padding:4px 8px;font-size:12px">로그아웃</button></div>
   </header>
 
   <section class="panel auth" id="auth-panel" hidden>
@@ -510,6 +516,16 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
     <div class="bd">인터넷 연결이나 Firebase 설정(보안 규칙·승인된 도메인)을 확인한 뒤 새로 고쳐주세요.</div>
   </div>
 
+  <section class="panel" id="ask-panel" hidden>
+    <div class="panel-head"><h2 id="ask-title">문의·오류 신고</h2><button type="button" class="btn ghost" id="ask-close">닫기</button></div>
+    <form id="ask-form" class="form" style="flex-direction:column;align-items:stretch">
+      <div class="field" style="flex:none;max-width:160px"><label for="ask-type">종류</label><select id="ask-type"><option value="ask">문의</option><option value="bug">오류 신고</option></select></div>
+      <div class="field" style="flex:none"><label for="ask-text">내용</label><textarea id="ask-text" class="ask-text" rows="4" maxlength="1000" required placeholder="궁금한 점이나 오류를 적어 주세요. 오류라면 어느 화면에서 무엇을 눌렀더니 어떻게 됐는지 적어 주시면 빨리 찾을 수 있어요."></textarea></div>
+      <button class="btn primary" type="submit" id="ask-send">보내기</button>
+    </form>
+    <div class="hint" id="ask-note">앱 버전만 함께 저장돼요. 계좌 금액이나 매매내역은 보내지 않아요. 답변은 운영자가 달면 여기에 보여요.</div>
+    <div id="ask-list" style="margin-top:12px"></div>
+  </section>
   <nav class="kind-tabs" id="kind-tabs" role="tablist" aria-label="전략"></nav>
   <nav class="tabs" id="tabs" role="tablist" aria-label="계좌"></nav>
   <section class="panel" id="add-panel" hidden>
@@ -2821,7 +2837,7 @@ window.DeskApp = {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, runTransaction, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, runTransaction, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot, addDoc, query, where } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { FIREBASE_CONFIG, OWNER_UIDS } from "./firebase-config.js";
 
 const app = initializeApp(FIREBASE_CONFIG);
@@ -3005,6 +3021,7 @@ function startApp(user) {
   window.DeskOwner = isOwnerUser(user);
   $("invite-panel").hidden = !window.DeskOwner;
   if (window.DeskOwner) invRefresh();
+  askStart(user);
   window.DeskApp.start(makeAdapter(user.uid));
   // 쓰는 중에 운영자가 이용을 멈추면 바로 화면을 닫는다 (다시 열면 이용 멈춤 안내가 뜸)
   if (memberUnsub) { memberUnsub(); memberUnsub = null; }
@@ -3066,10 +3083,93 @@ $("invite-panel").addEventListener("click", async (ev) => {
   }
 });
 
+/* ---------- 문의함: 회원은 문의를 쓰고 자기 문의와 답변만 보고, 운영자는 모든 문의를 보고 답변을 단다 (firestore.rules에서 막음) ---------- */
+// 오류를 찾을 때 쓰는 앱 버전. 배포할 때마다 날짜를 바꾼다.
+const APP_VER = "v1.0 (2026-11-12)";
+const ASK_TYPE = { ask: "문의", bug: "오류 신고" };
+let askUser = null, askRows = [];
+const askToast = (m) => { const t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(askToast._t); askToast._t = setTimeout(() => t.classList.remove("show"), 2600); };
+const askDay = (v) => { try { const d = v && typeof v.toDate === "function" ? v.toDate() : null; return d ? (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") : ""; } catch (e) { return ""; } };
+const askMs = (v) => (v && typeof v.toMillis === "function" ? v.toMillis() : 0);
+const askSeenKey = () => "desk.askSeen." + (askUser ? askUser.uid : "");
+function askBadge() {
+  const own = window.DeskOwner;
+  let seen = 0; try { seen = +localStorage.getItem(askSeenKey()) || 0; } catch (e) {}
+  // 운영자: 아직 답변 안 한 문의 수, 회원: 마지막으로 열어 본 뒤 새로 달린 답변 수
+  const n = own ? askRows.filter((x) => !x.answer).length : askRows.filter((x) => x.answer && askMs(x.answeredAt) > seen).length;
+  $("ask-open").innerHTML = (own ? "받은 문의" : "문의·오류 신고") + (n ? '<span class="ask-badge">' + n + "</span>" : "");
+}
+async function askLoad() {
+  if (!askUser) return;
+  const u = askUser;
+  try {
+    const snap = await getDocs(window.DeskOwner ? collection(fs, "inquiries") : query(collection(fs, "inquiries"), where("uid", "==", u.uid)));
+    if (askUser !== u) return;
+    askRows = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => askMs(b.createdAt) - askMs(a.createdAt));
+    askRender();
+  } catch (e) { console.error("inquiries", e); $("ask-list").textContent = "문의를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요."; }
+  askBadge();
+}
+function askRender() {
+  const own = window.DeskOwner;
+  $("ask-form").hidden = own; $("ask-note").hidden = own;
+  $("ask-title").textContent = own ? "받은 문의" : "문의·오류 신고";
+  if (!askRows.length) { $("ask-list").innerHTML = '<div class="small muted">' + (own ? "받은 문의가 없어요." : "아직 보낸 문의가 없어요.") + "</div>"; return; }
+  $("ask-list").innerHTML = '<div class="small muted">' + (own ? "받은 문의 " + askRows.length + "건 · 답변 기다림 " + askRows.filter((x) => !x.answer).length + "건" : "내 문의 " + askRows.length + "건") + "</div>" + askRows.map((x) =>
+    '<div class="ask-item"><div class="small muted"><b style="color:var(--ink)">' + escH(ASK_TYPE[x.type] || x.type) + "</b> · " + escH(askDay(x.createdAt)) + (own ? " · " + escH(x.email || x.uid) : "") + " · " + escH(x.ver || "") + (x.answer ? "" : " · 답변 기다림") + "</div>" +
+    '<div class="q">' + escH(x.text) + "</div>" +
+    (own
+      ? '<textarea class="ask-text" rows="2" maxlength="2000" data-ask-ans="' + escH(x.id) + '" placeholder="답변 쓰기" style="margin-top:6px">' + escH(x.answer || "") + "</textarea>" +
+        '<div class="row" style="gap:8px;margin-top:6px"><button class="btn primary" type="button" data-ask-save="' + escH(x.id) + '">' + (x.answer ? "답변 고치기" : "답변 저장") + '</button><button class="btn ghost" type="button" data-ask-del="' + escH(x.id) + '">지우기</button>' + (x.answer ? '<span class="small muted" style="align-self:center">' + escH(askDay(x.answeredAt)) + " 답변</span>" : "") + "</div>"
+      : (x.answer ? '<div class="a"><div class="small muted">운영자 답변 · ' + escH(askDay(x.answeredAt)) + "</div>" + escH(x.answer) + "</div>" : "")) +
+    "</div>").join("");
+}
+function askStart(user) { askUser = user; askRows = []; $("ask-open").hidden = false; $("ask-panel").hidden = true; $("ask-list").innerHTML = ""; askBadge(); askLoad(); }
+$("ask-open").addEventListener("click", () => {
+  const show = $("ask-panel").hidden;
+  $("ask-panel").hidden = !show;
+  if (show) {
+    askRender(); askLoad();
+    // 회원이 열어 보면 새 답변 표시를 지운다
+    if (!window.DeskOwner) { const last = Math.max(0, ...askRows.map((x) => askMs(x.answeredAt))); try { localStorage.setItem(askSeenKey(), String(Math.max(last, Date.now()))); } catch (e) {} askBadge(); }
+    $("ask-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
+$("ask-close").addEventListener("click", () => { $("ask-panel").hidden = true; });
+$("ask-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const u = askUser, text = $("ask-text").value.trim();
+  if (!u || !text) return;
+  if (!navigator.onLine) { askToast("인터넷에 연결된 뒤 다시 보내 주세요."); return; }
+  $("ask-send").disabled = true;
+  try {
+    await addDoc(collection(fs, "inquiries"), { uid: u.uid, email: u.email || "", type: $("ask-type").value === "bug" ? "bug" : "ask", text: text.slice(0, 1000), ver: APP_VER, createdAt: serverTimestamp() });
+    $("ask-text").value = ""; askToast("보냈어요. 답변이 달리면 여기에 보여요.");
+    await askLoad();
+  } catch (err) { console.error("ask", err); askToast("보내지 못했어요. 잠시 뒤 다시 해 주세요."); }
+  finally { $("ask-send").disabled = false; }
+});
+$("ask-list").addEventListener("click", async (ev) => {
+  if (!window.DeskOwner) return;
+  const sv = ev.target.closest("[data-ask-save]"), dl = ev.target.closest("[data-ask-del]");
+  if (sv) {
+    const id = sv.getAttribute("data-ask-save"), ta = $("ask-list").querySelector('[data-ask-ans="' + CSS.escape(id) + '"]'), ans = ta ? ta.value.trim() : "";
+    if (!ans) { askToast("답변을 써 주세요."); return; }
+    if (!navigator.onLine) { askToast("인터넷에 연결된 뒤 다시 해 주세요."); return; }
+    sv.disabled = true;
+    try { await updateDoc(doc(fs, "inquiries", id), { answer: ans.slice(0, 2000), answeredAt: serverTimestamp() }); askToast("답변을 저장했어요."); await askLoad(); }
+    catch (e) { console.error("answer", e); askToast("답변을 저장하지 못했어요."); sv.disabled = false; }
+  } else if (dl) {
+    if (dl.getAttribute("data-armed") !== "1") { dl.setAttribute("data-armed", "1"); dl.textContent = "한 번 더 누르면 지워요"; return; }
+    try { await deleteDoc(doc(fs, "inquiries", dl.getAttribute("data-ask-del"))); await askLoad(); } catch (e) { console.error(e); askToast("지우지 못했어요."); }
+  }
+});
+
 onAuthStateChanged(auth, async (user) => {
   const seq = ++authSeq;
   window.DeskApp.stop();
   $("gate-panel").hidden = true; $("invite-panel").hidden = true; window.DeskOwner = false;
+  askUser = null; $("ask-open").hidden = true; $("ask-panel").hidden = true;
   const on = !!user;
   $("auth-panel").hidden = on;
   $("app-body").hidden = true;

@@ -63,5 +63,29 @@ service cloud.firestore {
         && request.resource.data.revoked is bool;
       allow delete: if false;
     }
+
+    // 문의함 {uid, email, type, text, ver, createdAt, answer?, answeredAt?}
+    // 회원은 자기 이름으로 새 문의를 쓰고 자기 문의만 읽는다 (고치거나 지울 수 없음).
+    // 운영자는 모든 문의를 읽고, 답변(answer, answeredAt)만 달거나 고치고, 다 본 문의를 지울 수 있다.
+    // 계좌 금액·매매내역은 받지 않는다 (아래 칸 말고는 저장이 막힘).
+    match /inquiries/{id} {
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'type', 'text', 'ver', 'createdAt'])
+        && request.resource.data.keys().hasAll(['uid', 'email', 'type', 'text', 'ver', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.get('email', '')
+        && request.resource.data.type in ['ask', 'bug']
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 1000
+        && request.resource.data.ver is string && request.resource.data.ver.size() <= 40
+        && request.resource.data.createdAt == request.time;
+      allow read: if isOwner() || (isMember() && resource.data.uid == request.auth.uid);
+      allow update: if isOwner()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer', 'answeredAt'])
+        && request.resource.data.answer is string
+        && request.resource.data.answer.size() >= 1 && request.resource.data.answer.size() <= 2000
+        && request.resource.data.answeredAt == request.time;
+      allow delete: if isOwner();
+    }
   }
 }
