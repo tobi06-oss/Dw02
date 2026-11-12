@@ -3087,28 +3087,36 @@ $("invite-panel").addEventListener("click", async (ev) => {
 // 오류를 찾을 때 쓰는 앱 버전. 배포할 때마다 날짜를 바꾼다.
 const APP_VER = "v1.0 (2026-11-12)";
 const ASK_TYPE = { ask: "문의", bug: "오류 신고" };
-let askUser = null, askRows = [];
+// askSeq: 계정이 바뀔 때마다 1 올린다. 늦게 끝난 요청이 다른 계정의 화면을 건드리지 않게, 결과를 쓰기 전에 같은 번호인지 확인한다
+let askUser = null, askRows = [], askSeq = 0;
 const askToast = (m) => { const t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(askToast._t); askToast._t = setTimeout(() => t.classList.remove("show"), 2600); };
 const askDay = (v) => { try { const d = v && typeof v.toDate === "function" ? v.toDate() : null; return d ? (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") : ""; } catch (e) { return ""; } };
 const askMs = (v) => (v && typeof v.toMillis === "function" ? v.toMillis() : 0);
 const askSeenKey = () => "desk.askSeen." + (askUser ? askUser.uid : "");
+// 문의 쓰기·답변·지우기는 서버에 닿아야 끝나는 트랜잭션으로 한다: 연결이 끊기면 대기 줄에 쌓이지 않고 실패한다 (기록 저장과 같은 방식)
+const askWrite = (fn) => runTransaction(fs, async (tx) => { fn(tx); });
 function askBadge() {
   const own = window.DeskOwner;
   let seen = 0; try { seen = +localStorage.getItem(askSeenKey()) || 0; } catch (e) {}
   // 운영자: 아직 답변 안 한 문의 수, 회원: 마지막으로 열어 본 뒤 새로 달린 답변 수
-  const n = own ? askRows.filter((x) => !x.answer).length : askRows.filter((x) => x.answer && askMs(x.answeredAt) > seen).length;
+  const n = !askUser ? 0 : own ? askRows.filter((x) => !x.answer).length : askRows.filter((x) => x.answer && askMs(x.answeredAt) > seen).length;
   $("ask-open").innerHTML = (own ? "받은 문의" : "문의·오류 신고") + (n ? '<span class="ask-badge">' + n + "</span>" : "");
 }
+// 불러오기에 성공하면 true
 async function askLoad() {
-  if (!askUser) return;
-  const u = askUser;
+  if (!askUser) return false;
+  const u = askUser, seq = askSeq;
   try {
     const snap = await getDocs(window.DeskOwner ? collection(fs, "inquiries") : query(collection(fs, "inquiries"), where("uid", "==", u.uid)));
-    if (askUser !== u) return;
+    if (seq !== askSeq) return false;
     askRows = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => askMs(b.createdAt) - askMs(a.createdAt));
-    askRender();
-  } catch (e) { console.error("inquiries", e); $("ask-list").textContent = "문의를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요."; }
-  askBadge();
+    askRender(); askBadge();
+    return true;
+  } catch (e) {
+    console.error("inquiries", e);
+    if (seq === askSeq) $("ask-list").textContent = "문의를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.";
+    return false;
+  }
 }
 function askRender() {
   const own = window.DeskOwner;
@@ -3124,44 +3132,60 @@ function askRender() {
       : (x.answer ? '<div class="a"><div class="small muted">운영자 답변 · ' + escH(askDay(x.answeredAt)) + "</div>" + escH(x.answer) + "</div>" : "")) +
     "</div>").join("");
 }
-function askStart(user) { askUser = user; askRows = []; $("ask-open").hidden = false; $("ask-panel").hidden = true; $("ask-list").innerHTML = ""; askBadge(); askLoad(); }
-$("ask-open").addEventListener("click", () => {
+// 계정이 끝나거나 바뀌면 문의 화면을 모두 비운다 (쓰다 만 글, 고른 종류, 버튼 상태, 운영자 답변 칸까지)
+function askStop() {
+  askSeq++; askUser = null; askRows = [];
+  $("ask-open").hidden = true; $("ask-open").innerHTML = "문의·오류 신고"; $("ask-panel").hidden = true;
+  $("ask-text").value = ""; $("ask-type").value = "ask"; $("ask-send").disabled = false; $("ask-list").innerHTML = "";
+}
+function askStart(user) { askStop(); askUser = user; $("ask-open").hidden = false; askBadge(); askLoad(); }
+$("ask-open").addEventListener("click", async () => {
   const show = $("ask-panel").hidden;
   $("ask-panel").hidden = !show;
-  if (show) {
-    askRender(); askLoad();
-    // 회원이 열어 보면 새 답변 표시를 지운다
-    if (!window.DeskOwner) { const last = Math.max(0, ...askRows.map((x) => askMs(x.answeredAt))); try { localStorage.setItem(askSeenKey(), String(Math.max(last, Date.now()))); } catch (e) {} askBadge(); }
-    $("ask-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!show) return;
+  askRender();
+  $("ask-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  const seq = askSeq, ok = await askLoad();
+  // 회원: 답변을 실제로 불러와 화면에 보여 준 뒤에만 새 답변 표시를 지운다 (서버 시각끼리 비교)
+  if (ok && seq === askSeq && !window.DeskOwner && !$("ask-panel").hidden) {
+    let seen = 0; try { seen = +localStorage.getItem(askSeenKey()) || 0; } catch (e) {}
+    const last = Math.max(seen, ...askRows.map((x) => askMs(x.answeredAt)));
+    try { localStorage.setItem(askSeenKey(), String(last)); } catch (e) {}
+    askBadge();
   }
 });
 $("ask-close").addEventListener("click", () => { $("ask-panel").hidden = true; });
 $("ask-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const u = askUser, text = $("ask-text").value.trim();
+  const u = askUser, seq = askSeq, text = $("ask-text").value.trim();
   if (!u || !text) return;
   if (!navigator.onLine) { askToast("인터넷에 연결된 뒤 다시 보내 주세요."); return; }
   $("ask-send").disabled = true;
   try {
-    await addDoc(collection(fs, "inquiries"), { uid: u.uid, email: u.email || "", type: $("ask-type").value === "bug" ? "bug" : "ask", text: text.slice(0, 1000), ver: APP_VER, createdAt: serverTimestamp() });
-    $("ask-text").value = ""; askToast("보냈어요. 답변이 달리면 여기에 보여요.");
+    const data = { uid: u.uid, email: u.email || "", type: $("ask-type").value === "bug" ? "bug" : "ask", text: text.slice(0, 1000), ver: APP_VER, createdAt: serverTimestamp() };
+    await askWrite((tx) => tx.set(doc(collection(fs, "inquiries")), data));
+    if (seq !== askSeq) return;
+    $("ask-text").value = ""; $("ask-type").value = "ask"; askToast("보냈어요. 답변이 달리면 여기에 보여요.");
     await askLoad();
-  } catch (err) { console.error("ask", err); askToast("보내지 못했어요. 잠시 뒤 다시 해 주세요."); }
-  finally { $("ask-send").disabled = false; }
+  } catch (err) { console.error("ask", err); if (seq === askSeq) askToast("보내지 못했어요. 인터넷 연결을 확인하고 다시 보내 주세요. 쓴 내용은 그대로 있어요."); }
+  finally { if (seq === askSeq) $("ask-send").disabled = false; }
 });
 $("ask-list").addEventListener("click", async (ev) => {
   if (!window.DeskOwner) return;
-  const sv = ev.target.closest("[data-ask-save]"), dl = ev.target.closest("[data-ask-del]");
+  const sv = ev.target.closest("[data-ask-save]"), dl = ev.target.closest("[data-ask-del]"), seq = askSeq;
   if (sv) {
     const id = sv.getAttribute("data-ask-save"), ta = $("ask-list").querySelector('[data-ask-ans="' + CSS.escape(id) + '"]'), ans = ta ? ta.value.trim() : "";
     if (!ans) { askToast("답변을 써 주세요."); return; }
     if (!navigator.onLine) { askToast("인터넷에 연결된 뒤 다시 해 주세요."); return; }
     sv.disabled = true;
-    try { await updateDoc(doc(fs, "inquiries", id), { answer: ans.slice(0, 2000), answeredAt: serverTimestamp() }); askToast("답변을 저장했어요."); await askLoad(); }
-    catch (e) { console.error("answer", e); askToast("답변을 저장하지 못했어요."); sv.disabled = false; }
+    try { await askWrite((tx) => tx.update(doc(fs, "inquiries", id), { answer: ans.slice(0, 2000), answeredAt: serverTimestamp() })); if (seq !== askSeq) return; askToast("답변을 저장했어요."); await askLoad(); }
+    catch (e) { console.error("answer", e); if (seq === askSeq) { askToast("답변을 저장하지 못했어요. 쓴 답변은 그대로 있어요."); sv.disabled = false; } }
   } else if (dl) {
     if (dl.getAttribute("data-armed") !== "1") { dl.setAttribute("data-armed", "1"); dl.textContent = "한 번 더 누르면 지워요"; return; }
-    try { await deleteDoc(doc(fs, "inquiries", dl.getAttribute("data-ask-del"))); await askLoad(); } catch (e) { console.error(e); askToast("지우지 못했어요."); }
+    if (!navigator.onLine) { askToast("인터넷에 연결된 뒤 다시 해 주세요."); return; }
+    dl.disabled = true;
+    try { await askWrite((tx) => tx.delete(doc(fs, "inquiries", dl.getAttribute("data-ask-del")))); if (seq === askSeq) await askLoad(); }
+    catch (e) { console.error(e); if (seq === askSeq) { askToast("지우지 못했어요."); dl.disabled = false; } }
   }
 });
 
@@ -3169,7 +3193,7 @@ onAuthStateChanged(auth, async (user) => {
   const seq = ++authSeq;
   window.DeskApp.stop();
   $("gate-panel").hidden = true; $("invite-panel").hidden = true; window.DeskOwner = false;
-  askUser = null; $("ask-open").hidden = true; $("ask-panel").hidden = true;
+  askStop();
   const on = !!user;
   $("auth-panel").hidden = on;
   $("app-body").hidden = true;
