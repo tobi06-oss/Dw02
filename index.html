@@ -69,15 +69,18 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .spread{justify-content:space-between}
 
 /* 상단 */
-.top{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:10px}
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 14px;margin-bottom:6px}
+.top .brand{flex-basis:100%}
 .brand h1{font-family:var(--display);font-weight:800;font-size:clamp(20px,4vw,26px);margin:0;letter-spacing:-0.01em;text-wrap:balance}
 .brand .sub{font-size:12px;color:var(--ink-2);margin-top:2px}
 .tickers{display:flex;gap:10px;flex-wrap:wrap}
-.tick{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 14px;box-shadow:var(--shadow);display:flex;align-items:baseline;gap:8px}
+.tick{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:7px 13px;box-shadow:var(--shadow);display:flex;align-items:baseline;gap:8px}
 .tick b{font-size:11px;font-weight:400;color:var(--ink-2)}
-.tick .px{font-size:16px;font-weight:600;letter-spacing:-0.01em}
+.tick .px{font-size:15px;font-weight:600;letter-spacing:-0.01em}
 .tick .ch{font-size:11.5px;font-weight:600}
-.userbar{display:flex;gap:8px;align-items:center;justify-content:flex-end;font-size:12px;color:var(--ink-2);margin-top:-8px}
+.userbar{display:flex;gap:10px;align-items:center;justify-content:flex-end;font-size:12px;color:var(--ink-2);margin-left:auto}
+.userbar #user-email{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:480px){ .userbar #user-email{display:none} }
 
 /* 계좌 탭 */
 .kind-tabs{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:4px}
@@ -188,6 +191,10 @@ details.panel[open]>summary{margin-bottom:12px}
 .vtable td.idx{width:26px;color:var(--ink-3);font-family:var(--mono);font-size:12px}
 .vtable th{font-size:11.5px;font-weight:600;color:var(--ink-2);text-align:left;padding:0 0 6px;border-bottom:1px solid var(--line)}
 .vtable th.idx{width:26px}.vtable th.r{text-align:right}
+.vmore summary{cursor:pointer;list-style:none;text-align:center;font-size:12.5px;font-weight:600;color:var(--ink-2);padding:9px 0 2px;border-top:1px solid var(--line)}
+.vmore summary::-webkit-details-marker{display:none}
+.vmore[open] summary{display:none}
+.vmore .vtable tr:first-child td{border-top:1px solid var(--line)}
 .vtable td.p{font-family:var(--mono);font-variant-numeric:tabular-nums}.vtable td.p b{font-size:15px}
 .cols .col h3{font-size:14px;margin-bottom:8px}
 .notes{margin:14px 0 0;padding:14px 0 0;list-style:none;display:flex;flex-direction:column;gap:4px;border-top:1px dashed var(--line)}
@@ -469,8 +476,8 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="sub" id="sub">오늘 밤 걸 주문과 어제 체결을 한곳에서</div>
     </div>
     <div class="tickers" id="tickers"></div>
+    <div class="userbar" id="userbar" hidden><span id="user-email"></span><button class="btn ghost" type="button" id="signout" style="padding:4px 8px;font-size:12px">로그아웃</button></div>
   </header>
-  <div class="userbar" id="userbar" hidden><span id="user-email"></span><button class="btn ghost" type="button" id="signout" style="padding:4px 8px;font-size:12px">로그아웃</button></div>
 
   <section class="panel auth" id="auth-panel" hidden>
     <h2 id="auth-title">로그인</h2>
@@ -1025,7 +1032,12 @@ function renderVR(a){
   var X=function(x){ return Math.max(0,Math.min(100,(x-lo)/(hi-lo)*100)); };
   var state = plan.E<plan.min?"밴드 아래 · 매수 구간":(plan.E>plan.max?"밴드 위 · 매도 구간":"밴드 안 · 대기");
   var roll="";
-  var vt=function(list){ return list.length?'<table class="vtable"><thead><tr><th class="idx">#</th><th>지정가 × 수량</th><th class="r">체결 후 Pool</th></tr></thead><tbody>'+list.map(function(o,i){return '<tr><td class="idx">'+(o.kind==="vr-first"?'첫':(i+1))+'</td><td class="p"><b>'+usd(o.price)+'</b> <span class="muted">× '+(o.qty||1)+'</span></td><td class="r muted">'+usd(o.left)+'</td></tr>';}).join("")+'</tbody></table>':''; };
+  var vrow=function(o,i){return '<tr><td class="idx">'+(o.kind==="vr-first"?'첫':(i+1))+'</td><td class="p"><b>'+usd(o.price)+'</b> <span class="muted">× '+(o.qty||1)+'</span></td><td class="r muted">'+usd(o.left)+'</td></tr>';};
+  // 주문이 많으면 앞 5줄만 보이고 나머지는 "더 보기"로 접는다 (화면 표시만, 주문·복사는 그대로)
+  var vt=function(list){ if(!list.length) return '';
+    var head='<table class="vtable"><thead><tr><th class="idx">#</th><th>지정가 × 수량</th><th class="r">체결 후 Pool</th></tr></thead><tbody>'+list.slice(0,5).map(vrow).join("")+'</tbody></table>';
+    if(list.length<=7) return '<table class="vtable"><thead><tr><th class="idx">#</th><th>지정가 × 수량</th><th class="r">체결 후 Pool</th></tr></thead><tbody>'+list.map(vrow).join("")+'</tbody></table>';
+    return head+'<details class="vmore"><summary>나머지 '+(list.length-5)+'개 더 보기</summary><table class="vtable"><tbody>'+list.slice(5).map(function(o,i){return vrow(o,i+5);}).join("")+'</tbody></table></details>'; };
   var pendBlock = a.pending && a.nextUpdate && a.pending.session<=a.nextUpdate;
   // 마감 날(휴장이면 그 전 장) 종가가 있어야 마감한다. 그날 시세가 빠지고 다음 장이 먼저 들어오면 기다린다
   var dueD=E.vrDue(a.nextUpdate), dueBar=a.nextUpdate?barOn(a.ticker,dueD):null;
