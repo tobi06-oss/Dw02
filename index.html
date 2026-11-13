@@ -309,8 +309,7 @@ table.log tbody tr:hover{background:var(--surface-2)}
 @media (max-width:520px){ .ord .pq{font-size:15px} .bigT{font-size:34px} }
 
 /* ---- 기록(예전 트래커에서 옮겨 온 부분) ---- */
-:root{ --text:var(--ink); --text-dim:var(--ink-2); --text-faint:var(--ink-3); --border:var(--line);
-  --positive:var(--buy); --positive-soft:var(--buy-soft); --negative:var(--sell); --negative-soft:var(--sell-soft); --avgprice:#B8860B; --vr-e:var(--buy); --vr-inv:var(--sell); --vr-pool:var(--ok); --vr-band:#D99A1E; }
+:root{ --avgprice:#B8860B; --vr-e:var(--buy); --vr-inv:var(--sell); --vr-pool:var(--ok); --vr-band:#D99A1E; }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --avgprice:#E0B84D; --vr-band:#E0B84D; } }
 :root[data-theme="dark"]{ --avgprice:#E0B84D; --vr-band:#E0B84D; }
 .a-label{font-weight:600;font-size:15px}
@@ -1350,7 +1349,7 @@ function logPanel(a){
    trk.meta·trk.entries는 "지금 보고 있는 계좌"의 기록입니다 (useRec). */
 var trk = { meta:null, metas:{}, metaLoaded:false, entries:[], allEntries:[], cycles:[], migrated:false };
 var rf = { aDate:null, aAmount:"", aSoxl:"", tDate:null, tPrice:"", tQty:"", tDelta:1, sellMult:0.75, sellTag:"별지점", editTrade:null, editEntry:null, inline:null };
-var undoStack = [], undoSeq = 0, armed = {};
+var undoStack = [], armed = {};
 var TD = { first:1, "star-full":1, "star-half":0.5, "avg-half":0.5, ladder:0, "rev-buy":0 };
 
 function todayKR(){ var d=new Date(); return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
@@ -2674,7 +2673,16 @@ function viApply(r){
 }
 function viClear(){ if(vrImport&&vrImport.fromZero) $("n-fromZero").checked=false; vrImport=null; $("vi-text").value=""; $("vi-file").value=""; $("vi-result").innerHTML=""; $("vi-clear").hidden=true; }
 // .xlsx는 그때만 SheetJS를 불러와 첫 시트를 탭 구분 글자로 바꾼다
-function viLoadXlsx(){ return window.XLSX?Promise.resolve(window.XLSX):new Promise(function(ok,no){ var sc=document.createElement("script"); sc.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; sc.onload=function(){ ok(window.XLSX); }; sc.onerror=function(){ no(new Error("load")); }; document.head.appendChild(sc); }); }
+// 엑셀 파일을 고를 때만 라이브러리를 받는다. 받는 중에 또 부르면 같은 작업을 기다리고, 실패하면 다음 번에 다시 받는다 (GPT O4)
+var xlsxLoad=null;
+function viLoadXlsx(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(xlsxLoad) return xlsxLoad;
+  xlsxLoad=new Promise(function(ok,no){ var sc=document.createElement("script"); sc.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+    var fail=function(){ xlsxLoad=null; sc.remove(); no(new Error("load")); };
+    sc.onload=function(){ if(window.XLSX){ xlsxLoad=null; ok(window.XLSX); } else fail(); }; sc.onerror=fail; document.head.appendChild(sc); });
+  return xlsxLoad;
+}
 // still: 읽기가 끝났을 때 그 결과를 아직 써도 되는지 (로그인·계좌·넣기 칸이 그대로인지). 아니면 칸에 쓰지도 않고 버린다 (GPT S1)
 function viReadFile(f, pre, done, still){
   if(!f) return;
@@ -2991,7 +2999,7 @@ window.DeskApp = {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, runTransaction, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot, addDoc, query, where } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, runTransaction, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { FIREBASE_CONFIG, OWNER_UIDS } from "./firebase-config.js";
 
 const app = initializeApp(FIREBASE_CONFIG);
