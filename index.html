@@ -273,6 +273,8 @@ details.adv .adv-body .field{flex:1 1 120px}
 .ask-item{border-top:1px solid var(--line);padding:10px 0}
 .ask-item .q,.ask-item .a{white-space:pre-wrap;word-break:break-word;font-size:13px;margin-top:4px}
 .ask-item .a{background:var(--accent-soft);border-radius:8px;padding:8px 10px}
+.btn.ask-btn{padding:4px 10px;font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px}
+.btn.ask-btn:hover{filter:brightness(1.05)}
 .ask-badge{display:inline-block;min-width:16px;padding:0 5px;margin-left:4px;border-radius:10px;background:var(--buy);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
 .vr-import textarea{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--ink);font-family:var(--mono);width:100%;resize:vertical;box-sizing:border-box}
 .vr-import .vi-a{display:flex;gap:8px;flex-wrap:wrap}
@@ -483,7 +485,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="sub" id="sub">오늘 밤 걸 주문과 어제 체결을 한곳에서</div>
     </div>
     <div class="tickers" id="tickers"></div>
-    <div class="userbar" id="userbar" hidden><span id="user-email"></span><button class="btn ghost" type="button" id="ask-open" hidden style="padding:4px 8px;font-size:12px">문의·오류 신고</button><button class="btn ghost" type="button" id="signout" style="padding:4px 8px;font-size:12px">로그아웃</button></div>
+    <div class="userbar" id="userbar" hidden><span id="user-email"></span><button class="btn ask-btn" type="button" id="ask-open" hidden>문의·오류 신고</button><button class="btn ghost" type="button" id="signout" style="padding:4px 8px;font-size:12px">로그아웃</button></div>
   </header>
 
   <section class="panel auth" id="auth-panel" hidden>
