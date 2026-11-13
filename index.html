@@ -272,6 +272,7 @@ details.adv .adv-body .field{flex:1 1 120px}
 .vr-import .vi-a{display:flex;gap:8px;flex-wrap:wrap}
 .vr-import .vi-r{font-size:12px;color:var(--ink-2);line-height:1.6}
 .vr-import .vi-r .warn{color:var(--buy)}
+.past-box{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
 .field input:focus,.field select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .hint{font-size:11px;color:var(--ink-3);margin-top:8px}
 
@@ -729,6 +730,7 @@ function renderView(){
           : '아직 무한매수 계좌가 없어요. 처음 시작하면 "계좌 만들기", 이미 무매를 하고 있으면 "이어서 하기"로 지금 보유·평단·잔금(또는 매매내역 파일)을 넣어 합류하세요.')+
         '</div><div class="actions"><button class="btn primary" type="button" data-add="new">'+kindName(curType)+' 계좌 만들기</button><button class="btn primary" type="button" data-add="join">이어서 하기 <span style="font-weight:400;opacity:.8">(이미 진행 중)</span></button></div></div>'+
         (curType==="INF"&&trk.cycles.length?archiveSection():"");
+    v.querySelectorAll("details[id]").forEach(function(d){ if(openSet[d.id]) d.open=true; });
     return;
   }
   if(!bars(a.ticker).length){ v.innerHTML='<div class="panel empty">'+esc(a.ticker)+' 종가가 아직 없습니다. 아래 "종가 직접 입력"에서 최근 종가를 넣어주세요.</div>'; return; }
@@ -1019,7 +1021,7 @@ function renderINF(a){
   var lk=!!a.linked, hasRec=lk&&!!trk.meta;
   var missing = lk&&trk.metaLoaded&&!trk.meta ? '<div class="banner warn"><div class="bt">기록 사이클이 없어요</div><div class="bd">매매내역을 담을 사이클을 새로 만듭니다. 지금까지 반영한 체결은 매매내역으로 옮겨져요.</div><div class="actions" style="margin-top:0"><button class="btn primary" data-act="link">사이클 새로 만들기</button></div></div>' : "";
   return banners(a)+linkBanner(a)+missing+hero+slip(a,plan,buyHtml,sellHtml,plan.notes)+dayStrip(a)+undoPanel()+
-    (hasRec?tradeForm(a)+tradeLog(a)+recCharts(a):"")+editorINF(a)+(lk?archiveSection():logPanel(a))+dangerZone(a,hasRec);
+    (hasRec?tradeForm(a)+tradeLog(a)+recCharts(a):"")+editorINF(a)+(lk?archiveSection(a):logPanel(a))+dangerZone(a,hasRec);
 }
 
 function renderVR(a){
@@ -1935,19 +1937,21 @@ function dangerZone(a, withCycle){
     '<button type="button" class="btn danger" data-act="del">이 계좌 삭제</button></div>';
   return '<details class="panel danger-zone" id="danger-zone"><summary>위험 구역 ('+(withCycle?"사이클 삭제 / ":"")+'계좌 삭제)</summary>'+cyc+del+'</details>';
 }
-function archiveSection(){
+function archiveSection(a){
   var cs=trk.cycles;
   var withUsd=cs.filter(function(c){return c.realizedPnlUsd!=null||c.plUsd!=null;}), tot="";
   if(withUsd.length){
     var pnl=0,buy=0,sell=0,hasBuy=false;
     withUsd.forEach(function(c){ pnl+=(c.realizedPnlUsd!=null?c.realizedPnlUsd:c.plUsd); if(c.totalBuyUsd!=null){buy+=c.totalBuyUsd;hasBuy=true;} if(c.totalSellUsd!=null) sell+=c.totalSellUsd; });
-    var first=withUsd.slice().sort(function(a,b){return (a.startDate||"").localeCompare(b.startDate||"");})[0], seed=first&&first.seedUsd;
+    var first=withUsd.filter(function(c){return c.seedUsd!=null;}).sort(function(a,b){return (a.startDate||"").localeCompare(b.startDate||"");})[0], seed=first&&first.seedUsd;
     var p1=hasBuy&&buy?pnl/buy:null, p2=seed?pnl/seed:null;
     tot='<section class="panel"><h2>총 손익 (완료 '+withUsd.length+'개 사이클 합산)</h2><div class="big-total '+signCls(pnl)+'">'+usdS(pnl)+'</div>'+
       '<div class="tot-row"><div><div class="k">운용 수익률</div><div class="v '+signCls(p1)+'">'+(p1!=null?pct(p1):"-")+'</div></div><div><div class="k">첫 시드 대비</div><div class="v '+signCls(p2)+'">'+(p2!=null?pct(p2):"-")+'</div></div>'+
       '<div><div class="k">총매수</div><div class="v">'+(hasBuy?usdP(buy):"-")+'</div></div><div><div class="k">총매도</div><div class="v">'+(sell?usdP(sell):"-")+'</div></div></div></section>';
   }
   var list=cs.map(function(c){
+    // 펼쳐져 있지 않은 사이클은 머리줄만 그린다 (펼치면 그때 그래프·표를 그림)
+    var el=document.getElementById("arc-"+c.id), lazy=!(el&&el.open);
     var seedLine=c.seedUsd!=null?"시드 "+usdP(c.seedUsd)+(c.seedReturnPct!=null?" · 시드대비 "+pct(c.seedReturnPct):""):"";
     var badge, up, fx="";
     if(c.entriesOnly){ var p=c.realizedPnlUsd; badge=p!=null?usdS(p)+(c.returnPct!=null?" ("+pct(c.returnPct)+")":" (실현손익)"):""; up=p>=0; }
@@ -1957,16 +1961,17 @@ function archiveSection(){
       else { badge=krwS(sh)+"원 ("+pct(shp)+")"; up=sh>=0; fx=inlineOr("afx:"+c.id,'<span class="a-fx">'+(c.fxLoss!=null?"환차손 "+krwS(c.fxLoss)+"원 별도":"환차손 미입력")+'</span>',c.fxLoss); }
     }
     var tx = c.entriesOnly ? (c.entries||[]) : (c.trades||[]);
-    var trTable = tx.length ? '<div class="panel-head" style="margin-top:0"><div class="chart-cap" style="margin:0">매매 · 평단가 <span>(달러 기준)</span></div><button type="button" class="export-btn" data-act="rec-csv-arc-tr" data-id="'+esc(c.id)+'">CSV로 저장</button></div>'+tradeChart(tx)+
+    var trTable = lazy ? "" : tx.length ? '<div class="panel-head" style="margin-top:0"><div class="chart-cap" style="margin:0">매매 · 평단가 <span>(달러 기준)</span></div><button type="button" class="export-btn" data-act="rec-csv-arc-tr" data-id="'+esc(c.id)+'">CSV로 저장</button></div>'+tradeChart(tx)+
       '<div class="tablewrap" style="margin-top:12px"><table class="log"><thead><tr><th>일시</th><th>구분</th><th>체결가</th><th>수량</th><th>금액</th><th>누적수량</th><th>평단</th></tr></thead><tbody>'+
       tx.slice().reverse().map(function(t){ return '<tr><td>'+esc(t.date)+'</td><td class="'+(t.type==="매수"?"up":"down")+'">'+esc(t.type)+'</td><td>$'+t.price+'</td><td>'+t.qty+'</td><td>$'+t.amount+'</td><td>'+t.cumQty+'</td><td>'+(t.avgPrice!=null?"$"+t.avgPrice:"-")+'</td></tr>'; }).join("")+'</tbody></table></div>' : "";
-    var body = c.entriesOnly ? trTable : trTable+
+    var body = lazy||c.entriesOnly ? trTable : trTable+
       '<div class="panel-head" style="margin-top:'+(trTable?'22px':'0')+'"><div class="chart-cap" style="margin:0">평가액 추이</div><button type="button" class="export-btn" data-act="rec-csv-arc" data-id="'+esc(c.id)+'">CSV로 저장</button></div>'+assetChart(computeRows(c.entries||[],null),c.startAmount)+
       '<div style="margin-top:12px">'+entryTable(computeRows(c.entries||[],null),false)+'</div>';
     return '<details class="archive-item" id="arc-'+esc(c.id)+'"><summary>'+(c.acctName?'<span class="a-acct">'+esc(c.acctName)+'</span>':'')+inlineOr("alabel:"+c.id,'<span class="a-label">'+esc(c.label||c.id)+'</span>',c.label||"")+
       '<span class="a-period">'+esc(c.startDate||"-")+' ~ '+esc(c.endDate||"-")+'</span><span class="a-amounts"><span class="a-pl '+(up?"up":"down")+'">'+badge+'</span>'+(seedLine?'<span class="a-fx">'+esc(seedLine)+'</span>':'')+(fx?'<span>'+fx+'</span>':'')+'</span></summary><div class="archive-body">'+body+'</div></details>';
   }).join("");
-  return tot+'<section class="panel"><h2>지난 사이클</h2>'+(list||'<div class="empty">지난 사이클 기록이 없습니다.</div>')+'</section>';
+  var imp=a&&a.type==="INF"&&a.linked&&rf.pastOpen!==a.id?'<button type="button" class="export-btn" data-act="rec-past-open">지난 매매내역 넣기</button>':"";
+  return tot+'<section class="panel"><div class="panel-head"><h2>지난 사이클</h2>'+imp+'</div>'+(a&&a.linked?pastBox(a):"")+(list||'<div class="empty">지난 사이클 기록이 없습니다.</div>')+'</section>';
 }
 function linkBanner(a){
   if(a.type!=="INF"||a.linked||!trk.metaLoaded) return "";
@@ -2099,6 +2104,28 @@ function recAct(act, b, a){
     saveAll([{p:assetPath(dd),op:"delete"}], dd+" 총자산 기록 삭제").then(function(){ toast(dd+" 기록을 삭제했어요."); if(rf.editEntry===dd) rf.editEntry=null; render(); }).catch(function(){});
     return true;
   }
+  if(act==="rec-past-open"){ pastReset(); rf.pastOpen=selected||null; render(); return true; }
+  if(act==="rec-past-close"){ pastReset(); render(); return true; }
+  if(act==="rec-past-save"){
+    var pa=selected?accounts[selected]:null;
+    if(!pa||!pastImp||pastImp.acct!==pa.id||pastImp.seq!==pastSeq||!db) return true;
+    // 파일을 읽는 중이면 아직 저장하지 않는다 (GPT T1)
+    if(pastReading){ toast("파일을 읽는 중이에요. 결과가 나오면 다시 눌러 주세요."); return true; }
+    // 칸의 내용이 미리보기와 다르면(붙여넣고 바로 누름) 지금 칸 내용으로 다시 계산해 보여 주고, 저장은 한 번 더 누를 때 한다 (GPT T1b)
+    var pte=$("pi-text"), cur=pte?pte.value:pastImp.text;
+    if(cur!==pastImp.text){ clearTimeout(piTimer); if(cur.trim()) pastRun(cur, pastSeq); else { pastImp=null; render(); } toast("칸의 내용이 바뀌어 다시 계산했어요. 확인하고 다시 눌러 주세요."); return true; }
+    // 저장 직전에 지금 지난 사이클 목록으로 다시 계산한다 (그사이 다른 창에서 넣은 것은 빠짐)
+    pastRun(pastImp.text, pastSeq);
+    var pr=pastImp&&pastImp.res; if(!pr||!pr.docs.length||pastImp.err) return true;
+    b.disabled=true;
+    var sq=pastSeq;
+    saveAll(pastWrites(pr), "지난 매매내역 넣기 (사이클 "+pr.docs.length+"개)").then(function(){
+      // 저장을 기다리는 동안 다른 계좌·로그인으로 넘어가 새로 연 넣기 칸은 건드리지 않는다 (GPT S1b)
+      if(sq!==pastSeq) return;
+      toast("지난 사이클 "+pr.docs.length+"개를 넣었어요."); pastReset(); render();
+    }).catch(function(){ b.disabled=false; });
+    return true;
+  }
   if(act==="rec-csv-arc"||act==="rec-csv-arc-tr"){
     var c=trk.cycles.filter(function(x){return x.id===b.getAttribute("data-id");})[0]; if(!c) return true;
     if(act==="rec-csv-arc") downloadCSV("무한매수법_"+(c.label||c.id),ENTRY_CSV_HEAD,entryCsvLines(computeRows(c.entries||[],null)));
@@ -2210,8 +2237,8 @@ function copyText(a){
 }
 
 document.addEventListener("click", function(ev){
-  var kt=ev.target.closest("[data-kind]"); if(kt){ var nk=kt.getAttribute("data-kind"); if(nk!==curType||addMode){ addMode=false; if(nk!==curType){ curType=nk; selected=null; } render(); } return; }
-  var t=ev.target.closest("[data-id].tab"); if(t){ addMode=false; selected=t.getAttribute("data-id"); render(); return; }
+  var kt=ev.target.closest("[data-kind]"); if(kt){ var nk=kt.getAttribute("data-kind"); if(nk!==curType||addMode){ addMode=false; if(nk!==curType){ curType=nk; selected=null; pastReset(); } render(); } return; }
+  var t=ev.target.closest("[data-id].tab"); if(t){ addMode=false; if(selected!==t.getAttribute("data-id")) pastReset(); selected=t.getAttribute("data-id"); render(); return; }
   var ad=ev.target.closest("[data-add]");
   if(ad){ var jn=ad.getAttribute("data-add")==="join";
     if(ad.closest("#add-form")){ $("n-join").checked=jn; addFormRefresh(); } else openAdd(jn);
@@ -2506,7 +2533,16 @@ document.addEventListener("submit", function(ev){
     // 새 무매 계좌는 처음부터 이 계좌만의 기록(원화 평가액·매매내역·그래프)을 켠다 (cycle/{계좌ID})
     var autoLink=type==="INF"&&trk.metaLoaded;
     var lw=autoLink?linkWrites(base,false):null;
-    saveAll((lw&&lw.meta?[lw.meta]:[]).concat([{p:"accounts/"+id,op:"set",d:lw?Object.assign({},base,lw.patch):base,expect:null}]), name+" 계좌 만들기").then(function(){ selected=id; addMode=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")); render(); }).catch(function(){});
+    // 이어서 하기 파일 안의 끝난 사이클은 지난 사이클로 같이 넣는다 (너무 많으면 빼고, 나중에 지난 매매내역 넣기로)
+    var main=(lw&&lw.meta?[lw.meta]:[]).concat([{p:"accounts/"+id,op:"set",d:lw?Object.assign({},base,lw.patch):base,expect:null}]);
+    // 저장 전체(실행취소 기록 포함)가 문서 한도를 넘으면 저장하지 않는다 (GPT R4b). 지난 사이클이 넘치게 하면 그것만 빼고 알린다 (R4a)
+    if(writesBytes(main)>SAVE_MAX){ toast("매매내역이 너무 많아 한 번에 저장할 수 없어요. 파일에서 이번 사이클 매매만 남기고 다시 넣어주세요."); return; }
+    var pcw=[], pcSkip=0, pp=imp&&imp.pastPlan;
+    if(type==="INF"&&joining&&autoLink&&pp&&pp.n){
+      if(!pp.include) pcSkip=pp.n; // 미리보기에서 "넣지 않아요"라고 한 것은 넣지 않는다
+      else { var pc=pastCycles(imp.prev, base, null); pcw=pastWrites(pc); if(pc.docs.length>200||writesBytes(main.concat(pcw))>SAVE_MAX){ pcSkip=pcw.length; pcw=[]; } }
+    }
+    saveAll(main.concat(pcw), name+" 계좌 만들기").then(function(){ selected=id; addMode=false; f.reset(); viClear(); iiClear(); addFormRefresh(); toast(name+" 계좌를 만들었어요."+(autoLink?" 매매내역·그래프도 켰어요.":"")+(pcw.length?" 지난 사이클 "+pcw.length+"개도 넣었어요.":"")+(pcSkip?" 지난 사이클 "+pcSkip+"개는 많아서 넣지 않았어요. 지난 사이클의 '지난 매매내역 넣기'로 나눠 넣어주세요.":"")); render(); }).catch(function(){});
   } else if(f.id==="price-form"){
     var tk2=$("p-ticker").value, d=$("p-date").value, c=parseFloat($("p-c").value);
     var h=parseFloat($("p-h").value), o=parseFloat($("p-o").value);
@@ -2613,15 +2649,18 @@ function viApply(r){
 function viClear(){ vrImport=null; $("vi-text").value=""; $("vi-file").value=""; $("vi-result").innerHTML=""; $("vi-clear").hidden=true; }
 // .xlsx는 그때만 SheetJS를 불러와 첫 시트를 탭 구분 글자로 바꾼다
 function viLoadXlsx(){ return window.XLSX?Promise.resolve(window.XLSX):new Promise(function(ok,no){ var sc=document.createElement("script"); sc.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; sc.onload=function(){ ok(window.XLSX); }; sc.onerror=function(){ no(new Error("load")); }; document.head.appendChild(sc); }); }
-function viReadFile(f, pre, done){
+// still: 읽기가 끝났을 때 그 결과를 아직 써도 되는지 (로그인·계좌·넣기 칸이 그대로인지). 아니면 칸에 쓰지도 않고 버린다 (GPT S1)
+function viReadFile(f, pre, done, still){
   if(!f) return;
   var res=$(pre+"-result"); res.textContent="읽는 중…";
   if(/\.xlsx?$/i.test(f.name)){
     Promise.all([viLoadXlsx(), f.arrayBuffer()]).then(function(x){
       var wb=x[0].read(x[1],{type:"array"}), ws=wb.Sheets[wb.SheetNames[0]];
-      var txt=x[0].utils.sheet_to_csv(ws,{FS:"\t",blankrows:false}); $(pre+"-text").value=txt; done(txt);
-    }).catch(function(){ res.innerHTML='<span class="warn">엑셀 파일을 읽지 못했어요. 표를 복사해 붙여넣어 보세요.</span>'; });
-  } else f.text().then(function(txt){ $(pre+"-text").value=txt; done(txt); });
+      if(still&&!still()) return;
+      var txt=x[0].utils.sheet_to_csv(ws,{FS:"\t",blankrows:false}), te=$(pre+"-text"); if(te) te.value=txt; done(txt);
+    }).catch(function(){ if(still&&!still()) return; res=$(pre+"-result")||res; res.innerHTML='<span class="warn">엑셀 파일을 읽지 못했어요. 표를 복사해 붙여넣어 보세요.</span>'; });
+  } else f.text().then(function(txt){ if(still&&!still()) return; var te=$(pre+"-text"); if(te) te.value=txt; done(txt); },
+    function(){ if(still&&!still()) return; res=$(pre+"-result")||res; res.innerHTML='<span class="warn">파일을 읽지 못했어요. 다시 골라 보거나 표를 복사해 붙여넣어 보세요.</span>'; }); // CSV 읽기 실패도 읽는 중을 풀고 알린다 (GPT U1)
 }
 var viRun=function(txt){ viApply(vrParseTable(txt, parseFloat($("n-contrib").value))); };
 $("vi-file").addEventListener("change", function(){ viReadFile(this.files&&this.files[0], "vi", viRun); });
@@ -2636,8 +2675,9 @@ var viTimer=null; $("vi-text").addEventListener("input", function(){ var t=this;
    리버스모드(T가 N−1을 넘은 뒤) 매도 = ×(1−2/N), 매수 = +(N−T)×0.25. 보유가 0이 된 날(사이클 끝) 이전 매매는 버린다. */
 var infImport=null;
 var II_COLS={ d:["날짜","일시","일자","체결일","체결일자","거래일","거래일자","매매일","date"], side:["구분","매매구분","거래구분","매수/매도","매수매도","종류","side","type"],
-  px:["체결가","가격","단가","체결단가","평균체결가","price"], q:["수량","체결수량","거래수량","qty"], t:["t값","t"], tk:["종목","종목명","종목코드","티커","ticker"] };
-function infParseTable(text, N, seed, tk){
+  px:["체결가","가격","단가","체결단가","평균체결가","price"], q:["수량","체결수량","거래수량","qty"], t:["t값","t"], tk:["종목","종목명","종목코드","티커","ticker"], fee:["수수료","수수료($)","수수료(usd)","fee"], tm:["시각","시간","체결시각","체결시간","time"] };
+// 매매내역 표에서 날짜·구분·체결가·수량(+T값·종목·수수료) 줄을 읽는다 (이어서 하기, 지난 매매내역 넣기 같이 씀)
+function iiRows(text, tk){
   var grid=viSplit(text), hi=-1, map={};
   for(var i=0;i<grid.length&&hi<0;i++){
     var keys=grid[i].map(function(h){ return String(h).replace(/\s/g,"").toLowerCase(); }), m={};
@@ -2645,7 +2685,6 @@ function infParseTable(text, N, seed, tk){
     if(m.d!=null&&m.side!=null&&m.px!=null&&m.q!=null){ hi=i; map=m; }
   }
   if(hi<0) return { err:"머리줄을 찾지 못했어요. 날짜·구분(매수/매도)·체결가·수량 열 이름이 있어야 해요." };
-  if(!(seed>0)) return { err:"위 원금(이번 사이클 시작 원금)을 넣으면 바로 계산해요." };
   var rows=[], skipped=0, otherTk=0;
   grid.slice(hi+1).forEach(function(r, k){
     var cell=function(c){ return map[c]!=null?r[map[c]]:null; };
@@ -2653,14 +2692,26 @@ function infParseTable(text, N, seed, tk){
     if(!d||!(px>0)||!(q>0)){ if(r.join("").trim()) skipped++; return; }
     var type=/매수|buy/i.test(sd)?"buy":/매도|sell/i.test(sd)?"sell":null; if(!type){ skipped++; return; }
     if(tk&&map.tk!=null){ var tv=String(cell("tk")||""); if(tv&&tv.toUpperCase().indexOf(tk)<0){ otherTk++; return; } }
-    var row={ date:d, type:type, price:px, qty:Math.round(q), k:k }, tv2=String(cell("t")||"");
+    var row={ date:d, type:type, price:px, qty:Math.round(q), k:k }, tv2=String(cell("t")||""), fe=viNum(cell("fee"));
+    // 같은 날 순서: 시각이 있으면 시각으로 (날짜 칸 뒤나 시각 열의 HH:MM[:SS])
+    var tmm=/(?:^|[^\d])(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(String(cell("d")||"").replace(/^\s*\d{4}[.\-\/]\s*\d{1,2}[.\-\/]\s*\d{1,2}/,"")+" "+String(cell("tm")||""));
+    if(tmm) row.tm=("0"+tmm[1]).slice(-2)+":"+tmm[2]+":"+(tmm[3]||"00");
+    if(fe>0) row.feeUsd=fe;
     var md=/T\s*\+\s*([\d.]+)/i.exec(tv2), mm=/[×xX*]\s*([\d.]+)/.exec(tv2);
     if(type==="buy"&&md) row.tDelta=+md[1]; else if(type==="buy"&&map.t!=null&&/^\s*-?\s*$/.test(tv2)) row.tDelta=0;
     if(type==="sell"&&mm){ row.tMult=+mm[1]; row.tTag=tv2.replace(/[×xX*]\s*[\d.]+/,"").trim(); }
     rows.push(row);
   });
   if(!rows.length) return { err:"매수·매도 줄을 찾지 못했어요." };
-  rows.sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.k-b.k; });
+  // 최신이 위인 파일(첫 줄 날짜 > 끝 줄 날짜)은 같은 날 안에서도 아래가 먼저 일어난 매매로 본다 (시각이 없을 때)
+  var desc=rows[0].date>rows[rows.length-1].date;
+  rows.sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:(a.tm&&b.tm&&a.tm!==b.tm)?(a.tm<b.tm?-1:1):desc?b.k-a.k:a.k-b.k; });
+  return { rows:rows, skipped:skipped, otherTk:otherTk, desc:desc };
+}
+function infParseTable(text, N, seed, tk){
+  var rr=iiRows(text, tk); if(rr.err) return rr;
+  if(!(seed>0)) return { err:"위 원금(이번 사이클 시작 원금)을 넣으면 바로 계산해요." };
+  var rows=rr.rows, skipped=rr.skipped, otherTk=rr.otherTk;
   // 사이클 끝(보유 0)을 찾아 그 뒤만 남긴다
   var q=0, start=0, ends=0;
   rows.forEach(function(r,i){ q+=r.type==="buy"?r.qty:-r.qty; if(q<=0){ q=0; start=i+1; ends++; } });
@@ -2700,8 +2751,98 @@ function infParseTable(text, N, seed, tk){
   if(!usedT&&normBuyDays>=2&&maxRatio<0.3) notes.push("날마다 산 금액이 1회매수금(원금÷분할수)의 30%도 안 돼요. 원금이 너무 크게 들어간 것 같아요. 원금은 이번 사이클에 쓰는 달러 금액이에요. 지금 원금으로는 T가 작게 셉니다.");
   if(cash<-0.01) notes.push("계산한 잔금이 "+usd(cash)+"로 음수예요. 원금이 이번 사이클 시작 원금이 맞는지 확인해주세요.");
   return { trades:out, qty:hold, avg:avg!=null?Math.round(avg*10000)/10000:null, cash:E.r2(cash), T:Math.round(T*10000)/10000, rev:rev, revFrom:revFrom,
-    n:cur.length, dropped:start, ends:ends, skipped:skipped, otherTk:otherTk, usedT:usedT, notes:notes, from:cur[0].date, to:cur[cur.length-1].date, seed:seed };
+    n:cur.length, dropped:start, prev:rows.slice(0,start), ends:ends, skipped:skipped, otherTk:otherTk, usedT:usedT, notes:notes, from:cur[0].date, to:cur[cur.length-1].date, seed:seed };
 }
+/* ----- 지난 매매내역 넣기: 끝난 사이클(보유가 0이 된 날까지)을 지난 사이클로 한꺼번에 넣는다 -----
+   지난 사이클은 T 계산이 필요 없어서 그때 원금은 몰라도 된다. 진행 중 사이클(before 이후 매매, 끝나지 않은 마지막 부분)은 넣지 않는다.
+   이미 지난 사이클에 있는 기간과 겹치는 사이클도 넣지 않는다 (같은 파일을 두 번 넣어도 한 번만 들어감). */
+function pastCycles(rows, a, before){
+  var segs=[], cur=[], q=0, bad=false, later=0, cut=0;
+  rows.forEach(function(r){
+    if(before&&r.date>=before){ later++; return; }
+    cur.push(r); q+=r.type==="buy"?r.qty:-r.qty; if(q<0) bad=true;
+    if(q<=0){ if(bad) cut+=cur.length; else segs.push(cur); cur=[]; q=0; bad=false; }
+  });
+  var tail=cur.length;
+  var mine=trk.cycles.filter(function(c){ return !c.acctId||c.acctId===a.id; });
+  var docs=[], dup=0, tn=0, pnl=0, seen={};
+  segs.forEach(function(seg, i){
+    var s=seg[0].date, e=seg[seg.length-1].date;
+    if(mine.some(function(c){ return c.startDate&&c.endDate&&c.startDate<=e&&s<=c.endDate; })){ dup++; return; }
+    var h=0, avg=null, rl=0, buy=0, sell=0, out=seg.map(function(r){
+      if(r.type==="buy"){ avg=h>0?(avg*h+r.price*r.qty)/(h+r.qty):r.price; h+=r.qty; buy+=r.price*r.qty; }
+      else { rl+=(r.price-avg)*r.qty; sell+=r.price*r.qty; h-=r.qty; if(h===0) avg=null; }
+      rl-=r.feeUsd||0;
+      return { date:r.date, type:r.type==="buy"?"매수":"매도", price:r.price, qty:r.qty, amount:E.r2(r.price*r.qty), cumQty:h, avgPrice:avg!=null?E.r2(avg):null };
+    });
+    tn+=out.length; pnl+=rl;
+    // 문서 ID = 계좌·기간·매매 내용으로 정해진 값: 두 창에서 같은 사이클을 넣어도 두 번째는 "이미 있음"으로 막힌다 (GPT R2)
+    var key=a.id+"|"+s+"|"+e+"|"+seg.map(function(r){ return [r.date,r.tm||"",r.type,r.price,r.qty,r.feeUsd||0].join(","); }).join(";"), nth=seen[key]=(seen[key]||0)+1;
+    docs.push({ id:"imp_"+s.replace(/-/g,"")+"_"+e.replace(/-/g,"")+"_"+strHash(key)+(nth>1?"_"+nth:""), d:{ label:"불러온 사이클", startDate:s, endDate:e, currency:"USD", entriesOnly:true, entries:out, realizedPnlUsd:E.r2(rl),
+      returnPct:buy?rl/buy:null, totalBuyUsd:E.r2(buy), totalSellUsd:E.r2(sell), seedUsd:null, seedReturnPct:null, acctId:a.id, acctName:a.name||null, ticker:a.ticker||null, src:"import" } });
+  });
+  return { docs:docs, trades:tn, pnl:E.r2(pnl), dup:dup, later:later, tail:tail, cut:cut, from:docs.length?docs[0].d.startDate:null, to:docs.length?docs[docs.length-1].d.endDate:null };
+}
+function strHash(t){ var h1=0x811c9dc5, h2=0x9747b28c; for(var i=0;i<t.length;i++){ var c=t.charCodeAt(i); h1=Math.imul(h1^c,16777619); h2=Math.imul(h2^c,2246822519)^(h2>>>13); } return (h1>>>0).toString(36)+(h2>>>0).toString(36); }
+// 저장할 문서들의 크기(바이트, Firestore 계산법: 글자 UTF-8+1, 숫자 8, 칸 이름+1, 묶음 32).
+// 새 문서를 만드는 저장은 실행취소 기록 한 개에 그 내용이 모두 다시 들어가므로, 합계가 문서 한도(1MiB)를 넘으면 저장이 거절된다 (GPT R4b)
+var SAVE_MAX=950000;
+function fsBytes(x){
+  if(x==null||typeof x==="boolean") return 1;
+  if(typeof x==="number") return 8;
+  if(typeof x==="string"){ var n=1; for(var i=0;i<x.length;i++){ var c=x.charCodeAt(i); n+=c<0x80?1:c<0x800?2:(c>=0xd800&&c<0xe000)?2:3; } return n; }
+  if(Array.isArray(x)){ var t=0; x.forEach(function(v){ t+=fsBytes(v); }); return t; }
+  var m=32; Object.keys(x).forEach(function(k){ if(x[k]!==undefined) m+=fsBytes(k)+fsBytes(x[k]); }); return m;
+}
+function writesBytes(ws){ var n=200; ws.forEach(function(w){ n+=fsBytes(w.p)+(w.d?fsBytes(w.d):0)+64; }); return n; }
+var pastImp=null, pastSeq=0; // pastImp = { acct, seq, text, res, err }  (계좌·로그인마다 따로: GPT R1)
+function pastReset(){ pastImp=null; rf.pastOpen=null; pastSeq++; pastReadNo++; pastReading=false; clearTimeout(piTimer); }
+// 같은 칸 안에서도 마지막 입력(파일 고르기·붙여넣기)만 유효하다 (GPT T1): 새 입력마다 번호를 올려 그 전 읽기는 버린다
+var pastReadNo=0, pastReading=false;
+function pastRun(txt, seq){
+  var a=selected?accounts[selected]:null, m=metaOf(a); if(!a||rf.pastOpen!==a.id||(seq!=null&&seq!==pastSeq)) return;
+  var rr=iiRows(txt, a.ticker);
+  pastImp={ acct:a.id, seq:pastSeq, text:txt };
+  if(rr.err) pastImp.err=rr.err;
+  else {
+    var r=pastCycles(rr.rows, a, (m&&m.startDate)||todayKR()); r.skipped=rr.skipped; r.otherTk=rr.otherTk; pastImp.res=r;
+    // 문서 하나 1MB, 한 번 저장 500개까지 (실행취소 기록에도 같은 내용이 들어간다)
+    if(writesBytes(pastWrites(r))>SAVE_MAX||r.docs.length>200) pastImp.err="한 번에 넣기엔 너무 많아요 (매매 "+r.trades+"건). 파일을 몇 해씩 나눠서 차례로 넣어주세요. 넣은 기간은 다시 넣어도 빠져요.";
+  }
+  render();
+}
+// 이어서 하기와 같이 넣을 지난 사이클이 넉넉히 들어가는지 (이번 사이클 매매·계좌 기록도 같은 실행취소 기록에 들어가므로 그 몫도 셈)
+// 미리보기에서 한 번 정하고(r.pastPlan) 계좌 만들 때 그대로 따른다 (GPT S2). 이번 사이클 몫은 넉넉히(매매×2 + 3만) 잡는다
+function joinPastFits(pc, trades){ return pc.docs.length<=200&&writesBytes(pastWrites(pc))+fsBytes(trades||[])*2+30000<=SAVE_MAX; }
+function pastWrites(r){ return r.docs.map(function(x){ return {p:"cycles/"+x.id,op:"set",d:x.d,expect:null}; }); }
+function pastBox(a){
+  if(rf.pastOpen!==a.id) return "";
+  var p=pastImp&&pastImp.acct===a.id&&pastImp.seq===pastSeq?pastImp:{}, r=p.res, msg="";
+  if(p.err) msg='<span class="warn">'+esc(p.err)+'</span>';
+  else if(r){
+    msg=(r.docs.length?'<b>끝난 사이클 '+r.docs.length+'개 · 매매 '+r.trades.toLocaleString()+'건</b> ('+esc(r.from)+' ~ '+esc(r.to)+') · 실현손익 '+usdS(r.pnl):'<b>넣을 끝난 사이클이 없어요.</b>')+
+      (r.dup?'<br>이미 지난 사이클에 있는 기간과 겹친 '+r.dup+'개는 뺐어요.':'')+
+      (r.later||r.tail?'<br>진행 중인 사이클 매매 '+(r.later+r.tail)+'건은 넣지 않았어요.':'')+
+      (r.cut?'<br>파일 앞부분에 산 기록 없이 판 매매가 있어서, 처음 사이클 '+r.cut+'건은 뺐어요.':'')+
+      (r.skipped?'<br>읽지 못한 줄 '+r.skipped+'개는 건너뛰었어요.':'')+(r.otherTk?'<br>다른 종목 '+r.otherTk+'줄은 뺐어요.':'');
+  }
+  return '<div class="vr-import past-box"><div class="vi-d">증권사 매매내역(엑셀·CSV)을 고르거나 표를 붙여넣으세요. 날짜·구분(매수/매도)·체결가·수량 열이 있으면 돼요. 보유가 0이 된 날마다 사이클을 나눠 지난 사이클에 넣어요. 같은 종목을 VR에서도 사고팔았다면 VR 줄은 지우고 넣어주세요.</div>'+
+    '<textarea id="pi-text" rows="3" placeholder="엑셀에서 머리줄까지 표를 복사해 여기에 붙여넣기">'+esc(p.text||"")+'</textarea>'+
+    '<div class="vi-a"><label class="btn" for="pi-file">파일 고르기</label><input id="pi-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden>'+
+    (r&&r.docs.length&&!p.err?'<button class="btn primary" type="button" data-act="rec-past-save">'+r.docs.length+'개 사이클 넣기</button>':'')+'<button class="btn" type="button" data-act="rec-past-close">닫기</button></div>'+
+    '<div class="vi-r" id="pi-result">'+msg+'</div></div>';
+}
+// 파일 고르기: 읽기가 끝났을 때 로그인·계좌·넣기 칸이 그대로일 때만 칸에 쓰고 계산한다 (GPT S1)
+function pastReadFile(f){
+  var sq=pastSeq, ac=rf.pastOpen, no=++pastReadNo; clearTimeout(piTimer);
+  if(!f) return;
+  pastReading=true;
+  viReadFile(f, "pi", function(txt){ pastRun(txt, sq); }, function(){ if(no===pastReadNo) pastReading=false; return sq===pastSeq&&no===pastReadNo&&!!ac&&rf.pastOpen===ac&&selected===ac; });
+}
+document.addEventListener("change", function(ev){ if(ev.target.id==="pi-file") pastReadFile(ev.target.files&&ev.target.files[0]); });
+var piTimer=null; document.addEventListener("input", function(ev){ if(ev.target.id!=="pi-text") return; var t=ev.target, sq=pastSeq; pastReadNo++; pastReading=false; clearTimeout(piTimer); piTimer=setTimeout(function(){ if(sq!==pastSeq) return; if(t.value.trim()) pastRun(t.value, sq); else { pastImp=null; render(); } },400); });
+// 지난 사이클은 펼칠 때만 그래프·표를 그린다 (사이클이 많아도 화면이 느려지지 않게)
+document.addEventListener("toggle", function(ev){ var d=ev.target; if(d.classList&&d.classList.contains("archive-item")&&d.open&&!d.querySelector(".archive-body").childElementCount) render(); }, true);
 function iiApply(r){
   var res=$("ii-result");
   if(r.err){ infImport=null; res.innerHTML='<span class="warn">'+esc(r.err)+'</span>'; $("ii-clear").hidden=true; return; }
@@ -2709,7 +2850,9 @@ function iiApply(r){
   $("n-iqty").value=r.qty; $("n-iavg").value=r.avg!=null?r.avg:""; $("n-icash").value=r.cash; $("n-iT").value=r.T; $("n-imode").value=r.rev?"REVERSE":"NORMAL";
   res.innerHTML='<b>매매 '+r.n+'건을 읽었어요</b> ('+esc(r.from)+' ~ '+esc(r.to)+'). 보유 '+r.qty+'주 · 평단 '+(r.avg!=null?"$"+r.avg:"-")+' · 잔금 '+usd(r.cash)+' · T '+r.T+(r.rev?' · 리버스':'')+
     '<br>'+(r.usedT?'파일의 T값 열을 썼어요.':'T는 그날 매수액·매도 수량으로 셌어요. 알고 있는 T와 다르면 T 칸을 고치세요.')+
-    (r.dropped?'<br>사이클이 끝난 이전 매매 '+r.dropped+'건은 빼고 이번 사이클만 넣었어요.':'')+
+    (r.dropped?(function(){ var pc=pastCycles(r.prev,{id:""},null), fits=joinPastFits(pc, r.trades); r.pastPlan={n:pc.docs.length, include:fits}; if(!pc.docs.length) return '<br>사이클이 끝난 이전 매매 '+r.dropped+'건은 빼고 이번 사이클만 넣었어요.';
+      if(!fits) return '<br><span class="warn">그 전에 끝난 사이클 '+pc.docs.length+'개(매매 '+pc.trades+'건)는 한 번에 넣기엔 많아서 계좌를 만들 때 넣지 않아요. 계좌를 만든 뒤 지난 사이클의 "지난 매매내역 넣기"로 몇 해씩 나눠 넣어주세요.</span>';
+      return '<br>그 전에 끝난 사이클 '+pc.docs.length+'개(매매 '+pc.trades+'건)는 계좌를 만들 때 지난 사이클로 같이 넣어요.'+(pc.dup?' 이미 지난 사이클에 있는 기간과 겹친 '+pc.dup+'개는 빼요.':''); })():'')+
     (r.skipped?'<br>읽지 못한 줄 '+r.skipped+'개는 건너뛰었어요.':'')+(r.otherTk?'<br>다른 종목 '+r.otherTk+'줄은 뺐어요.':'')+
     (r.rev?'<br><span class="warn">'+esc(r.revFrom)+'부터 T가 '+(parseInt($("n-N").value,10)-1)+'을 넘어 리버스로 셌어요. 그 뒤 일반모드로 돌아간 날이 있으면 T와 모드를 확인해주세요.</span>':'')+
     (r.notes.length?'<br><span class="warn">'+r.notes.map(esc).join("<br>")+'</span>':'')+
@@ -2796,7 +2939,7 @@ function renderSoon(){ if(renderQueued) return; renderQueued=true; requestAnimat
 window.DeskApp = {
   start: function(adapter){
     db=adapter; loaded=false; accounts={}; prices={};
-    trk={meta:null,metas:{},metaLoaded:false,entries:[],allEntries:[],entriesLoaded:false,cycles:[],migrated:false}; undoStack=[]; rf.aDate=rf.tDate=todayKR(); rf.editTrade=rf.editEntry=rf.inline=null;
+    trk={meta:null,metas:{},metaLoaded:false,entries:[],allEntries:[],entriesLoaded:false,cycles:[],migrated:false}; undoStack=[]; rf.aDate=rf.tDate=todayKR(); rf.editTrade=rf.editEntry=rf.inline=null; pastReset();
     render();
     db.collection("cycle").onSnapshot(function(s){ var mm={}; s.docs.forEach(function(d){ mm[d.id]=d.data(); }); trk.metas=mm; trk.metaLoaded=true; syncRec(); revTick(); if(trk.entriesLoaded) maybeMigrate(); fixDeskTradeDates(); migrateAssets(); renderSoon(); }, function(e){ console.error("cycle",e); });
     db.collection("entries").onSnapshot(function(s){ trk.allEntries=s.docs.map(function(d){ return Object.assign({id:d.id},d.data()); }); trk.entriesLoaded=true; syncRec(); if(trk.metaLoaded) maybeMigrate(); migrateAssets(); renderSoon(); }, function(e){ console.error("entries",e); });
@@ -2813,7 +2956,7 @@ window.DeskApp = {
       prices=next; renderSoon();
     }, function(){ $("offline").hidden=false; });
   },
-  stop: function(){ if(db&&db.stop) db.stop(); db=null; accounts={}; prices={}; loaded=false; }
+  stop: function(){ if(db&&db.stop) db.stop(); db=null; accounts={}; prices={}; loaded=false; pastReset(); }
 };
 })();
 </script>
