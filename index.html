@@ -2659,7 +2659,8 @@ function viReadFile(f, pre, done, still){
       if(still&&!still()) return;
       var txt=x[0].utils.sheet_to_csv(ws,{FS:"\t",blankrows:false}), te=$(pre+"-text"); if(te) te.value=txt; done(txt);
     }).catch(function(){ if(still&&!still()) return; res=$(pre+"-result")||res; res.innerHTML='<span class="warn">엑셀 파일을 읽지 못했어요. 표를 복사해 붙여넣어 보세요.</span>'; });
-  } else f.text().then(function(txt){ if(still&&!still()) return; var te=$(pre+"-text"); if(te) te.value=txt; done(txt); });
+  } else f.text().then(function(txt){ if(still&&!still()) return; var te=$(pre+"-text"); if(te) te.value=txt; done(txt); },
+    function(){ if(still&&!still()) return; res=$(pre+"-result")||res; res.innerHTML='<span class="warn">파일을 읽지 못했어요. 다시 골라 보거나 표를 복사해 붙여넣어 보세요.</span>'; }); // CSV 읽기 실패도 읽는 중을 풀고 알린다 (GPT U1)
 }
 var viRun=function(txt){ viApply(vrParseTable(txt, parseFloat($("n-contrib").value))); };
 $("vi-file").addEventListener("change", function(){ viReadFile(this.files&&this.files[0], "vi", viRun); });
