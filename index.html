@@ -307,9 +307,9 @@ table.log tbody tr:hover{background:var(--surface-2)}
 
 /* ---- 기록(예전 트래커에서 옮겨 온 부분) ---- */
 :root{ --text:var(--ink); --text-dim:var(--ink-2); --text-faint:var(--ink-3); --border:var(--line);
-  --positive:var(--buy); --positive-soft:var(--buy-soft); --negative:var(--sell); --negative-soft:var(--sell-soft); --avgprice:#B8860B; --vr-e:var(--buy); --vr-inv:var(--sell); --vr-pool:var(--ok); }
-@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --avgprice:#E0B84D; } }
-:root[data-theme="dark"]{ --avgprice:#E0B84D; }
+  --positive:var(--buy); --positive-soft:var(--buy-soft); --negative:var(--sell); --negative-soft:var(--sell-soft); --avgprice:#B8860B; --vr-e:var(--buy); --vr-inv:var(--sell); --vr-pool:var(--ok); --vr-band:#D99A1E; }
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --avgprice:#E0B84D; --vr-band:#E0B84D; } }
+:root[data-theme="dark"]{ --avgprice:#E0B84D; --vr-band:#E0B84D; }
 .a-label{font-weight:600;font-size:15px}
 .a-period{font-size:11.5px;color:var(--ink-2);font-family:var(--mono)}
 .a-amounts{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:1px}
@@ -434,8 +434,8 @@ svg.chart2 .pre{fill:var(--surface-2);opacity:.7}
 .legend .lk{display:inline-block;width:14px;height:2px;border-radius:1px}
 .legend .lk.dash{background:repeating-linear-gradient(90deg,var(--avgprice) 0 4px,transparent 4px 7px)}
 .legend .ld{display:inline-block;width:9px;height:9px;border-radius:50%}
-.legend .lk.band{height:9px;background:var(--line-2);opacity:.7}
-svg.chart2 .vr-band{fill:var(--line-2);opacity:.45}
+.legend .lk.band{height:9px;background:var(--vr-band);opacity:.35}
+svg.chart2 .vr-band{fill:var(--vr-band);fill-opacity:.15;stroke:var(--vr-band);stroke-opacity:.45;stroke-width:1}
 svg.chart2 .vr-v{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3}
 svg.chart2 .vr-pool{fill:var(--vr-pool);opacity:.55}
 .vr-mix{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:10px 0 4px;background:var(--surface-2)}
