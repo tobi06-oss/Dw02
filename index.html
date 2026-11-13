@@ -3228,7 +3228,7 @@ $("invite-panel").addEventListener("click", async (ev) => {
 
 /* ---------- 문의함: 회원은 문의를 쓰고 자기 문의와 답변만 보고, 운영자는 모든 문의를 보고 답변을 단다 (firestore.rules에서 막음) ---------- */
 // 오류를 찾을 때 쓰는 앱 버전. 배포할 때마다 날짜를 바꾼다.
-const APP_VER = "v1.0 (2026-11-12)";
+const APP_VER = "v1.0 (2026-11-13)";
 const ASK_TYPE = { ask: "문의", bug: "오류 신고" };
 // askSeq: 계정이 바뀔 때마다 1 올린다. 늦게 끝난 요청이 다른 계정의 화면을 건드리지 않게, 결과를 쓰기 전에 같은 번호인지 확인한다
 let askUser = null, askRows = [], askSeq = 0;
