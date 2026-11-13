@@ -2109,6 +2109,11 @@ function recAct(act, b, a){
   if(act==="rec-past-save"){
     var pa=selected?accounts[selected]:null;
     if(!pa||!pastImp||pastImp.acct!==pa.id||pastImp.seq!==pastSeq||!db) return true;
+    // 파일을 읽는 중이면 아직 저장하지 않는다 (GPT T1)
+    if(pastReading){ toast("파일을 읽는 중이에요. 결과가 나오면 다시 눌러 주세요."); return true; }
+    // 칸의 내용이 미리보기와 다르면(붙여넣고 바로 누름) 지금 칸 내용으로 다시 계산해 보여 주고, 저장은 한 번 더 누를 때 한다 (GPT T1b)
+    var pte=$("pi-text"), cur=pte?pte.value:pastImp.text;
+    if(cur!==pastImp.text){ clearTimeout(piTimer); if(cur.trim()) pastRun(cur, pastSeq); else { pastImp=null; render(); } toast("칸의 내용이 바뀌어 다시 계산했어요. 확인하고 다시 눌러 주세요."); return true; }
     // 저장 직전에 지금 지난 사이클 목록으로 다시 계산한다 (그사이 다른 창에서 넣은 것은 빠짐)
     pastRun(pastImp.text, pastSeq);
     var pr=pastImp&&pastImp.res; if(!pr||!pr.docs.length||pastImp.err) return true;
@@ -2790,7 +2795,9 @@ function fsBytes(x){
 }
 function writesBytes(ws){ var n=200; ws.forEach(function(w){ n+=fsBytes(w.p)+(w.d?fsBytes(w.d):0)+64; }); return n; }
 var pastImp=null, pastSeq=0; // pastImp = { acct, seq, text, res, err }  (계좌·로그인마다 따로: GPT R1)
-function pastReset(){ pastImp=null; rf.pastOpen=null; pastSeq++; clearTimeout(piTimer); }
+function pastReset(){ pastImp=null; rf.pastOpen=null; pastSeq++; pastReadNo++; pastReading=false; clearTimeout(piTimer); }
+// 같은 칸 안에서도 마지막 입력(파일 고르기·붙여넣기)만 유효하다 (GPT T1): 새 입력마다 번호를 올려 그 전 읽기는 버린다
+var pastReadNo=0, pastReading=false;
 function pastRun(txt, seq){
   var a=selected?accounts[selected]:null, m=metaOf(a); if(!a||rf.pastOpen!==a.id||(seq!=null&&seq!==pastSeq)) return;
   var rr=iiRows(txt, a.ticker);
@@ -2826,11 +2833,13 @@ function pastBox(a){
 }
 // 파일 고르기: 읽기가 끝났을 때 로그인·계좌·넣기 칸이 그대로일 때만 칸에 쓰고 계산한다 (GPT S1)
 function pastReadFile(f){
-  var sq=pastSeq, ac=rf.pastOpen;
-  viReadFile(f, "pi", function(txt){ pastRun(txt, sq); }, function(){ return sq===pastSeq&&!!ac&&rf.pastOpen===ac&&selected===ac; });
+  var sq=pastSeq, ac=rf.pastOpen, no=++pastReadNo; clearTimeout(piTimer);
+  if(!f) return;
+  pastReading=true;
+  viReadFile(f, "pi", function(txt){ pastRun(txt, sq); }, function(){ if(no===pastReadNo) pastReading=false; return sq===pastSeq&&no===pastReadNo&&!!ac&&rf.pastOpen===ac&&selected===ac; });
 }
 document.addEventListener("change", function(ev){ if(ev.target.id==="pi-file") pastReadFile(ev.target.files&&ev.target.files[0]); });
-var piTimer=null; document.addEventListener("input", function(ev){ if(ev.target.id!=="pi-text") return; var t=ev.target, sq=pastSeq; clearTimeout(piTimer); piTimer=setTimeout(function(){ if(sq!==pastSeq) return; if(t.value.trim()) pastRun(t.value, sq); else { pastImp=null; render(); } },400); });
+var piTimer=null; document.addEventListener("input", function(ev){ if(ev.target.id!=="pi-text") return; var t=ev.target, sq=pastSeq; pastReadNo++; pastReading=false; clearTimeout(piTimer); piTimer=setTimeout(function(){ if(sq!==pastSeq) return; if(t.value.trim()) pastRun(t.value, sq); else { pastImp=null; render(); } },400); });
 // 지난 사이클은 펼칠 때만 그래프·표를 그린다 (사이클이 많아도 화면이 느려지지 않게)
 document.addEventListener("toggle", function(ev){ var d=ev.target; if(d.classList&&d.classList.contains("archive-item")&&d.open&&!d.querySelector(".archive-body").childElementCount) render(); }, true);
 function iiApply(r){
