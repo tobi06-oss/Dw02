@@ -273,6 +273,8 @@ details.adv .adv-body .field{flex:1 1 120px}
 .ask-item{border-top:1px solid var(--line);padding:10px 0}
 .ask-item .q,.ask-item .a{white-space:pre-wrap;word-break:break-word;font-size:13px;margin-top:4px}
 .ask-item .a{background:var(--accent-soft);border-radius:8px;padding:8px 10px}
+.btn.ask-btn{padding:4px 10px;font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px}
+.btn.ask-btn:hover{filter:brightness(1.05)}
 .ask-badge{display:inline-block;min-width:16px;padding:0 5px;margin-left:4px;border-radius:10px;background:var(--buy);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
 .vr-import textarea{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--ink);font-family:var(--mono);width:100%;resize:vertical;box-sizing:border-box}
 .vr-import .vi-a{display:flex;gap:8px;flex-wrap:wrap}
@@ -483,7 +485,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="sub" id="sub">오늘 밤 걸 주문과 어제 체결을 한곳에서</div>
     </div>
     <div class="tickers" id="tickers"></div>
-    <div class="userbar" id="userbar" hidden><span id="user-email"></span><button class="btn ghost" type="button" id="ask-open" hidden style="padding:4px 8px;font-size:12px">문의·오류 신고</button><button class="btn ghost" type="button" id="signout" style="padding:4px 8px;font-size:12px">로그아웃</button></div>
+    <div class="userbar" id="userbar" hidden><span id="user-email"></span><button class="btn ask-btn" type="button" id="ask-open" hidden>문의·오류 신고</button><button class="btn ghost" type="button" id="signout" style="padding:4px 8px;font-size:12px">로그아웃</button></div>
   </header>
 
   <section class="panel auth" id="auth-panel" hidden>
@@ -520,7 +522,6 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
   <section class="panel" id="ask-panel" hidden>
     <div class="panel-head"><h2 id="ask-title">문의·오류 신고</h2><button type="button" class="btn ghost" id="ask-close">닫기</button></div>
     <form id="ask-form" class="form" style="flex-direction:column;align-items:stretch">
-      <div class="field" style="flex:none;max-width:160px"><label for="ask-type">종류</label><select id="ask-type"><option value="ask">문의</option><option value="bug">오류 신고</option></select></div>
       <div class="field" style="flex:none"><label for="ask-text">내용</label><textarea id="ask-text" class="ask-text" rows="4" maxlength="1000" required placeholder="궁금한 점이나 오류를 적어 주세요. 오류라면 어느 화면에서 무엇을 눌렀더니 어떻게 됐는지 적어 주시면 빨리 찾을 수 있어요."></textarea></div>
       <button class="btn primary" type="submit" id="ask-send">보내기</button>
     </form>
@@ -3229,7 +3230,6 @@ $("invite-panel").addEventListener("click", async (ev) => {
 /* ---------- 문의함: 회원은 문의를 쓰고 자기 문의와 답변만 보고, 운영자는 모든 문의를 보고 답변을 단다 (firestore.rules에서 막음) ---------- */
 // 오류를 찾을 때 쓰는 앱 버전. 배포할 때마다 날짜를 바꾼다.
 const APP_VER = "v1.0 (2026-11-13)";
-const ASK_TYPE = { ask: "문의", bug: "오류 신고" };
 // askSeq: 계정이 바뀔 때마다 1 올린다. 늦게 끝난 요청이 다른 계정의 화면을 건드리지 않게, 결과를 쓰기 전에 같은 번호인지 확인한다
 let askUser = null, askRows = [], askSeq = 0;
 const askToast = (m) => { const t = $("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(askToast._t); askToast._t = setTimeout(() => t.classList.remove("show"), 2600); };
@@ -3267,7 +3267,7 @@ function askRender() {
   $("ask-title").textContent = own ? "받은 문의" : "문의·오류 신고";
   if (!askRows.length) { $("ask-list").innerHTML = '<div class="small muted">' + (own ? "받은 문의가 없어요." : "아직 보낸 문의가 없어요.") + "</div>"; return; }
   $("ask-list").innerHTML = '<div class="small muted">' + (own ? "받은 문의 " + askRows.length + "건 · 답변 기다림 " + askRows.filter((x) => !x.answer).length + "건" : "내 문의 " + askRows.length + "건") + "</div>" + askRows.map((x) =>
-    '<div class="ask-item"><div class="small muted"><b style="color:var(--ink)">' + escH(ASK_TYPE[x.type] || x.type) + "</b> · " + escH(askDay(x.createdAt)) + (own ? " · " + escH(x.email || x.uid) : "") + " · " + escH(x.ver || "") + (x.answer ? "" : " · 답변 기다림") + "</div>" +
+    '<div class="ask-item"><div class="small muted">' + (x.type === "bug" ? '<b style="color:var(--ink)">오류 신고</b> · ' : "") + escH(askDay(x.createdAt)) + (own ? " · " + escH(x.email || x.uid) : "") + " · " + escH(x.ver || "") + (x.answer ? "" : " · 답변 기다림") + "</div>" +
     '<div class="q">' + escH(x.text) + "</div>" +
     (own
       ? '<textarea class="ask-text" rows="2" maxlength="2000" data-ask-ans="' + escH(x.id) + '" placeholder="답변 쓰기" style="margin-top:6px">' + escH(x.answer || "") + "</textarea>" +
@@ -3279,7 +3279,7 @@ function askRender() {
 function askStop() {
   askSeq++; askUser = null; askRows = [];
   $("ask-open").hidden = true; $("ask-open").innerHTML = "문의·오류 신고"; $("ask-panel").hidden = true;
-  $("ask-text").value = ""; $("ask-type").value = "ask"; $("ask-send").disabled = false; $("ask-list").innerHTML = "";
+  $("ask-text").value = ""; $("ask-send").disabled = false; $("ask-list").innerHTML = "";
 }
 function askStart(user) { askStop(); askUser = user; $("ask-open").hidden = false; askBadge(); askLoad(); }
 $("ask-open").addEventListener("click", async () => {
@@ -3305,13 +3305,13 @@ $("ask-form").addEventListener("submit", async (e) => {
   if (!navigator.onLine) { askToast("인터넷에 연결된 뒤 다시 보내 주세요."); return; }
   $("ask-send").disabled = true;
   try {
-    const data = { uid: u.uid, email: u.email || "", type: $("ask-type").value === "bug" ? "bug" : "ask", text: text.slice(0, 1000), ver: APP_VER, createdAt: serverTimestamp() };
+    const data = { uid: u.uid, email: u.email || "", type: "ask", text: text.slice(0, 1000), ver: APP_VER, createdAt: serverTimestamp() };
     // 문서 번호는 트랜잭션 밖에서 한 번만 만든다. 첫 시도가 저장됐는데 응답만 못 받아 SDK가 다시 시도하면,
     // 같은 번호의 문서가 이미 있으니 다시 쓰지 않고 끝낸다 (같은 문의가 두 번 생기지 않게)
     const ref = doc(collection(fs, "inquiries"));
     await runTransaction(fs, async (tx) => { const cur = await tx.get(ref); if (!cur.exists()) tx.set(ref, data); });
     if (seq !== askSeq) return;
-    $("ask-text").value = ""; $("ask-type").value = "ask"; askToast("보냈어요. 답변이 달리면 여기에 보여요.");
+    $("ask-text").value = ""; askToast("보냈어요. 답변이 달리면 여기에 보여요.");
     await askLoad();
   } catch (err) { console.error("ask", err); if (seq === askSeq) askToast("보내지 못했어요. 인터넷 연결을 확인하고 다시 보내 주세요. 쓴 내용은 그대로 있어요."); }
   finally { if (seq === askSeq) $("ask-send").disabled = false; }
