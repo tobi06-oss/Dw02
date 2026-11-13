@@ -1250,12 +1250,12 @@ function vrManual(a){
   var dateF='<div class="field"><label for="vm-date">일시 (미국)</label><div class="date-field-wrap"><input type="date" id="vm-date" value="'+esc(vmf.d)+'" max="'+todayKR()+'" required><div class="date-stepper-btns"><button type="button" data-act="vm-date" data-d="1" aria-label="하루 뒤" tabindex="-1">▲</button><button type="button" data-act="vm-date" data-d="-1" aria-label="하루 전" tabindex="-1">▼</button></div></div></div>';
   var btns = ed ? '<button type="button" class="'+(ed.side==="BUY"?"quick-buy":"quick-sell")+'" data-act="vm-update">'+(ed.side==="BUY"?"매수":"매도")+' 수정 저장</button><button type="button" class="sub-btn" data-act="vm-cancel">수정 취소</button>'
     : '<button type="button" class="quick-buy" data-act="vm-buy">매수 완료</button><button type="button" class="quick-sell" data-act="vm-sell">매도 완료</button>';
-  return '<section class="panel" id="vm-'+esc(a.id)+'"><h2>매수/매도 기록 (달러)</h2><div class="entry">'+dateF+
+  return '<details class="panel" id="vm-'+esc(a.id)+'"'+(ed?' open':'')+'><summary>매매내역 수동 입력</summary><div class="entry">'+dateF+
     '<div class="field"><label for="vm-px">체결가 ($)</label><input type="number" id="vm-px" step="0.01" inputmode="decimal" placeholder="-" value="'+esc(vmf.px)+'"></div>'+
     '<div class="field"><label for="vm-q">수량</label><input type="number" id="vm-q" step="1" min="1" inputmode="numeric" placeholder="-" value="'+esc(vmf.q)+'"></div></div>'+
     '<div class="small muted num" style="margin-top:8px">'+esc(info)+(prevCyc?' · 지난 회차 날짜라 이번 회차 매수 한도에는 넣지 않아요':'')+'</div>'+
     '<div class="quick-actions">'+btns+'</div>'+
-    '<div class="hint">주문표대로 체결 반영을 누르면 매매내역에 자동으로 쌓입니다. 거기서 빠진 체결만 날짜를 골라 직접 넣으세요. 저장하면 보유·평단·Pool이 바로 바뀌어요. 매매내역의 수정·삭제도 보유·평단·Pool에 함께 반영되고, 잘못했으면 실행취소로 되돌리면 돼요. 이미 마감된 회차 기록(마감 E·V)은 바뀌지 않아요.</div></section>';
+    '<div class="hint">주문표대로 체결 반영을 누르면 매매내역에 자동으로 쌓입니다. 거기서 빠진 체결만 날짜를 골라 직접 넣으세요. 저장하면 보유·평단·Pool이 바로 바뀌어요. 매매내역의 수정·삭제도 보유·평단·Pool에 함께 반영되고, 잘못했으면 실행취소로 되돌리면 돼요. 이미 마감된 회차 기록(마감 E·V)은 바뀌지 않아요.</div></details>';
 }
 function vrTradeLog(a){
   var log=a.log||[], fee=(a.fee||0)/100, n=0;
@@ -1917,14 +1917,14 @@ function tradeForm(a){
   var N=a.N||20, rev=+(1-2/N).toFixed(3);
   var sb=function(v,tag,l){ return '<button type="button" class="t-delta-btn'+(rf.sellMult===v?" active":"")+'" data-act="rec-tmult" data-v="'+v+'" data-tag="'+tag+'" title="'+tag+'">'+l+'</button>'; };
   var editing=rf.editTrade?getTrades().filter(function(t){return t.id===rf.editTrade;})[0]:null;
-  return '<section class="panel"><h2>매수/매도 기록 (달러)</h2><div class="entry">'+dateField("t-date","일시",rf.tDate)+
+  return '<details class="panel" id="tf-'+esc(a.id)+'"'+(editing?' open':'')+'><summary>매매내역 수동 입력</summary><div class="entry">'+dateField("t-date","일시",rf.tDate)+
     '<div class="field"><label>매수 T값</label><div class="t-delta-group buy" role="group" aria-label="매수 T값">'+bt(0,"0")+bt(0.5,"0.5")+bt(1,"1")+'</div></div>'+
     '<div class="field"><label for="t-price">체결가 ($)</label><input type="number" id="t-price" step="0.01" inputmode="decimal" placeholder="-" value="'+esc(rf.tPrice)+'"></div>'+
     '<div class="field"><label for="t-qty">수량</label><input type="number" id="t-qty" step="1" inputmode="numeric" placeholder="-" value="'+esc(rf.tQty)+'"></div>'+
     '<div class="field"><label>매도 T값</label><div class="t-delta-group sell" role="group" aria-label="매도 T값">'+sb(rev,"리버스 MOC","×"+rev)+sb(0.75,"별지점","×0.75")+sb(0.25,"목표가","×0.25")+'</div></div></div>'+
     '<div class="quick-actions">'+(editing?'<button type="button" class="'+(editing.type==="buy"?"quick-buy":"quick-sell")+'" data-act="rec-trade-update">'+(editing.type==="buy"?"매수":"매도")+' 수정 저장</button><button type="button" class="sub-btn" data-act="rec-trade-cancel">수정 취소</button>'
       :'<button type="button" class="quick-buy" data-act="rec-buy">매수 완료</button><button type="button" class="quick-sell" data-act="rec-sell">매도 완료</button>')+'</div>'+
-    '<div class="hint">주문표대로 체결 반영을 누르면 여기에 자동으로 쌓입니다. 주문표 밖에서 사고판 것만 직접 넣으세요. 저장하면 평단·보유·잔금·T가 매매내역 기준으로 다시 계산됩니다. 매수 T값은 전체(1)·절반(0.5)·변화 없음(0), 매도 T값은 리버스(×'+rev+')·별지점 쿼터(×0.75)·목표가(×0.25)입니다.</div></section>';
+    '<div class="hint">주문표대로 체결 반영을 누르면 여기에 자동으로 쌓입니다. 주문표 밖에서 사고판 것만 직접 넣으세요. 저장하면 평단·보유·잔금·T가 매매내역 기준으로 다시 계산됩니다. 매수 T값은 전체(1)·절반(0.5)·변화 없음(0), 매도 T값은 리버스(×'+rev+')·별지점 쿼터(×0.75)·목표가(×0.25)입니다.</div></details>';
 }
 function tradeLog(a){
   var rows=tradeRows();
@@ -2395,7 +2395,7 @@ document.addEventListener("click", function(ev){
     var p2=a.pending, bar=barOn(a.ticker,p2.session), fe=fillEdits[a.id];
     var fills=fe.fills;
     var over=a.type==="VR"?fills.filter(function(f){ return f.filled&&f.qty>f.order.qty; })[0]:null;
-    if(over){ toast((over.order.label||"주문")+"의 남은 수량("+over.order.qty+"주)보다 많이 넣을 수 없어요. 다른 매매였다면 아래 매수/매도 기록에 따로 넣으세요."); return; }
+    if(over){ toast((over.order.label||"주문")+"의 남은 수량("+over.order.qty+"주)보다 많이 넣을 수 없어요. 다른 매매였다면 아래 매매내역 수동 입력에 따로 넣으세요."); return; }
     var res = a.type==="VR" ? E.vrApply(a,fills,bar) : E.infApply(a,fills,bar);
     // 체결마다 넣은 주문의 번호(oid)와 넣은 수량(oq)을 붙인다. 예전 기록(번호 없음)은 지금 유지 중인 주문을 기준으로 이번에 번호를 붙인다
     var vbase=a.type==="VR"&&vrOrdered(a)?vrBase(a):null;
