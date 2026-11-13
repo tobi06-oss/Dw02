@@ -13,9 +13,10 @@
 <title>무매·VR 주문 데스크</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@300;400;700&family=Jua&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Gaegu&family=Jua&family=IBM+Plex+Sans+KR&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 /* 디자인: 예전 트래커(tracker_cloud)와 같은 폰트·색·카드 스타일 */
+/* 글자는 Jua가 그린다. Gaegu·IBM Plex Sans KR은 Jua에 없는 글자(· 등)만 대신 그리므로 400 굵기 하나만 받는다 (글꼴 목록 CSS가 397KB→170KB, 2026-11-13) */
 :root{
   --bg:#F5F6F9; --surface:#FFFFFF; --surface-2:#F0F2F6; --line:#E1E4EB; --line-2:#CDD2DC;
   --ink:#1C2130; --ink-2:#6B7280; --ink-3:#9AA1B0;
@@ -275,6 +276,8 @@ details.adv .adv-body .field{flex:1 1 120px}
 .ask-item .a{background:var(--accent-soft);border-radius:8px;padding:8px 10px}
 .btn.ask-btn{padding:4px 10px;font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px}
 .btn.ask-btn:hover{filter:brightness(1.05)}
+.btn.file-btn{font-weight:700;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px}
+.btn.file-btn:hover{filter:brightness(1.05)}
 .ask-badge{display:inline-block;min-width:16px;padding:0 5px;margin-left:4px;border-radius:10px;background:var(--buy);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
 .vr-import textarea{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;color:var(--ink);font-family:var(--mono);width:100%;resize:vertical;box-sizing:border-box}
 .vr-import .vi-a{display:flex;gap:8px;flex-wrap:wrap}
@@ -306,8 +309,7 @@ table.log tbody tr:hover{background:var(--surface-2)}
 @media (max-width:520px){ .ord .pq{font-size:15px} .bigT{font-size:34px} }
 
 /* ---- 기록(예전 트래커에서 옮겨 온 부분) ---- */
-:root{ --text:var(--ink); --text-dim:var(--ink-2); --text-faint:var(--ink-3); --border:var(--line);
-  --positive:var(--buy); --positive-soft:var(--buy-soft); --negative:var(--sell); --negative-soft:var(--sell-soft); --avgprice:#B8860B; --vr-e:var(--buy); --vr-inv:var(--sell); --vr-pool:var(--ok); --vr-band:#D99A1E; }
+:root{ --avgprice:#B8860B; --vr-e:var(--buy); --vr-inv:var(--sell); --vr-pool:var(--ok); --vr-band:#D99A1E; }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){ --avgprice:#E0B84D; --vr-band:#E0B84D; } }
 :root[data-theme="dark"]{ --avgprice:#E0B84D; --vr-band:#E0B84D; }
 .a-label{font-weight:600;font-size:15px}
@@ -543,7 +545,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
       <div class="vi-h">VR 기록표로 채우기 <span class="muted">(선택)</span></div>
       <div class="vi-d">회차별 기록표(시작일·마감일·cycle·마지막종가·마지막수량·투입원금·E마지막·V·시작P·마지막P 등)를 엑셀에서 복사해 붙여넣거나 파일(.xlsx·.csv)을 고르면 바로 읽어 아래 칸을 채웁니다. 마지막 줄로 지금 상태를 채우고, 지난 회차는 회차 추이에 넣습니다.</div>
       <textarea id="vi-text" rows="3" placeholder="엑셀에서 머리줄까지 표를 복사해 여기에 붙여넣기"></textarea>
-      <div class="vi-a"><label class="btn" for="vi-file">파일 고르기</label><input id="vi-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden><button class="btn" type="button" id="vi-clear" hidden>지우기</button></div>
+      <div class="vi-a"><label class="btn file-btn" for="vi-file">파일 고르기</label><input id="vi-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden><button class="btn" type="button" id="vi-clear" hidden>지우기</button></div>
       <div class="vi-r" id="vi-result"></div>
     </div>
       <div class="field inf-only"><label for="n-N">분할수</label><select id="n-N"><option value="20">20분할</option><option value="40">40분할</option></select></div>
@@ -552,7 +554,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
         <div class="vi-h">매매내역 파일로 채우기 <span class="muted">(선택)</span></div>
         <div class="vi-d">날짜·매수/매도·체결가·수량 열이 있는 표(이 앱의 매매내역 CSV, 증권사 엑셀, 직접 정리한 표)를 붙여넣거나 파일을 고르면 바로 보유·평단·잔금·T를 계산해 아래 칸을 채웁니다. 위 분할수와 원금(이번 사이클 시작 원금)이 필요해요. T값 열이 있으면 그대로 쓰고, 없으면 그날 매수액·매도 수량으로 T를 셉니다.</div>
         <textarea id="ii-text" rows="3" placeholder="엑셀에서 머리줄까지 표를 복사해 여기에 붙여넣기"></textarea>
-        <div class="vi-a"><label class="btn" for="ii-file">파일 고르기</label><input id="ii-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden><button class="btn" type="button" id="ii-clear" hidden>지우기</button></div>
+        <div class="vi-a"><label class="btn file-btn" for="ii-file">파일 고르기</label><input id="ii-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden><button class="btn" type="button" id="ii-clear" hidden>지우기</button></div>
         <div class="vi-r" id="ii-result"></div>
       </div>
       <div class="field inf-only join-only" hidden><label for="n-iqty">보유 수량</label><input id="n-iqty" type="number" step="1" inputmode="numeric"></div>
@@ -1054,9 +1056,8 @@ function renderVR(a){
   var vrow=function(o,i){return '<tr><td class="idx">'+(o.kind==="vr-first"?'첫':(i+1))+'</td><td class="p"><b>'+usd(o.price)+'</b> <span class="muted">× '+(o.qty||1)+'</span></td><td class="r muted">'+usd(o.left)+'</td></tr>';};
   // 주문이 많으면 앞 5줄만 보이고 나머지는 "더 보기"로 접는다 (화면 표시만, 주문·복사는 그대로)
   var vt=function(list){ if(!list.length) return '';
-    var head='<table class="vtable"><thead><tr><th class="idx">#</th><th>지정가 × 수량</th><th class="r">체결 후 Pool</th></tr></thead><tbody>'+list.slice(0,5).map(vrow).join("")+'</tbody></table>';
-    if(list.length<=7) return '<table class="vtable"><thead><tr><th class="idx">#</th><th>지정가 × 수량</th><th class="r">체결 후 Pool</th></tr></thead><tbody>'+list.map(vrow).join("")+'</tbody></table>';
-    return head+'<details class="vmore"><summary>나머지 '+(list.length-5)+'개 더 보기</summary><table class="vtable"><tbody>'+list.slice(5).map(function(o,i){return vrow(o,i+5);}).join("")+'</tbody></table></details>'; };
+    var n=list.length<=7?list.length:5, tbl='<table class="vtable"><thead><tr><th class="idx">#</th><th>지정가 × 수량</th><th class="r">체결 후 Pool</th></tr></thead><tbody>'+list.slice(0,n).map(vrow).join("")+'</tbody></table>';
+    return n===list.length?tbl:tbl+'<details class="vmore"><summary>나머지 '+(list.length-5)+'개 더 보기</summary><table class="vtable"><tbody>'+list.slice(5).map(function(o,i){return vrow(o,i+5);}).join("")+'</tbody></table></details>'; };
   var pendBlock = a.pending && a.nextUpdate && a.pending.session<=a.nextUpdate;
   // 마감 날(휴장이면 그 전 장) 종가가 있어야 마감한다. 그날 시세가 빠지고 다음 장이 먼저 들어오면 기다린다
   var dueD=E.vrDue(a.nextUpdate), dueBar=a.nextUpdate?barOn(a.ticker,dueD):null;
@@ -1348,7 +1349,7 @@ function logPanel(a){
    trk.meta·trk.entries는 "지금 보고 있는 계좌"의 기록입니다 (useRec). */
 var trk = { meta:null, metas:{}, metaLoaded:false, entries:[], allEntries:[], cycles:[], migrated:false };
 var rf = { aDate:null, aAmount:"", aSoxl:"", tDate:null, tPrice:"", tQty:"", tDelta:1, sellMult:0.75, sellTag:"별지점", editTrade:null, editEntry:null, inline:null };
-var undoStack = [], undoSeq = 0, armed = {};
+var undoStack = [], armed = {};
 var TD = { first:1, "star-full":1, "star-half":0.5, "avg-half":0.5, ladder:0, "rev-buy":0 };
 
 function todayKR(){ var d=new Date(); return new Date(d-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
@@ -2672,7 +2673,16 @@ function viApply(r){
 }
 function viClear(){ if(vrImport&&vrImport.fromZero) $("n-fromZero").checked=false; vrImport=null; $("vi-text").value=""; $("vi-file").value=""; $("vi-result").innerHTML=""; $("vi-clear").hidden=true; }
 // .xlsx는 그때만 SheetJS를 불러와 첫 시트를 탭 구분 글자로 바꾼다
-function viLoadXlsx(){ return window.XLSX?Promise.resolve(window.XLSX):new Promise(function(ok,no){ var sc=document.createElement("script"); sc.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; sc.onload=function(){ ok(window.XLSX); }; sc.onerror=function(){ no(new Error("load")); }; document.head.appendChild(sc); }); }
+// 엑셀 파일을 고를 때만 라이브러리를 받는다. 받는 중에 또 부르면 같은 작업을 기다리고, 실패하면 다음 번에 다시 받는다 (GPT O4)
+var xlsxLoad=null;
+function viLoadXlsx(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(xlsxLoad) return xlsxLoad;
+  xlsxLoad=new Promise(function(ok,no){ var sc=document.createElement("script"); sc.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+    var fail=function(){ xlsxLoad=null; sc.remove(); no(new Error("load")); };
+    sc.onload=function(){ if(window.XLSX){ xlsxLoad=null; ok(window.XLSX); } else fail(); }; sc.onerror=fail; document.head.appendChild(sc); });
+  return xlsxLoad;
+}
 // still: 읽기가 끝났을 때 그 결과를 아직 써도 되는지 (로그인·계좌·넣기 칸이 그대로인지). 아니면 칸에 쓰지도 않고 버린다 (GPT S1)
 function viReadFile(f, pre, done, still){
   if(!f) return;
@@ -2852,7 +2862,7 @@ function pastBox(a){
   }
   return '<div class="vr-import past-box"><div class="vi-d">증권사 매매내역(엑셀·CSV)을 고르거나 표를 붙여넣으세요. 날짜·구분(매수/매도)·체결가·수량 열이 있으면 돼요. 보유가 0이 된 날마다 사이클을 나눠 지난 사이클에 넣어요. 같은 종목을 VR에서도 사고팔았다면 VR 줄은 지우고 넣어주세요.</div>'+
     '<textarea id="pi-text" rows="3" placeholder="엑셀에서 머리줄까지 표를 복사해 여기에 붙여넣기">'+esc(p.text||"")+'</textarea>'+
-    '<div class="vi-a"><label class="btn" for="pi-file">파일 고르기</label><input id="pi-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden>'+
+    '<div class="vi-a"><label class="btn file-btn" for="pi-file">파일 고르기</label><input id="pi-file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" hidden>'+
     (r&&r.docs.length&&!p.err?'<button class="btn primary" type="button" data-act="rec-past-save">'+r.docs.length+'개 사이클 넣기</button>':'')+'<button class="btn" type="button" data-act="rec-past-close">닫기</button></div>'+
     '<div class="vi-r" id="pi-result">'+msg+'</div></div>';
 }
@@ -2989,7 +2999,7 @@ window.DeskApp = {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, runTransaction, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot, addDoc, query, where } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, waitForPendingWrites, serverTimestamp, writeBatch, runTransaction, getDocs, increment, doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 import { FIREBASE_CONFIG, OWNER_UIDS } from "./firebase-config.js";
 
 const app = initializeApp(FIREBASE_CONFIG);
@@ -3064,9 +3074,8 @@ function makeAdapter(uid) {
     }),
     doc: (p) => { const r = ref(p); return {
       set: (d, o) => setDoc(r, d && Array.isArray(d.bars) ? { ...d, bars: d.bars.map(toObj) } : d, o && o.merge ? { merge: true } : {}),
-      update: (d) => updateDoc(r, d), delete: () => deleteDoc(r),
-      get: () => getDoc(r).then((x) => (x.exists() ? x.data() : null)),
-      onSnapshot: (cb, err) => { const u = onSnapshot(r, (s) => cb({ exists: s.exists(), data: () => s.data() }), err); unsubs.push(u); return u; }
+      delete: () => deleteDoc(r),
+      get: () => getDoc(r).then((x) => (x.exists() ? x.data() : null))
     }; },
     collection: (name) => ({
       onSnapshot: (next, err) => {
@@ -3083,7 +3092,6 @@ function makeAdapter(uid) {
         } else if (name === "cycle" || name === "entries" || name === "cycles" || name === "undo") {
           unsubs.push(onSnapshot(collection(fs, "users", uid, name), (s) => next({ docs: s.docs }), err));
         }
-        return () => {};
       }
     }),
     stop: () => unsubs.splice(0).forEach((u) => u())
@@ -3283,7 +3291,7 @@ function askRender() {
       : (x.answer ? '<div class="a"><div class="small muted">운영자 답변 · ' + escH(askDay(x.answeredAt)) + "</div>" + escH(x.answer) + "</div>" : "")) +
     "</div>").join("");
 }
-// 계정이 끝나거나 바뀌면 문의 화면을 모두 비운다 (쓰다 만 글, 고른 종류, 버튼 상태, 운영자 답변 칸까지)
+// 계정이 끝나거나 바뀌면 문의 화면을 모두 비운다 (쓰다 만 글, 버튼 상태, 운영자 답변 칸까지)
 function askStop() {
   askSeq++; askUser = null; askRows = [];
   $("ask-open").hidden = true; $("ask-open").innerHTML = "문의·오류 신고"; $("ask-panel").hidden = true;
