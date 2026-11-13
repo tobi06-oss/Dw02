@@ -560,7 +560,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
         <div class="field inf-only"><label for="n-bigMult">처음매수 큰수 배율</label><input id="n-bigMult" type="number" step="0.01" inputmode="decimal" value="1.12"></div>
         <div class="field vr-only" hidden><label for="n-band">밴드 ± %</label><input id="n-band" type="number" step="0.5" inputmode="decimal" value="15"></div>
         <div class="field vr-only" hidden><label for="n-G">G</label><input id="n-G" type="number" step="1" inputmode="numeric" value="10"></div>
-        <label class="chk vr-only new-only" hidden><input id="n-fromZero" type="checkbox"><span>0원부터 모아 가는 적립식 VR (라오어 글의 예외 : 첫 1년은 Pool 매수 한도 100%, 그다음부터 75%에서 6개월마다 5%씩 줄여요). 거치식·인출식에는 적용하지 않고, 끄면 처음부터 75%예요.</span></label>
+        <label class="chk vr-only" hidden><input id="n-fromZero" type="checkbox"><span>0원부터 모아 가는 적립식 VR (라오어 글의 예외 : 첫 1년은 Pool 매수 한도 100%, 그다음부터 75%에서 6개월마다 5%씩 줄여요). 거치식·인출식에는 적용하지 않고, 끄면 처음부터 75%예요.</span></label>
       </div></details>
       <div class="field" style="align-self:end"><button class="btn primary" type="submit">계좌 만들기</button></div>
     </form>
@@ -2441,7 +2441,7 @@ function editDiffText(a, patch){
     if(x==null&&(y===0||y===false||y===true||y==="INSTALLMENT"||y==="NORMAL")) return false;
     if(typeof x==="number"&&typeof y==="number") return Math.abs(x-y)>1e-6;
     return (x==null?null:x)!==(y==null?null:y);
-  }).map(function(k){ var L=EDIT_LABEL[k]; return L[0]+" "+fmt(a[k],L[1])+"→"+fmt(patch[k],L[1]); });
+  }).map(function(k){ var L=EDIT_LABEL[k]; return L[0]+" "+fmt(k==="fromZero"?!!a[k]:a[k],L[1])+"→"+fmt(patch[k],L[1]); });
   return "상태를 직접 수정했어요"+(ch.length?": "+ch.join(", "):" (바뀐 값 없음).");
 }
 document.addEventListener("submit", function(ev){
@@ -2528,7 +2528,8 @@ document.addEventListener("submit", function(ev){
       if(!(vcy>=1)){ toast("지금 몇 회차인지 넣어주세요."); $("n-vcycle").focus(); return; }
       Object.assign(base,{V:V,pool:pool,qty:vq,avg:vq>0&&parseFloat($("n-avg").value)>0?parseFloat($("n-avg").value):null,G:10,band:0.15,contrib:$("n-vrType").value==="LUMPSUM"?0:(parseFloat($("n-contrib").value)||0),vrType:$("n-vrType").value,startWeek:0,invested:joining&&vinv>0?vinv:pool+vq*((lastBar(tk)||{}).c||0),nextUpdate:$("n-next").value||E.addDays(new Date().toISOString().slice(0,10),14),cycle:vcy});
       var bandJ=parseFloat($("n-band").value), GJ=parseInt($("n-G").value,10); if(bandJ>0&&bandJ<100) base.band=bandJ/100; if(GJ>0) base.G=GJ;
-      if(joining&&vrImport){ base.G=vrImport.G; base.band=vrImport.band; base.hist=vrImport.hist; if(vrImport.lastRoll) base.lastRoll=vrImport.lastRoll; if(vrImport.fromZero&&base.vrType==="INSTALLMENT") base.fromZero=true; }
+      if(joining&&vrImport){ base.G=vrImport.G; base.band=vrImport.band; base.hist=vrImport.hist; if(vrImport.lastRoll) base.lastRoll=vrImport.lastRoll; }
+      if(joining) base.fromZero=base.vrType==="INSTALLMENT"&&$("n-fromZero").checked; // 표에서 추정한 값은 체크로만 제안하고, 저장은 사용자가 확인한 체크 값
       if(joining) base.log=[{d:jd,side:"NOTE",text:(vrImport?"기록표("+vrImport.rows+"회차)로 ":"")+"이어서 하기 : "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
@@ -2634,23 +2635,25 @@ function vrParseTable(text, contribIn){
   var missing=["V","pool","qty","next"].filter(function(k){ return cur[k]==null; });
   return { cur:cur, hist:hist, lastRoll:lastRoll, contrib:contrib, G:G, band:band, drift:E.r2(drift), rows:cyc.length, missing:missing,
     split:cyc.filter(function(r){ return /분할/.test(r.note); }).map(function(r){ return r.c; }),
-    fromZero:cyc[0].c===1&&cyc[0].Es===0 }; // 1회차 E 시작이 0이면 0원부터 모은 적립식 (첫 1년 Pool 한도 100%)
+    fromZero:cyc[0].c===1&&cyc[0].Es===0 }; // 1회차 E 시작이 0이면 0원부터 모은 적립식일 수 있다 (추정: 체크로 제안만)
 }
 function viApply(r){
   var res=$("vi-result");
+  if(vrImport&&vrImport.fromZero) $("n-fromZero").checked=false; // 앞 표가 켠 제안은 새 표를 읽을 때 지운다
   if(r.err){ vrImport=null; res.innerHTML='<span class="warn">'+esc(r.err)+'</span>'; $("vi-clear").hidden=true; return; }
   vrImport=r; var c=r.cur;
+  if(r.fromZero){ $("n-fromZero").checked=true; $("n-adv").open=true; }
   var setv=function(id,v){ if(v!=null) $(id).value=v; };
   setv("n-V",c.V); setv("n-pool",c.pool); setv("n-qty",c.qty); setv("n-contrib",r.contrib||null); setv("n-next",c.next); setv("n-vcycle",c.cycle); setv("n-vinv",c.invested);
   res.innerHTML='<b>'+r.rows+'회차를 읽었어요.</b> 지금 '+c.cycle+'회차 · V '+usd(c.V)+' · Pool '+usd(c.pool)+' · 보유 '+c.qty+'주 · 다음 갱신 '+esc(c.next||"-")+' · 적립 '+usd(r.contrib)+' · G '+r.G+'<br>'+
     '지난 '+r.hist.length+'회차는 회차 추이에 들어갑니다. 평단은 표에 없어서 증권사 화면 값을 직접 넣어주세요.'+
     (r.split.length?'<br>액면분할 표시 : '+r.split.join(", ")+'회차':'')+
-    (r.fromZero?'<br>1회차 E 시작이 0이라 0원부터 모은 적립식으로 봤어요. Pool 매수 한도는 첫 1년 100%, 그다음 75%에서 26주마다 5%씩 줄어요.':'')+
+    (r.fromZero?'<br>1회차 E 시작이 0이라 고급 설정의 "0원부터 모아 가는 적립식"을 켜 두었어요(적립식일 때만 적용). 처음에 목돈을 넣고 시작했다면 끄세요.':'')+
     (r.missing.length?'<br><span class="warn">표에서 못 찾은 값 : '+r.missing.join(", ")+' — 위 칸에 직접 넣어주세요.</span>':'')+
     (Math.abs(r.drift)>=1?'<br><span class="warn">이 표의 V는 라오어 실력공식(V + Pool/G + (E−V)÷2√G + 적립금)보다 회차마다 약 '+usd(Math.abs(r.drift))+' '+(r.drift>0?'높게':'낮게')+' 늘었어요. 앞으로 V 갱신은 앱이 이 공식으로 계산하니, 표와 달라지면 상태 수정에서 맞추세요.</span>':'');
   $("vi-clear").hidden=false; joinHint();
 }
-function viClear(){ vrImport=null; $("vi-text").value=""; $("vi-file").value=""; $("vi-result").innerHTML=""; $("vi-clear").hidden=true; }
+function viClear(){ if(vrImport&&vrImport.fromZero) $("n-fromZero").checked=false; vrImport=null; $("vi-text").value=""; $("vi-file").value=""; $("vi-result").innerHTML=""; $("vi-clear").hidden=true; }
 // .xlsx는 그때만 SheetJS를 불러와 첫 시트를 탭 구분 글자로 바꾼다
 function viLoadXlsx(){ return window.XLSX?Promise.resolve(window.XLSX):new Promise(function(ok,no){ var sc=document.createElement("script"); sc.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; sc.onload=function(){ ok(window.XLSX); }; sc.onerror=function(){ no(new Error("load")); }; document.head.appendChild(sc); }); }
 // still: 읽기가 끝났을 때 그 결과를 아직 써도 되는지 (로그인·계좌·넣기 칸이 그대로인지). 아니면 칸에 쓰지도 않고 버린다 (GPT S1)
@@ -2880,6 +2883,7 @@ function addFormRefresh(){
     e.hidden=!ok;
   });
   var vt=$("n-vrType").value;
+  $("n-fromZero").closest("label").hidden=!vr||vt!=="INSTALLMENT"; // 적립식에만 적용되는 예외
   $("n-pool-label").textContent=jn?"Pool ($)":"시작 Pool ($, 처음 넣는 돈)";
   $("n-contrib-label").textContent=vt==="WITHDRAWAL"?"2주 인출금 ($)":"2주 적립금 ($)";
   $("n-contrib").closest(".field").hidden=!vr||vt==="LUMPSUM";
