@@ -93,7 +93,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .tab{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:12px 14px;text-align:left;box-shadow:var(--shadow);position:relative}
 .tab .t1{font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center}
-.tab .t1 .ts{font-size:11px;font-weight:400;color:var(--ink-2)}
 .tab .t2{font-size:17px;font-weight:600;margin-top:4px;letter-spacing:-0.01em}
 .tab .t2 span{font-size:12px;margin-left:4px}
 .tab[aria-selected="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent),var(--shadow)}
@@ -683,8 +682,6 @@ function kindOf(a){ return a&&a.type==="VR" ? "VR" : "INF"; }
 function kindName(k){ return k==="VR" ? "VR" : "무한매수"; }
 var savedSel={};
 function saveSel(){ try{ localStorage.setItem("desk.sel",selected||""); localStorage.setItem("desk.kind",curType); localStorage.setItem("desk.selk",JSON.stringify(lastSel)); }catch(e){} }
-// VR 1회차 시작일 : 이번 회차 시작(다음 갱신 −14일)에서 2주씩 거슬러 올라간 날 (회차 범위 표시와 같은 계산)
-function vrStart(a){ return a&&a.type==="VR"&&a.nextUpdate&&a.cycle>=1 ? E.addDays(a.nextUpdate,-14*a.cycle) : null; }
 function renderTabs(){
   var all=orderedAccounts();
   if(loaded){
@@ -695,9 +692,9 @@ function renderTabs(){
   }
   var list=curType==="ASSET"?[]:all.filter(function(a){ return kindOf(a)===curType; });
   var html=list.map(function(a){
-    var v=valueOf(a), ob=orderBadge(a), st=vrStart(a);
+    var v=valueOf(a), ob=orderBadge(a);
     return '<button class="tab" role="tab" aria-selected="'+(!addMode&&a.id===selected)+'" data-id="'+esc(a.id)+'">'+
-      '<div class="t1">'+esc(a.name)+(st?'<span class="ts">'+st.slice(2).replace(/-/g,".")+' 시작</span>':'')+(ob?'<span class="obadge '+ob.cls+'">'+ob.txt+'</span>':'')+'</div>'+
+      '<div class="t1">'+esc(a.name)+(ob?'<span class="obadge '+ob.cls+'">'+ob.txt+'</span>':'')+'</div>'+
       '<div class="t2 num">'+(v.eq!=null?usd(v.eq,0):"-")+' <span class="'+signCls(v.pl)+'">'+pct(v.pl,1)+'</span></div></button>';
   }).join("");
   // 이 전략에 계좌가 없으면 아래 빈 화면에 만들기 버튼이 있으니 + 탭은 숨긴다
