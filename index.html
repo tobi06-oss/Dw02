@@ -907,17 +907,21 @@ function vrPastPlan(a){
   p.rewind={d0:d0,n:later.length,state:s};
   return p;
 }
-// VR: 회차 첫 장이 이미 지났는데(기록표로 이어서 하기 직후, V 갱신을 늦게 반영) 그 장부터 체결을 확인하지 않았으면 맨 위에서 회차 주문을 넣었는지 묻는다.
+// VR: 회차 첫 장이 이미 지났는데(기록표로 이어서 하기 직후, V 갱신을 늦게 반영) 그 장부터 체결을 확인하지 않았으면 맨 위에서 회차 주문을 처음 넣은 날(주문 시작일)을 고르게 한다.
 // 지난 V 갱신(lastRoll)이 있을 때만: 그때는 보유·Pool이 회차 시작 상태다. 칸에 직접 넣은 이어서 하기는 지금 잔고일 수 있어(두 번 반영 위험) 날짜 줄로만 둔다
 function pastAsk(a){
   if(a.type!=="VR"||!a.lastRoll||!a.lastRoll.d) return "";
   var vp=vrPastPlan(a); if(!vp) return "";
-  var lb=lastBar(a.ticker), d0=dlabel(vp.session), rng=d0+(lb&&lb.d>vp.session?' ~ '+dlabel(lb.d):''), nx=lb?E.nextSession(lb.d):null;
-  var n0=mdLabel(vp.session), n1=nx?mdLabel(nx):"다음 장", cyc=(a.cycle||1)+'회차';
-  return '<div class="banner warn"><div class="bt">이번 '+cyc+' 주문은 언제부터 넣었나요?</div>'+
-    '<div class="bd">이번 회차는 '+d0+'부터예요. '+n0+'부터 넣어 뒀다면 (다음 단계에서) '+rng+' 체결을 하루씩 확인해요(시세로 판정한 체결을 증권사 체결 내역과 맞춰 보고 반영). '+
-    '아직 안 넣었다면 지난 날은 체결 없음으로 두고, 아래 '+cyc+' 주문표대로 '+n1+'부터 넣으면 돼요.</div>'+
-    '<div class="actions" style="margin-top:0"><button type="button" class="btn primary" data-act="place-past">'+n0+'부터 넣어 뒀어요</button><button type="button" class="btn" data-act="past-no">'+n1+'부터 넣을게요</button></div></div>';
+  // 주문 시작일: 회차 첫 장부터 다음에 넣을 수 있는 장까지. 고른 날부터 체결을 확인하고, 그 전 날은 주문이 없었으니 체결 없음
+  var lb=lastBar(a.ticker), ds=[], d=vp.session, end=lb?E.nextSession(lb.d):vp.session;
+  while(d<=end&&ds.length<20){ ds.push(d); d=E.nextSession(d); }
+  var cyc=(a.cycle||1)+'회차', per=a.nextUpdate?' ['+mdLabel(E.addDays(a.nextUpdate,-14))+'~'+mdLabel(E.vrDue(a.nextUpdate))+']':'';
+  return '<div class="banner warn"><div class="bt">이번 '+cyc+' 주문'+per+'</div>'+
+    '<div class="bd">증권사에 주문한 뒤 진행해 주세요. 이미 넣어 둔 주문이 있다면 추가로 주문하지 말고, 처음 주문을 넣은 날을 골라 주세요. '+
+    '고른 날부터 하루씩 체결을 확인해요(증권사 체결 내역과 맞춰 보고 반영). 오늘 처음 넣는다면 '+mdLabel(end)+'을 고르세요.</div>'+
+    '<div class="actions" style="margin-top:0;align-items:center"><label class="small" style="display:flex;align-items:center;gap:6px">주문 시작일 <select class="pa-d">'+
+    ds.map(function(x){ return '<option value="'+x+'">'+dlabel(x)+(x>(lb?lb.d:"")?' (다음 장)':'')+'</option>'; }).join("")+'</select></label>'+
+    '<button type="button" class="btn primary" data-act="place-past">주문했어요</button></div></div>';
 }
 function pendingOf(p){
   var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
@@ -1010,11 +1014,11 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
   var placed = a.pending && a.pending.session===plan.session;
   var carried = placed && a.pending.carried;
   var vrLock = a.type==="VR" && !placed && (vrOrdered(a) || plan.due);
-  // 맨 위에서 이번 회차 주문을 넣었는지 묻는 동안은(pastAsk) 그 답부터 받는다
+  // 맨 위에서 이번 회차 주문 시작일을 묻는 동안은(pastAsk) 그 카드의 '주문했어요'로만 기록한다
   var askP = a.type==="VR" && !placed && a.lastRoll && a.lastRoll.d && !!vrPastPlan(a);
   var vrMsg = plan.due ? (plan.zero ? "0회차 마감(시작 V 정하기)을 먼저 반영하면 1회차 주문을 넣을 수 있어요." : "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요.") : plan.zero ? "" : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+") 후에 넣어요.";
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
-    '<div class="when">'+dlabel(plan.session).replace("(", " (")+(a.type==="VR"?' VR 주문'+(!plan.zero&&a.cycle>=1?' · '+a.cycle+'회차':''):' 무매 주문')+'</div></div>'+
+    '<div class="when">'+(a.type==="VR"&&!plan.zero&&a.cycle>=1?'['+a.cycle+'회차] ':'')+dlabel(plan.session).replace("(", " (")+(a.type==="VR"?' VR 주문':' 무매 주문')+'</div></div>'+
     '</div>'+
     (sum||'')+'<div class="cols"><div class="col buy"><h3>매수 주문</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
     '<div class="col sell"><h3>매도 주문</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
@@ -2327,7 +2331,9 @@ document.addEventListener("click", function(ev){
     var pp={pending:pendingOf(p), events:[]};
     if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true;
       // 모든 회차: 주문마다 번호(oid)와 넣은 수량(qty0)을 적어 cycleOrders에 남긴다. 체결 기록에 같은 번호를 붙여 잔량을 센다 (vrCarry)
-      pp.cycleOrders=vrNumber(pp.pending.orders, pp.pending.placedAt); pp.cycleEdited=false; }
+      pp.cycleOrders=vrNumber(pp.pending.orders, pp.pending.placedAt); pp.cycleEdited=false;
+      // 맨 위에서 "이번 회차 주문을 넣었나요?"를 묻던 중에 지금 주문을 넣었으면, 회차 첫 장부터 지난 날엔 주문이 없었으니 체결 없음으로 두고 다시 묻지 않는다
+      if(a.lastRoll&&a.lastRoll.d&&vrPastPlan(a)){ pp.pastSkip=a.lastRoll.d; var lbP=lastBar(a.ticker); if(lbP&&(!a.lastSession||lbP.d>a.lastSession)) pp.lastSession=lbP.d; } }
     save(a,pp,dlabel(p.session)+" 주문 넣음").then(function(){toast(dlabel(p.session)+" 주문을 기록했어요."); render();}).catch(function(){});
   } else if(act==="vr-reorder"){
     // VR 주문을 증권사에서 취소했을 때: 유지 중인 주문을 지우고 지금 상태로 새 주문표를 낸다 (0회차는 오늘 종가 기준 첫 매수, 1회차부터는 이번 회차 남은 한도 안의 주문)
@@ -2372,25 +2378,32 @@ document.addEventListener("click", function(ev){
     } else save(a,rp,redoLbl).then(function(){ toast(redoMsg); render(); }).catch(function(){});
     return;
   }
-  if(act==="past-no"){
-    // 이번 회차 주문을 아직 안 넣음: 지난 장엔 체결이 없으니 마지막 종가 날까지 기록한 것으로 하고, 이번 회차엔 다시 묻지 않는다
-    if(a.type!=="VR"||!a.lastRoll||!vrPastPlan(a)) return;
-    var pn={pastSkip:a.lastRoll.d}, lbN2=lastBar(a.ticker); if(lbN2&&(!a.lastSession||lbN2.d>a.lastSession)) pn.lastSession=lbN2.d;
-    save(a,pn,"이번 회차 주문 다음 장부터").then(function(){ toast("지난 날은 체결 없음으로 두었어요. 아래 주문표대로 넣고 '이번 회차 주문 넣었어요'를 누르세요."); render(); }).catch(function(){});
-    return;
-  }
   if(act==="place-past"){
     // VR 날짜 줄: 회차 첫 장부터 넣은 회차 주문으로 기록 (이미 종가가 나온 기록은 건드리지 않음)
     var ps=a.type==="VR"?vrPastPlan(a):null; if(!ps||(a.pending&&barOn(a.ticker,a.pending.session))) return;
+    // 카드에서 고른 주문 시작일 (날짜 줄에서 누르면 회차 첫 장)
+    var paSel=b.closest(".banner")&&b.closest(".banner").querySelector(".pa-d"), sd=paSel?paSel.value:ps.session, lbS=lastBar(a.ticker);
+    if(!(sd>=ps.session)) sd=ps.session;
+    if(lbS&&sd>lbS.d){
+      // 다음 장부터 처음 넣음: 지난 날엔 주문이 없었으니 체결 없음으로 두고, 지금 주문표를 그 장 주문으로 기록한다
+      var np=a._plan, pn={pastSkip:a.lastRoll.d,events:[]}; if(!a.lastSession||lbS.d>a.lastSession) pn.lastSession=lbS.d;
+      if(!(a.pending&&a.pending.session===sd)){ if(!np||np.blocked||!np.orders.length||np.due||np.session!==sd) return;
+        pn.pending=pendingOf(np); pn.pending.cycleOrder=true; pn.cycleOrdered=true; pn.cycleOrders=vrNumber(pn.pending.orders,pn.pending.placedAt); pn.cycleEdited=false; }
+      delete fillEdits[a.id];
+      save(a,pn,dlabel(sd)+" 주문 넣음").then(function(){ toast(dlabel(sd)+"부터 넣은 회차 주문으로 기록했어요."); render(); }).catch(function(){});
+      return;
+    }
     var rw=ps.rewind;
     if(rw&&rw.n&&!confirm(dlabel(ps.session)+"부터 넣은 회차 주문으로 기록할까요?\nV 갱신 뒤 직접 기록한 매매 "+rw.n+"건을 지우고 회차 시작 상태로 돌린 뒤, "+dlabel(ps.session)+"부터 체결을 차례로 다시 확인해요. 실행취소로 되돌릴 수 있어요.")) return;
     delete fillEdits[a.id];
     var pps={pending:pendingOf(ps),events:[]};
     if(rw){ pps.lastSession=rw.d0; pps.dayStart=dayCut(a,rw.d0); }
+    // 회차 첫 장보다 늦게 넣었으면 그 전 날은 주문이 없었으니 체결 없음: 고른 날부터 확인한다
+    if(sd>ps.session){ pps.pending.session=sd; pps.lastSession=E.prevSession(sd); }
     if(rw&&rw.n){ Object.assign(pps,vrPatchOf(rw.state));
       pps.log=(a.log||[]).filter(function(l){ return !((l.side==="BUY"||l.side==="SELL")&&l.d>rw.d0); }); }
     if(a.type==="VR"){ pps.cycleOrdered=true; pps.pending.cycleOrder=true; pps.cycleOrders=vrNumber(pps.pending.orders,pps.pending.placedAt); pps.cycleEdited=false; }
-    save(a,pps,dlabel(ps.session)+" 주문 넣음 (마감 후 기록)").then(function(){ toast(dlabel(ps.session)+(a.type==="VR"?"부터 넣은 회차 주문으로 기록했어요. 지난 체결을 차례로 확인하세요.":" 주문으로 기록했어요. 그날 종가로 체결을 확인하세요.")); render(); window.scrollTo({top:0,behavior:"smooth"}); }).catch(function(){});
+    save(a,pps,dlabel(sd)+" 주문 넣음 (마감 후 기록)").then(function(){ toast(dlabel(sd)+(a.type==="VR"?"부터 넣은 회차 주문으로 기록했어요. 지난 체결을 차례로 확인하세요.":" 주문으로 기록했어요. 그날 종가로 체결을 확인하세요.")); render(); window.scrollTo({top:0,behavior:"smooth"}); }).catch(function(){});
   } else if(act==="vr-csv"){
     downloadCSV("VR_"+a.name+"_회차기록_"+todayKR(),["회차","마감일","종가","수량","평가금E","V","최소밴드","최대밴드","Pool(적립 전)","다음 회차 Pool","투입원금","다음 V","매수 주수","매도 주수"],vrRows(a,null).map(function(r){return [r.c,r.d,r.close,r.qty,r.E,r.V,r.min,r.max,r.pool,r.poolNext,r.invested,r.Vnext,r.buyQ,r.sellQ];}));
   } else if(act==="fills-manual"){
@@ -2700,7 +2713,7 @@ function viApply(r){
   setv("n-V",c.V); setv("n-pool",c.pool); setv("n-qty",c.qty); setv("n-contrib",r.contrib||null); setv("n-next",c.next); setv("n-vcycle",c.cycle); setv("n-vinv",c.invested);
   res.innerHTML='<b>'+r.rows+'회차를 읽었어요.</b> 지금 '+c.cycle+'회차 · V '+usd(c.V)+' · Pool '+usd(c.pool)+' · 보유 '+c.qty+'주 · 다음 갱신 '+esc(c.next||"-")+' · 적립 '+usd(r.contrib)+' · G '+r.G+'<br>'+
     '지난 '+r.hist.length+'회차는 회차 추이에 들어갑니다. 평단은 표에 없어서 증권사 화면 값을 직접 넣어주세요.'+
-    (r.lastRoll?'<br>회차 시작('+mdLabel(E.nextSession(r.lastRoll.d))+')이 지났으면 계좌를 만든 뒤 회차 주문을 넣었는지 물어요. V·Pool·보유를 고치면 마지막 종가일 기준 지금 잔고로 보고 지난 체결 확인을 건너뛰니, 오타만 고친 경우에도 보유·Pool을 지금 잔고와 맞춰 주세요.':'')+
+    (r.lastRoll?'<br>회차 시작('+mdLabel(E.nextSession(r.lastRoll.d))+')이 지났으면 계좌를 만든 뒤 회차 주문을 처음 넣은 날을 골라요. V·Pool·보유를 고치면 마지막 종가일 기준 지금 잔고로 보고 지난 체결 확인을 건너뛰니, 오타만 고친 경우에도 보유·Pool을 지금 잔고와 맞춰 주세요.':'')+
     (r.split.length?'<br>액면분할 표시 : '+r.split.join(", ")+'회차':'')+
     (r.fromZero?'<br>1회차 E 시작이 0이라 고급 설정의 "0원부터 모아 가는 적립식"을 켜 두었어요(적립식일 때만 적용). 처음에 목돈을 넣고 시작했다면 끄세요.':'')+
     (r.missing.length?'<br><span class="warn">표에서 못 찾은 값 : '+r.missing.join(", ")+' — 위 칸에 직접 넣어주세요.</span>':'')+
