@@ -1635,7 +1635,11 @@ function runUndo(u){
 function undoFab(){
   var el=$("undo-fab"); if(!el) return;
   var u=kindStack().sort(function(a,b){return a.time-b.time;}).pop();
-  if(!u||!db){ el.hidden=true; return; }
+  // 방금 한 작업만 6초 동안 띄우고 숨긴다. 그 뒤에는 화면 아래 '실행취소' 목록에서 되돌린다
+  var left=u?6000-(Date.now()-u.time):0;
+  clearTimeout(undoFab.t);
+  if(!u||!db||!(left>0)){ el.hidden=true; return; }
+  undoFab.t=setTimeout(undoFab,left+50);
   el.hidden=false; el.setAttribute("data-id",u.id); el.disabled=false;
   el.innerHTML='↶ 실행취소 <span>'+esc(u.label)+'</span>';
 }
