@@ -895,6 +895,8 @@ function vrCarry(a, st, fromD){
 // 그 사이 직접 기록한 매매가 있으면 되돌린 상태(회차 시작 상태)로 주문표를 계산한다. 첫 장 종가가 아직 없으면 null (보통 "넣었어요"로 충분)
 function vrPastPlan(a){
   if(!(a.cycle>=1)||!a.nextUpdate) return null;
+  // 이번 회차 중 상태 수정으로 보유·Pool을 고쳤으면(pastSkip) 지금 잔고로 보고, 회차 첫 장부터 다시 확인하지 않는다 (두 번 반영 방지)
+  if(a.lastRoll&&a.lastRoll.d&&a.pastSkip===a.lastRoll.d) return null;
   var waiting=a.pending&&a.pending.cycleOrder&&!a.pending.carried&&!barOn(a.ticker,a.pending.session);
   if(vrOrdered(a)&&!waiting) return null;
   var d0=a.lastRoll&&a.lastRoll.d?a.lastRoll.d:E.vrDue(E.addDays(a.nextUpdate,-14));
@@ -2471,6 +2473,8 @@ document.addEventListener("submit", function(ev){
     if(a.type==="VR"){ patch.nextUpdate=$("e-nextUpdate").value||null; patch.vrType=$("e-vrType").value; if($("e-fromZero").checked!==!!a.fromZero) patch.fromZero=$("e-fromZero").checked;
       // 이번 사이클 한도를 수정값으로 다시 잡는다: (지금 Pool + 이번 사이클에 쓴 돈) = 사이클 시작 Pool
       if(vrOrdered(a)) patch.cycleEdited=true;
+      // 이번 회차 중에 보유·Pool을 직접 고쳤으면 지금 잔고로 본다: 주문표 아래 "회차 첫 장부터 체결 확인" 안내를 이번 회차엔 띄우지 않는다 (두 번 반영 방지)
+      if(a.lastRoll&&a.lastRoll.d&&((patch.qty!=null&&patch.qty!==a.qty)||(patch.pool!=null&&Math.abs(patch.pool-(a.pool||0))>0.004))) patch.pastSkip=a.lastRoll.d;
       var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); if(patch.qty===0) patch.avg=null; }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
     var ws=[];
