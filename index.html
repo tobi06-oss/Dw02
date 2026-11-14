@@ -912,9 +912,9 @@ function vrPastPlan(a){
 function pastAsk(a){
   if(a.type!=="VR"||!a.lastRoll||!a.lastRoll.d) return "";
   var vp=vrPastPlan(a); if(!vp) return "";
-  var lb=lastBar(a.ticker), d0=dlabel(vp.session), rng=d0+(lb&&lb.d>vp.session?' ~ '+dlabel(lb.d):'');
+  var lb=lastBar(a.ticker), d0=dlabel(vp.session), rng=d0+(lb&&lb.d>vp.session?' ~ '+dlabel(lb.d):''), nx=lb?E.nextSession(lb.d):null;
   return '<div class="banner warn"><div class="bt">이번 회차 주문을 증권사에 넣었나요?</div>'+
-    '<div class="bd">이번 회차는 '+d0+'부터예요. 이미 넣어 뒀다면 '+rng+' 체결을 하루씩 확인해요(시세로 판정한 체결을 증권사 체결 내역과 맞춰 보고 반영). 아직이면 지난 날은 건너뛰고 다음 장 주문표부터 시작해요.</div>'+
+    '<div class="bd">이번 회차는 '+d0+'부터예요. 이미 넣어 뒀다면 (다음 단계에서) '+rng+' 체결을 하루씩 확인해요(시세로 판정한 체결을 증권사 체결 내역과 맞춰 보고 반영). 아직이면 지난 날은 건너뛰고, 아래 '+(nx?dlabel(nx)+' ':'')+'주문표대로 지금 넣은 뒤 \'이번 회차 주문 넣었어요\'를 누르면 돼요.</div>'+
     '<div class="actions" style="margin-top:0"><button type="button" class="btn primary" data-act="place-past">이미 주문했어요</button><button type="button" class="btn" data-act="past-no">아직 주문하지 않았어요</button></div></div>';
 }
 function pendingOf(p){
