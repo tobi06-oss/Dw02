@@ -1003,8 +1003,9 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
   // VR: 회차 첫 장이 이미 지났는데(기록표로 이어서 하기 직후 등) 아직 그 장부터 체결을 확인하지 않았으면, 주문표 아래에서 먼저 확인하게 한다.
   // 지난 V 갱신(lastRoll)이 있을 때만: 그때는 보유·Pool이 회차 시작 상태다. 칸에 직접 넣은 이어서 하기는 지금 잔고일 수 있어(체결 두 번 반영 위험) 날짜 줄로만 둔다
   var vp = a.type==="VR"&&a.lastRoll&&a.lastRoll.d ? vrPastPlan(a) : null, vpEnd = vp ? lastBar(a.ticker) : null;
-  var past = vp ? '<div class="pastq"><span>이번 회차는 <b>'+dlabel(vp.session)+'</b>부터예요. 그날부터 회차 주문을 넣어 두었다면 '+dlabel(vp.session)+(vpEnd&&vpEnd.d>vp.session?' ~ '+dlabel(vpEnd.d):'')+' 체결을 먼저 확인하세요.</span>'+
-    '<button type="button" class="btn primary" data-act="place-past">'+mdLabel(vp.session)+'부터 체결 확인</button></div>' : '';
+  // 회차 주문을 언제 넣었는지 고르게 한다: 회차 첫 장부터 넣어 뒀으면 그날부터 체결 확인, 아니면 아래 버튼(다음 장부터)
+  var past = vp ? '<div class="pastq"><span>이번 회차는 <b>'+dlabel(vp.session)+'</b>부터예요. '+mdLabel(vp.session)+'부터 회차 주문을 넣어 뒀다면 이 버튼을 누르세요. '+dlabel(vp.session)+(vpEnd&&vpEnd.d>vp.session?' ~ '+dlabel(vpEnd.d):'')+' 체결을 차례로 확인해요.</span>'+
+    '<button type="button" class="btn primary" data-act="place-past">'+mdLabel(vp.session)+'부터 넣어 뒀어요</button></div>' : '';
   var vrMsg = plan.due ? (plan.zero ? "0회차 마감(시작 V 정하기)을 먼저 반영하면 1회차 주문을 넣을 수 있어요." : "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요.") : plan.zero ? "" : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+") 후에 넣어요.";
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
     '<div class="when">'+dlabel(plan.session).replace("(", " (")+(a.type==="VR"?' VR 주문':' 무매 주문')+'</div></div>'+
@@ -1016,7 +1017,7 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
     // 주문을 넣으면 '주문 넣었어요' 버튼 자리에 주문 넣음 표시와 취소 버튼
     past+'<div class="actions">'+(placed?'<span class="placed"><i>✓</i>'+(carried?(plan.zero?'첫 매수 주문 유지 중 · ':'회차 주문 유지 중 · ')+dlabel(E.vrDue(a.nextUpdate))+'까지':'주문 넣음 · '+dlabel(plan.session))+'</span>'+
       (a.type==="VR"?'<button type="button" class="btn placed-x" data-act="vr-reorder">주문 취소·다시 내기</button>':'<button type="button" class="btn placed-x" data-act="cancel-pending">주문 취소</button>'):
-      (vrLock||plan.blocked||!plan.orders.length?'':'<button class="btn'+(vp?'':' primary')+'" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>'))+(a.type==="VR"&&!placed&&vrOrdered(a)&&!plan.due?'<button class="btn ghost" data-act="vr-reorder">'+(plan.zero?'첫 매수 다시 내기':'회차 주문 다시 내기')+'</button>':'')+'</div></section>';
+      (vrLock||plan.blocked||!plan.orders.length?'':'<button class="btn'+(vp?'':' primary')+'" data-act="place">'+(a.type==="VR"?(vp?mdLabel(plan.session)+"부터 넣었어요":"이번 회차 주문 넣었어요"):"이대로 주문 넣었어요")+'</button>'))+(a.type==="VR"&&!placed&&vrOrdered(a)&&!plan.due?'<button class="btn ghost" data-act="vr-reorder">'+(plan.zero?'첫 매수 다시 내기':'회차 주문 다시 내기')+'</button>':'')+'</div></section>';
 }
 
 function renderINF(a){
