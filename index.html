@@ -775,7 +775,8 @@ function banners(a){
       var stale = lb && lb.d > p.session;
       out+='<div class="banner '+(stale?"warn":"info")+'"><div class="bt">'+(stale?dlabel(p.session)+" 거래 기록이 없어요":dlabel(p.session).replace("(", " (")+" 체결 확인 대기")+'</div>'+
         '<div class="bd">'+(stale?"휴장일이었거나 종가가 빠졌어요. 휴장일이면 건너뛰고, 거래가 있었다면 아래에서 그날 종가를 입력하세요.":"주문을 기록했어요.<br>종가가 들어오면 체결을 자동으로 확인해요.<br><br>종가 반영 : 오전 06:30(정규) / 10:30(시간 외)")+'</div>'+
-        '<div class="actions" style="margin-top:0"><button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button></div></div>';
+        // VR 회차 주문(이어지는 예약)은 하루 기록만 지워도 다음 장으로 넘어갈 뿐이라 버튼을 숨긴다. 진짜 취소는 주문표의 '주문 취소·다시 내기'
+        (!stale&&p.carried?'</div>':'<div class="actions" style="margin-top:0"><button class="btn ghost" data-act="cancel-pending">'+(stale?"이 날 건너뛰기":"주문 기록 취소")+'</button></div></div>');
     }
   }
   return out;
