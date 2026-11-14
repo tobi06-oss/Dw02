@@ -913,9 +913,11 @@ function pastAsk(a){
   if(a.type!=="VR"||!a.lastRoll||!a.lastRoll.d) return "";
   var vp=vrPastPlan(a); if(!vp) return "";
   var lb=lastBar(a.ticker), d0=dlabel(vp.session), rng=d0+(lb&&lb.d>vp.session?' ~ '+dlabel(lb.d):''), nx=lb?E.nextSession(lb.d):null;
-  return '<div class="banner warn"><div class="bt">이번 회차 주문을 증권사에 넣었나요?</div>'+
-    '<div class="bd">이번 회차는 '+d0+'부터예요. 이미 넣어 뒀다면 (다음 단계에서) '+rng+' 체결을 하루씩 확인해요(시세로 판정한 체결을 증권사 체결 내역과 맞춰 보고 반영). 아직이면 지난 날은 건너뛰고, 아래 '+(nx?dlabel(nx)+' ':'')+'주문표대로 지금 넣은 뒤 \'이번 회차 주문 넣었어요\'를 누르면 돼요.</div>'+
-    '<div class="actions" style="margin-top:0"><button type="button" class="btn primary" data-act="place-past">이미 주문했어요</button><button type="button" class="btn" data-act="past-no">아직 주문하지 않았어요</button></div></div>';
+  var n0=mdLabel(vp.session), n1=nx?mdLabel(nx):"다음 장", cyc=(a.cycle||1)+'회차';
+  return '<div class="banner warn"><div class="bt">이번 '+cyc+' 주문은 언제부터 넣었나요?</div>'+
+    '<div class="bd">이번 회차는 '+d0+'부터예요. '+n0+'부터 넣어 뒀다면 (다음 단계에서) '+rng+' 체결을 하루씩 확인해요(시세로 판정한 체결을 증권사 체결 내역과 맞춰 보고 반영). '+
+    '아직 안 넣었다면 지난 날은 체결 없음으로 두고, 아래 '+cyc+' 주문표대로 '+n1+'부터 넣으면 돼요.</div>'+
+    '<div class="actions" style="margin-top:0"><button type="button" class="btn primary" data-act="place-past">'+n0+'부터 넣어 뒀어요</button><button type="button" class="btn" data-act="past-no">'+n1+'부터 넣을게요</button></div></div>';
 }
 function pendingOf(p){
   var orders=p.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined) c[k]=o[k]; return c; });
@@ -1012,7 +1014,7 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
   var askP = a.type==="VR" && !placed && a.lastRoll && a.lastRoll.d && !!vrPastPlan(a);
   var vrMsg = plan.due ? (plan.zero ? "0회차 마감(시작 V 정하기)을 먼저 반영하면 1회차 주문을 넣을 수 있어요." : "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요.") : plan.zero ? "" : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+") 후에 넣어요.";
   return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
-    '<div class="when">'+dlabel(plan.session).replace("(", " (")+(a.type==="VR"?' VR 주문':' 무매 주문')+'</div></div>'+
+    '<div class="when">'+dlabel(plan.session).replace("(", " (")+(a.type==="VR"?' VR 주문'+(!plan.zero&&a.cycle>=1?' · '+a.cycle+'회차':''):' 무매 주문')+'</div></div>'+
     '</div>'+
     (sum||'')+'<div class="cols"><div class="col buy"><h3>매수 주문</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
     '<div class="col sell"><h3>매도 주문</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
@@ -2374,7 +2376,7 @@ document.addEventListener("click", function(ev){
     // 이번 회차 주문을 아직 안 넣음: 지난 장엔 체결이 없으니 마지막 종가 날까지 기록한 것으로 하고, 이번 회차엔 다시 묻지 않는다
     if(a.type!=="VR"||!a.lastRoll||!vrPastPlan(a)) return;
     var pn={pastSkip:a.lastRoll.d}, lbN2=lastBar(a.ticker); if(lbN2&&(!a.lastSession||lbN2.d>a.lastSession)) pn.lastSession=lbN2.d;
-    save(a,pn,"이번 회차 주문 아직 안 넣음").then(function(){ toast("지난 날은 건너뛰었어요. 아래 주문표대로 주문을 넣고 '이번 회차 주문 넣었어요'를 누르세요."); render(); }).catch(function(){});
+    save(a,pn,"이번 회차 주문 다음 장부터").then(function(){ toast("지난 날은 체결 없음으로 두었어요. 아래 주문표대로 넣고 '이번 회차 주문 넣었어요'를 누르세요."); render(); }).catch(function(){});
     return;
   }
   if(act==="place-past"){
