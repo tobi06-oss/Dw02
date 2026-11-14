@@ -647,7 +647,7 @@ function pct(n, d){ if(n==null||isNaN(n)) return "-"; var s=(n*100).toFixed(d==n
 function signCls(n){ return n>0?"up":(n<0?"down":""); }
 var WD = ["일","월","화","수","목","금","토"];
 function dlabel(d){ var t=new Date(d+"T12:00:00Z"); return (t.getUTCMonth()+1)+"/"+t.getUTCDate()+"("+WD[t.getUTCDay()]+")"; }
-function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(function(){t.classList.remove("show");},2200); }
+function toast(m,ms){ var t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(function(){t.classList.remove("show");},ms||2200); }
 function bars(tk){ var p=prices[tk]; if(!p||!p.bars) return []; return p.bars.map(function(b){return {d:b[0],o:b[1],h:b[2],l:b[3],c:b[4],xh:b.length>5?b[5]:null,xl:b.length>6?b[6]:null};}); }
 function lastBar(tk){ var b=bars(tk); return b[b.length-1]; }
 function barOn(tk,d){ var b=bars(tk); for(var i=0;i<b.length;i++) if(b[i].d===d) return b[i]; return null; }
@@ -917,14 +917,14 @@ function vrPastPlan(a){
 function pastAsk(a){
   if(a.type!=="VR"||!a.lastRoll||!a.lastRoll.d) return "";
   var vp=vrPastPlan(a); if(!vp) return "";
-  // 주문 시작일: 회차 첫 장부터 다음에 넣을 수 있는 장까지. 고른 날부터 체결을 확인하고, 그 전 날은 주문이 없었으니 체결 없음
-  var lb=lastBar(a.ticker), ds=[], d=vp.session, end=lb?E.nextSession(lb.d):vp.session;
+  // 주문 시작일: 회차 첫 장부터 다음에 넣을 수 있는 장까지(회차 마감일을 넘지 않게. GPT S2). 고른 날부터 체결을 확인하고, 그 전 날은 주문이 없었으니 체결 없음
+  var lb=lastBar(a.ticker), ds=[], d=vp.session, due=E.vrDue(a.nextUpdate), nx=lb?E.nextSession(lb.d):vp.session, end=nx<=due?nx:due;
   while(d<=end&&ds.length<20){ ds.push(d); d=E.nextSession(d); }
   var cyc=(a.cycle||1)+'회차', per=a.nextUpdate?' ['+mdLabel(E.addDays(a.nextUpdate,-14))+'~'+mdLabel(E.vrDue(a.nextUpdate))+']':'';
   return '<div class="banner warn"><div class="bt">이번 '+cyc+' 주문'+per+'</div>'+
     '<div class="bd">증권사에 주문한 뒤 진행해 주세요. 이미 넣어 둔 주문이 있다면 추가로 주문하지 말고, 처음 주문을 넣은 날을 골라 주세요. '+
-    '고른 날부터 하루씩 체결을 확인해요(증권사 체결 내역과 맞춰 보고 반영). 오늘 처음 넣는다면 '+mdLabel(end)+'을 고르세요.</div>'+
-    '<div class="pa-row"><label class="field"><span>주문 시작일</span><select class="pa-d">'+
+    '고른 날부터 하루씩 체결을 확인해요(증권사 체결 내역과 맞춰 보고 반영). '+(nx<=due?'오늘 처음 넣는다면 '+mdLabel(nx)+'을 고르세요.':'이 회차는 '+mdLabel(due)+'에 끝났어요. 그날까지 체결을 확인한 뒤 V 갱신을 하세요.')+'</div>'+
+    '<div class="pa-row"><label class="field"><span>주문 시작일</span><select class="pa-d"><option value="" selected disabled>날짜 고르기</option>'+
     ds.map(function(x){ return '<option value="'+x+'">'+dlabel(x)+(x>(lb?lb.d:"")?' (다음 장)':'')+'</option>'; }).join("")+'</select></label>'+
     '<button type="button" class="btn primary" data-act="place-past">주문했어요</button></div></div>';
 }
@@ -2387,8 +2387,11 @@ document.addEventListener("click", function(ev){
     // VR 날짜 줄: 회차 첫 장부터 넣은 회차 주문으로 기록 (이미 종가가 나온 기록은 건드리지 않음)
     var ps=a.type==="VR"?vrPastPlan(a):null; if(!ps||(a.pending&&barOn(a.ticker,a.pending.session))) return;
     // 카드에서 고른 주문 시작일 (날짜 줄에서 누르면 회차 첫 장)
-    var paSel=b.closest(".banner")&&b.closest(".banner").querySelector(".pa-d"), sd=paSel?paSel.value:ps.session, lbS=lastBar(a.ticker);
-    if(!(sd>=ps.session)) sd=ps.session;
+    var paSel=b.closest(".banner")&&b.closest(".banner").querySelector(".pa-d"), sd=paSel?paSel.value:ps.session, lbS=lastBar(a.ticker), dueS=E.vrDue(a.nextUpdate);
+    // 카드에서는 날짜를 꼭 고르게 한다(기본값으로 지난 체결 확인에 들어가지 않게. GPT C1)
+    if(!sd){ toast("주문 시작일을 골라 주세요."); if(paSel) paSel.focus(); return; }
+    // 회차 첫 장 ~ 회차 마감일 안의 날만 (마감이 지난 회차의 주문으로 그 뒤 날을 기록하지 않음. GPT S2)
+    if(!(sd>=ps.session)||sd>dueS||!E.isSession(sd)){ toast("이 회차("+mdLabel(ps.session)+"~"+mdLabel(dueS)+") 안의 날짜를 골라 주세요."); return; }
     if(lbS&&sd>lbS.d){
       // 다음 장부터 처음 넣음: 지난 날엔 주문이 없었으니 체결 없음으로 두고, 지금 주문표를 그 장 주문으로 기록한다
       var np=a._plan, pn={pastSkip:a.lastRoll.d,events:[]}; if(!a.lastSession||lbS.d>a.lastSession) pn.lastSession=lbS.d;
@@ -2399,7 +2402,10 @@ document.addEventListener("click", function(ev){
       return;
     }
     var rw=ps.rewind;
-    if(rw&&rw.n&&!confirm(dlabel(ps.session)+"부터 넣은 회차 주문으로 기록할까요?\nV 갱신 뒤 직접 기록한 매매 "+rw.n+"건을 지우고 회차 시작 상태로 돌린 뒤, "+dlabel(ps.session)+"부터 체결을 차례로 다시 확인해요. 실행취소로 되돌릴 수 있어요.")) return;
+    // 고른 날 전에 직접 기록한 매매가 있으면 저장하지 않는다: 그 매매는 회차 주문과 따로 실제로 있었던 것일 수 있고, 지우면 보유·Pool·주문표가 틀어진다 (GPT S1)
+    if(rw&&rw.n&&sd>ps.session){ var preT=(a.log||[]).filter(function(l){ return (l.side==="BUY"||l.side==="SELL")&&l.d>rw.d0&&l.d<sd; });
+      if(preT.length){ toast(mdLabel(preT[0].d)+"에 직접 기록한 매매가 있어 "+mdLabel(sd)+"부터로 기록할 수 없어요. 그 매매가 회차 주문 체결이면 그 날이나 더 앞 날을 고르세요.",6000); return; } }
+    if(rw&&rw.n&&!confirm(dlabel(sd)+"부터 넣은 회차 주문으로 기록할까요?\nV 갱신 뒤 직접 기록한 매매 "+rw.n+"건을 지우고 회차 시작 상태로 돌린 뒤, "+dlabel(sd)+"부터 체결을 차례로 다시 확인해요. 실행취소로 되돌릴 수 있어요.")) return;
     delete fillEdits[a.id];
     var pps={pending:pendingOf(ps),events:[]};
     if(rw){ pps.lastSession=rw.d0; pps.dayStart=dayCut(a,rw.d0); }
