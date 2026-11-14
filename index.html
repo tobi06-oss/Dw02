@@ -2476,6 +2476,9 @@ document.addEventListener("submit", function(ev){
       if(vrOrdered(a)) patch.cycleEdited=true;
       // 이번 회차 중에 보유·Pool을 직접 고쳤으면 지금 잔고로 본다: 주문표 아래 "회차 첫 장부터 체결 확인" 안내를 이번 회차엔 띄우지 않는다 (두 번 반영 방지)
       if(a.lastRoll&&a.lastRoll.d&&((patch.qty!=null&&patch.qty!==a.qty)||(patch.pool!=null&&Math.abs(patch.pool-(a.pool||0))>0.004))) patch.pastSkip=a.lastRoll.d;
+      // 이어서 하기로 회차 첫 장부터 체결 확인을 띄워 둔 상태(아직 하루도 반영 전)에서 보유·Pool을 지금 잔고로 고쳤으면, 그 확인은 두 번 반영이 되므로 접고 지금 상태로 주문표를 다시 낸다
+      if(patch.pastSkip&&a.pending&&a.pending.cycleOrder&&a.lastSession===a.lastRoll.d&&barOn(a.ticker,a.pending.session)){
+        patch.pending=null; patch.cycleOrdered=false; patch.cycleOrders=null; patch.cycleEdited=false; var lbE=lastBar(a.ticker); if(lbE) patch.lastSession=lbE.d; }
       var m=Object.assign({},a,patch); patch.cycleCap=E.r2(((m.pool||0)+(m.cycleUsed||0))*E.vrLimitPct(m)/100); if(patch.qty===0) patch.avg=null; }
     else { patch.mode=$("e-mode").value; patch.compound=$("e-compound").value==="1"; if(patch.qty===0) patch.avg=null; }
     var ws=[];
@@ -2551,6 +2554,10 @@ document.addEventListener("submit", function(ev){
       if(joining&&vrImport){ base.G=vrImport.G; base.band=vrImport.band; base.hist=vrImport.hist; if(vrImport.lastRoll) base.lastRoll=vrImport.lastRoll; }
       if(joining) base.fromZero=base.vrType==="INSTALLMENT"&&$("n-fromZero").checked; // 표에서 추정한 값은 체크로만 제안하고, 저장은 사용자가 확인한 체크 값
       if(joining) base.log=[{d:jd,side:"NOTE",text:(vrImport?"기록표("+vrImport.rows+"회차)로 ":"")+"이어서 하기 : "+vcy+"회차 · V "+usd(V)+" · Pool "+usd(pool)+" · 보유 "+vq+"주"+(base.avg?" · 평단 $"+base.avg:"")+" · 다음 갱신 "+base.nextUpdate}];
+      // 기록표로 이어서 하면 상태가 회차 시작(지난 V 갱신) 상태다. 회차 첫 장 종가가 이미 있으면 그날부터 넣어 둔 회차 주문으로 기록해, 체결 확인을 그날부터 바로 차례로 띄운다
+      var jp=joining&&base.lastRoll&&base.lastRoll.d?vrPastPlan(base):null;
+      if(jp){ base.pending=pendingOf(jp); base.pending.cycleOrder=true; base.cycleOrdered=true; base.cycleOrders=vrNumber(base.pending.orders,base.pending.placedAt); base.cycleEdited=false; base.lastSession=base.lastRoll.d;
+        base.log[0].text+=" · "+dlabel(jp.session)+"부터 넣은 회차 주문으로 체결 확인"; }
     }
     if(!db){ toast("저장소에 연결되지 않았어요."); return; }
     // 새 무매 계좌는 처음부터 이 계좌만의 기록(원화 평가액·매매내역·그래프)을 켠다 (cycle/{계좌ID})
