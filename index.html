@@ -249,6 +249,11 @@ details.panel[open]>summary{margin-bottom:12px}
 .field label{font-size:11px;color:var(--ink-2)}
 .field input,.field select{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;color:var(--ink);font-family:var(--mono);width:100%}
 .field select{font-family:var(--sans)}
+.pa-row{display:flex;align-items:flex-end;gap:8px;margin-top:10px}
+.pa-row .field{flex:1;max-width:220px;margin:0}
+.pa-row .btn{flex:none}
+.pa-row .field span{font-size:11px;color:var(--ink-2)}
+.pa-row .field select{padding:10px;min-height:40px;font-weight:600}
 .join-seg{flex:1 1 100%;display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:3px}
 .join-seg button{flex:1;background:none;border:none;border-radius:8px;padding:8px 6px;font-size:13px;font-weight:600;color:var(--ink-2);font-family:var(--sans);cursor:pointer}
 .join-seg button span{font-weight:400;font-size:11px;color:var(--ink-3)}
@@ -919,7 +924,7 @@ function pastAsk(a){
   return '<div class="banner warn"><div class="bt">이번 '+cyc+' 주문'+per+'</div>'+
     '<div class="bd">증권사에 주문한 뒤 진행해 주세요. 이미 넣어 둔 주문이 있다면 추가로 주문하지 말고, 처음 주문을 넣은 날을 골라 주세요. '+
     '고른 날부터 하루씩 체결을 확인해요(증권사 체결 내역과 맞춰 보고 반영). 오늘 처음 넣는다면 '+mdLabel(end)+'을 고르세요.</div>'+
-    '<div class="actions" style="margin-top:0;align-items:center"><label class="small" style="display:flex;align-items:center;gap:6px">주문 시작일 <select class="pa-d">'+
+    '<div class="pa-row"><label class="field"><span>주문 시작일</span><select class="pa-d">'+
     ds.map(function(x){ return '<option value="'+x+'">'+dlabel(x)+(x>(lb?lb.d:"")?' (다음 장)':'')+'</option>'; }).join("")+'</select></label>'+
     '<button type="button" class="btn primary" data-act="place-past">주문했어요</button></div></div>';
 }
