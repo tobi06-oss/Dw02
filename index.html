@@ -1490,11 +1490,33 @@ function undoKind(u){
 function curKind(){ return curType; }
 // 총자산(cycle/assets, entries/asset_*)만 바꾼 작업은 자산 탭 목록에 둔다
 function isAssetPath(p){ return p==="cycle/assets"||p.indexOf("entries/asset_")===0; }
+// 그 작업이 바꾼 계좌 (계좌 문서가 없으면 무매 매매기록 문서로 찾는다). 못 찾으면 null
+function undoAcct(u){
+  var id=null;
+  (u.ops||[]).forEach(function(o){ var sp=o.p.split("/"); if(!id&&sp[0]==="accounts") id=sp[1]; });
+  if(id) return id;
+  (u.ops||[]).forEach(function(o){
+    var sp=o.p.split("/"); if(id||sp[0]!=="cycle") return;
+    Object.keys(accounts).forEach(function(x){ var a=accounts[x]; if(!id&&a.type==="INF"&&a.linked&&recPath(a)===o.p) id=x; });
+  });
+  return id;
+}
+// 지운 계좌의 '계좌 삭제' 기록은 되살릴 수 있게 같은 유형 어느 계좌에서나 보여준다
+function undoDel(u, id){ return (u.ops||[]).some(function(o){ return o.p==="accounts/"+id&&!o.a; }); }
+// 실행취소 목록은 지금 고른 계좌의 작업만 보여준다.
 // 그 유형 계좌가 하나도 없으면(예: 하나뿐인 VR 계좌를 지운 직후) 되살릴 수 있게 어느 탭에서나 보여준다
 function kindStack(){
   var k=curKind(), has={};
   Object.keys(accounts).forEach(function(id){ has[accounts[id].type==="VR"?"VR":"INF"]=1; }); has.ASSET=1;
-  return undoStack.filter(function(u){ var uk=undoKind(u); return uk===k||!has[uk]; });
+  return undoStack.filter(function(u){
+    var uk=undoKind(u);
+    if(!has[uk]) return true;
+    if(uk!==k) return false;
+    if(uk==="ASSET") return true;
+    var id=undoAcct(u);
+    if(!id||id===selected) return true;
+    return !accounts[id]&&undoDel(u,id);
+  });
 }
 // 문서 여러 개와 그 실행취소 기록을 한 번에 저장한다 (모두 저장되거나 하나도 안 됨). label이 없으면 실행취소 기록을 남기지 않는다.
 // 계좌·매매내역 문서는 이 화면이 알던 판(rev)과 서버의 판이 같을 때만 저장한다: 다른 창·기기에서 먼저 바꿨으면 덮어쓰지 않는다
@@ -1528,11 +1550,11 @@ function waitRevs(revs){
     setTimeout(function(){ revWaits=revWaits.filter(function(x){ return x!==w; }); res(); }, 4000);
   });
 }
-// 실행취소 목록은 종류(무매·VR·자산)마다 최근 UNDO_MAX개만 남긴다
+// 실행취소 목록은 계좌마다(자산은 따로) 최근 UNDO_MAX개만 남긴다
 function trimUndo(){
   if(!db) return;
   var by={};
-  undoStack.forEach(function(u){ var k=undoKind(u); (by[k]=by[k]||[]).push(u); });
+  undoStack.forEach(function(u){ var k=undoKind(u); if(k!=="ASSET") k+="|"+(undoAcct(u)||""); (by[k]=by[k]||[]).push(u); });
   Object.keys(by).forEach(function(k){
     var l=by[k].sort(function(a,b){ return a.time-b.time; });
     while(l.length>UNDO_MAX){ var o=l.shift(); db.doc("undo/"+o.id).delete().catch(function(){}); }
@@ -1674,7 +1696,7 @@ function undoPanel(){
   return '<details class="panel" id="undo-panel"><summary>'+(curKind()==="VR"?"VR":curKind()==="ASSET"?"자산":"무매")+' 실행취소 ('+list.length+')</summary>'+list.map(function(u){
     var d=new Date(u.time), t=(d.getMonth()+1)+"/"+d.getDate()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
     return '<div class="undo-row"><span class="l">'+esc(u.label)+'<span class="tm">'+t+'</span></span><button type="button" class="undo-btn" data-act="undo" data-id="'+esc(u.id)+'">실행취소</button></div>';
-  }).join("")+'<div class="hint">아무 항목이나 골라서 그 작업이 바꾼 부분만 되돌릴 수 있어요. 그 부분을 나중 작업이 다시 바꿨으면 확인창이 떠요. 무매와 VR은 목록이 따로이고, 각각 최근 '+UNDO_MAX+'개까지 남고 창을 닫아도 유지됩니다.</div></details>';
+  }).join("")+'<div class="hint">아무 항목이나 골라서 그 작업이 바꾼 부분만 되돌릴 수 있어요. 그 부분을 나중 작업이 다시 바꿨으면 확인창이 떠요. 지금 고른 계좌의 작업만 보이고, 계좌마다 최근 '+UNDO_MAX+'개까지 남고 창을 닫아도 유지됩니다.</div></details>';
 }
 
 /* ----- 차트 (SVG 문자열) ----- */
