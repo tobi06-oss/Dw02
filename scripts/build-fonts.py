@@ -20,7 +20,8 @@ def rng(cs):
 # 같은 글자를 여러 조각이 가지면 나중에 적은 @font-face가 먼저 쓰인다 → full, ks, core 순으로 적는다
 # full에도 글꼴에 실제로 있는 글자 범위를 적어야, 글꼴에 없는 기호(✓ ▸ 등)를 그릴 때 full 조각을 괜히 받지 않는다
 css=['/* 나눔스퀘어라운드 (NAVER, SIL OFL 1.1, fonts/OFL.txt). scripts/build-fonts.py가 만든 파일 */']
-for w,fn in ((400,'R'),(700,'B')):
+# 보통(400)은 Bold 파일, 굵게(700 이상)는 ExtraBold 파일로 한 단계 굵게 쓴다 (Regular는 너무 가늘어 밋밋하다는 Dw 의견, 2026-11-17)
+for w,fn in ((400,'B'),(700,'EB')):
   for name,cs,ur in (('full',None,rng(sorted(cmap))),('ks',ks,'U+AC00-D7A3'),('core',core,rng(core))):
     o=subset.Options(); o.flavor='woff2'; o.hinting=False; o.desubroutinize=True; o.name_IDs=['*']; o.name_languages=['*']; o.notdef_outline=True
     f=TTFont(os.path.join(src,f'NanumSquareRound{fn}.ttf'))

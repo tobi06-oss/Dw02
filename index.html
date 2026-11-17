@@ -12,15 +12,15 @@
 <link rel="icon" href="icon-192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>무매·VR 주문 데스크</title>
-<link rel="preload" href="fonts/nsr-r-core.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/nsr-b-core.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/nsr-eb-core.woff2" as="font" type="font/woff2" crossorigin>
 <link href="fonts/fonts.css" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 /* 디자인: 예전 트래커(tracker_cloud)와 같은 폰트·색·카드 스타일 */
-/* 글자는 나눔스퀘어라운드(이 앱 fonts/ 폴더, 보통 400·굵게 700 두 굵기)가 그린다. 화면에 쓰는 글자만 담은 core 조각(약 40KB)을 먼저 받고, 사용자가 쓴 다른 한글이 나올 때만 ks·full 조각을 받는다. 숫자는 IBM Plex Mono (2026-11-17) */
+/* 글자는 나눔스퀘어라운드(이 앱 fonts/ 폴더. 가는 Regular는 빼고 보통 글씨는 Bold, 굵은 글씨는 ExtraBold 파일)가 그린다. 화면에 쓰는 글자만 담은 core 조각(약 40KB)을 먼저 받고, 사용자가 쓴 다른 한글이 나올 때만 ks·full 조각을 받는다. 숫자는 IBM Plex Mono (2026-11-17) */
 :root{
   --bg:#F5F6F9; --surface:#FFFFFF; --surface-2:#F0F2F6; --line:#E1E4EB; --line-2:#CDD2DC;
   --ink:#1C2130; --ink-2:#6B7280; --ink-3:#9AA1B0;
