@@ -800,7 +800,7 @@ function renderFillConfirm(a,p,bar){
       '<input type="checkbox" id="fc-'+i+'" data-fi="'+i+'" data-f="filled" '+(f.filled?"checked":"")+' aria-label="체결 여부">'+
       '<label class="fl" for="fc-'+i+'"><b class="'+(o.side==="BUY"?"up":"down")+'">'+(o.side==="BUY"?"매수":"매도")+'</b> '+esc(o.label)+' <span class="muted num">'+(o.price!=null?usd(o.price):"MOC")+' × '+o.qty+'</span>'+
         (f.at==="open"?' <span class="tag open">시가 체결</span><span class="small muted num"> 시가 '+usd(bar.o)+' · 지정가 '+usd(o.price)+'</span>':'')+'</label>'+
-      '<input type="number" step="0.01" id="fp-'+i+'" data-fi="'+i+'" data-f="px" value="'+(f.px!=null&&!isNaN(f.px)?f.px:"")+'" placeholder="체결가" aria-label="체결가"'+(f.err?' style="border-color:var(--danger)"':'')+'>'+
+      '<input type="number" step="0.01" id="fp-'+i+'" data-fi="'+i+'" data-f="px" value="'+(f.px!=null&&!isNaN(f.px)?f.px:"")+'" placeholder="종가 '+bar.c+'" aria-label="체결가"'+(f.err?' style="border-color:var(--danger)"':'')+'>'+
       '<input type="number" step="1" id="fq-'+i+'" data-fi="'+i+'" data-f="qty" value="'+f.qty+'" aria-label="수량" style="width:64px'+(f.err?';border-color:var(--danger)':'')+'">'+
       '</div>';
   }).join("");
@@ -2512,20 +2512,14 @@ document.addEventListener("click", function(ev){
   }
 });
 
-// 수량은 칸의 글자 전체를 숫자로 읽는다(1.5·1e1을 1로 자르지 않게). 빈 칸은 NaN이라 반영 때 막힌다
-function qtyOf(el){ var v=String(el.value).trim(); return v===""?NaN:Number(v); }
+// 칸의 글자 전체를 숫자로 읽는다(수량 1.5·1e1을 1로 자르지 않게). 빈 칸은 NaN이라 반영 때 막힌다
+function numOf(el){ var v=String(el.value).trim(); return v===""?NaN:Number(v); }
 document.addEventListener("change", function(ev){
   var el=ev.target; if(!el.hasAttribute("data-fi")) return;
   var a=accounts[selected], fe=fillEdits[a&&a.id]; if(!fe) return;
   var f=fe.fills[+el.getAttribute("data-fi")], k=el.getAttribute("data-f");
-  var row=el.closest(".fill"), i=el.getAttribute("data-fi");
-  if(k==="filled") f.filled=el.checked; else if(k==="px") f.px=parseFloat(el.value); else f.qty=qtyOf(el);
-  // 시세상 미체결로 판정된 줄은 px가 비어 있다. 체크하면 화면에 보이는 체결가·수량을 그대로 쓴다
-  if(k==="filled"&&f.filled){
-    var pe=document.getElementById("fp-"+i), qe=document.getElementById("fq-"+i);
-    if(!(f.px>0)&&pe) f.px=parseFloat(pe.value);
-    if(!(f.qty>0)&&qe) f.qty=qtyOf(qe);
-  }
+  var row=el.closest(".fill");
+  if(k==="filled") f.filled=el.checked; else if(k==="px") f.px=numOf(el); else f.qty=numOf(el);
   if(f.err){ f.err=false; row.querySelectorAll("input[type=number]").forEach(function(x){ x.style.borderColor=""; }); }
   row.classList.toggle("on", f.filled);
 });
