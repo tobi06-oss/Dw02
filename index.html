@@ -800,10 +800,11 @@ function renderFillConfirm(a,p,bar){
       '<input type="checkbox" id="fc-'+i+'" data-fi="'+i+'" data-f="filled" '+(f.filled?"checked":"")+' aria-label="체결 여부">'+
       '<label class="fl" for="fc-'+i+'"><b class="'+(o.side==="BUY"?"up":"down")+'">'+(o.side==="BUY"?"매수":"매도")+'</b> '+esc(o.label)+' <span class="muted num">'+(o.price!=null?usd(o.price):"MOC")+' × '+o.qty+'</span>'+
         (f.at==="open"?' <span class="tag open">시가 체결</span><span class="small muted num"> 시가 '+usd(bar.o)+' · 지정가 '+usd(o.price)+'</span>':'')+'</label>'+
-      '<input type="number" step="0.01" id="fp-'+i+'" data-fi="'+i+'" data-f="px" value="'+(f.px!=null?f.px:bar.c)+'" aria-label="체결가"'+(f.err?' style="border-color:var(--danger)"':'')+'>'+
+      '<input type="number" step="0.01" id="fp-'+i+'" data-fi="'+i+'" data-f="px" value="'+(f.px!=null&&!isNaN(f.px)?f.px:"")+'" placeholder="체결가" aria-label="체결가"'+(f.err?' style="border-color:var(--danger)"':'')+'>'+
       '<input type="number" step="1" id="fq-'+i+'" data-fi="'+i+'" data-f="qty" value="'+f.qty+'" aria-label="수량" style="width:64px'+(f.err?';border-color:var(--danger)':'')+'">'+
       '</div>';
   }).join("");
+  var noPx=fills.some(function(f){ return f.px==null; });
   var n=fills.filter(function(f){return f.filled;}).length;
   var openN=fills.filter(function(f){return f.filled&&f.at==="open";}).length, closeN=n-openN;
   var basis=openN&&closeN?"종가·시가 기준으로":openN?"시가 기준으로":"종가 기준으로";
@@ -821,6 +822,7 @@ function renderFillConfirm(a,p,bar){
     '<div class="bd">'+(n?basis+' '+n+'건 체결로 판정했어요. 실제 체결과 다르면 체크와 가격·수량을 고친 뒤 반영하세요.':'실제로 체결된 주문을 체크하고 가격·수량을 고친 뒤 반영하세요.')+
       (p.orders.some(function(o){return o.ext;})?(bar.xh!=null?' 지정가매도는 프리·애프터장 고가 '+usd(bar.xh)+'까지 보고 판정했어요.':' 지정가매도는 프리·애프터장에서도 체결될 수 있는데, 이 날은 시간외 시세가 없어 본장 고가로만 판정했어요.'):'')+'</div>'+
     openHtml+missHtml+
+    (noPx?'<div class="bd">시세상 체결 안 된 줄은 체결가 칸이 비어 있어요. 실제로 체결됐다면 증권사 체결가를 넣고 체크하세요.</div>':'')+
     '<div class="fills">'+rows+'</div>'+
     '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="apply-fills">계좌에 반영</button><button class="btn ghost" data-act="cancel-pending">이 날 체결 없음</button></div></div>';
 }
@@ -2461,7 +2463,7 @@ document.addEventListener("click", function(ev){
     var fills=fe.fills;
     // 체크한 줄에 체결가·수량이 비면 엔진이 그 줄을 조용히 버려 '체결 없음'이 된다. 저장하지 않고 고치게 한다
     var bad=fills.filter(function(f){ f.err=f.filled&&!(isFinite(f.px)&&f.px>0&&Number.isInteger(f.qty)&&f.qty>0); return f.err; });
-    if(bad.length){ render(); toast("체크한 줄의 체결가나 수량이 비어 있어요: "+bad.map(function(f){ return f.order.label||"주문"; }).join(", ")+". 넣거나 체크를 풀어 주세요."); return; }
+    if(bad.length){ render(); toast("체크한 줄의 체결가나 수량이 비었거나 맞지 않아요: "+bad.map(function(f){ return f.order.label||"주문"; }).join(", ")+". 실제 체결가와 수량(정수)을 넣거나 체크를 풀어 주세요."); return; }
     var over=a.type==="VR"?fills.filter(function(f){ return f.filled&&f.qty>f.order.qty; })[0]:null;
     if(over){ toast((over.order.label||"주문")+"의 남은 수량("+over.order.qty+"주)보다 많이 넣을 수 없어요. 다른 매매였다면 아래 매매내역 수동 입력에 따로 넣으세요."); return; }
     var res = a.type==="VR" ? E.vrApply(a,fills,bar) : E.infApply(a,fills,bar);
@@ -2510,17 +2512,19 @@ document.addEventListener("click", function(ev){
   }
 });
 
+// 수량은 칸의 글자 전체를 숫자로 읽는다(1.5·1e1을 1로 자르지 않게). 빈 칸은 NaN이라 반영 때 막힌다
+function qtyOf(el){ var v=String(el.value).trim(); return v===""?NaN:Number(v); }
 document.addEventListener("change", function(ev){
   var el=ev.target; if(!el.hasAttribute("data-fi")) return;
   var a=accounts[selected], fe=fillEdits[a&&a.id]; if(!fe) return;
   var f=fe.fills[+el.getAttribute("data-fi")], k=el.getAttribute("data-f");
   var row=el.closest(".fill"), i=el.getAttribute("data-fi");
-  if(k==="filled") f.filled=el.checked; else if(k==="px") f.px=parseFloat(el.value); else f.qty=parseInt(el.value,10)||0;
+  if(k==="filled") f.filled=el.checked; else if(k==="px") f.px=parseFloat(el.value); else f.qty=qtyOf(el);
   // 시세상 미체결로 판정된 줄은 px가 비어 있다. 체크하면 화면에 보이는 체결가·수량을 그대로 쓴다
   if(k==="filled"&&f.filled){
     var pe=document.getElementById("fp-"+i), qe=document.getElementById("fq-"+i);
     if(!(f.px>0)&&pe) f.px=parseFloat(pe.value);
-    if(!(f.qty>0)&&qe) f.qty=parseInt(qe.value,10)||0;
+    if(!(f.qty>0)&&qe) f.qty=qtyOf(qe);
   }
   if(f.err){ f.err=false; row.querySelectorAll("input[type=number]").forEach(function(x){ x.style.borderColor=""; }); }
   row.classList.toggle("on", f.filled);
