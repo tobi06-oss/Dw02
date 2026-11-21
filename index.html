@@ -766,6 +766,7 @@ function renderView(){
   var ae=document.activeElement, fid=ae&&ae.id&&v.contains(ae)?ae.id:null, sel=null;
   try{ if(fid&&ae.selectionStart!=null) sel=[ae.selectionStart,ae.selectionEnd]; }catch(e){}
   v.innerHTML = a.type==="VR" ? renderVR(a) : renderINF(a);
+  dayAuto(a);
   v.querySelectorAll("details[id]").forEach(function(d){ if(openSet[d.id]) d.open=true; });
   var ie=$("inline-edit");
   if(ie){ var dt=ie.closest("details"); if(dt) dt.open=true; ie.focus(); try{ ie.select(); }catch(e){} }
@@ -993,6 +994,18 @@ function dayNext(a){
   var ex=E.nextSession(th); if(E.calKnown(ex)&&nb.d!==ex) return {d:ex,act:null,missing:true};
   return infDayPlan(a,nb.d)?{d:nb.d,act:"day-place"}:null;
 }
+// 무매: 기록이 빠진 지난 장이 있으면(주문 넣었어요를 안 눌렀던 날) 가장 오래된 날의 체결 확인을 바로 띄운다.
+// 반영하거나 '이 날 체결 없음'을 누르면 다음 빠진 날이 이어서 뜬다. 날짜 줄로 기록하는 계좌(lastSession 있음)만.
+// 실행취소로 지웠으면 이 창에서는 같은 날을 다시 띄우지 않는다(날짜 줄로는 계속 기록 가능)
+var dayAutoTried={};
+function dayAuto(a){
+  if(!a||a.type!=="INF"||a.pending||!a.lastSession||addMode) return;
+  var nx=dayNext(a); if(!nx||nx.act!=="day-place") return;
+  var k=a.id+"|"+nx.d; if(dayAutoTried[k]) return; dayAutoTried[k]=1;
+  var dp=infDayPlan(a,nx.d); if(!dp) return;
+  delete fillEdits[a.id]; delete daySel[a.id];
+  save(a,{pending:pendingOf(dp),events:[]},dlabel(nx.d)+" 주문 넣음 (지난 장)").then(function(){ toast(dlabel(nx.d)+" 기록이 비어 있어 그날 체결 확인을 먼저 띄웠어요. 주문을 안 넣었으면 '이 날 체결 없음'을 누르세요.",6000); render(); }).catch(function(){});
+}
 // 무매: d 장 주문표 = d 전날까지 종가로 계산한 주문표
 function infDayPlan(a, d){
   if((a.log||[]).some(function(l){ return l.d>=d&&(l.side==="BUY"||l.side==="SELL"); })) return null;
@@ -1025,6 +1038,8 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
   var placed = a.pending && a.pending.session===plan.session;
   var carried = placed && a.pending.carried;
   var vrLock = a.type==="VR" && !placed && (vrOrdered(a) || plan.due);
+  // 무매: 앞 장 체결 확인이 떠 있으면 그 체결이 빠진 주문표이므로, 반영한 뒤에 주문을 넣게 한다
+  var infWait = a.type==="INF" && !placed && a.pending && barOn(a.ticker,a.pending.session);
   // 맨 위에서 이번 회차 주문 시작일을 묻는 동안은(pastAsk) 그 카드의 '주문했어요'로만 기록한다
   var askP = a.type==="VR" && !placed && a.lastRoll && a.lastRoll.d && !!vrPastPlan(a);
   var vrMsg = plan.due ? (plan.zero ? "0회차 마감(시작 V 정하기)을 먼저 반영하면 1회차 주문을 넣을 수 있어요." : "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요.") : plan.zero ? "" : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+") 후에 넣어요.";
@@ -1035,10 +1050,11 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
     '<div class="col sell"><h3>매도 주문</h3>'+(sellHtml||'<div class="empty">매도 주문 없음</div>')+'</div></div>'+
     (notes&&notes.length?'<ul class="notes">'+notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join("")+'</ul>':'')+
     (vrLock&&vrMsg?'<div class="small muted" style="margin-top:10px">'+esc(vrMsg)+'</div>':'')+
+    (infWait?'<div class="small muted" style="margin-top:10px">위 '+esc(dlabel(a.pending.session))+' 체결 확인을 먼저 반영하면 이 주문표가 다시 계산되고 주문을 넣을 수 있어요.</div>':'')+
     // 주문을 넣으면 '주문 넣었어요' 버튼 자리에 주문 넣음 표시와 취소 버튼
     '<div class="actions">'+(placed?'<span class="placed"><i>✓</i>'+(carried?(plan.zero?'첫 매수 주문 유지 중 · ':'회차 주문 유지 중 · ')+dlabel(E.vrDue(a.nextUpdate))+'까지':'주문 넣음 · '+dlabel(plan.session))+'</span>'+
       (a.type==="VR"?'<button type="button" class="btn placed-x" data-act="vr-reorder">주문 취소·다시 내기</button>':'<button type="button" class="btn placed-x" data-act="cancel-pending">주문 취소</button>'):
-      (vrLock||plan.blocked||!plan.orders.length||askP?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>'))+(a.type==="VR"&&!placed&&vrOrdered(a)&&!plan.due?'<button class="btn ghost" data-act="vr-reorder">'+(plan.zero?'첫 매수 다시 내기':'회차 주문 다시 내기')+'</button>':'')+'</div></section>';
+      (vrLock||infWait||plan.blocked||!plan.orders.length||askP?'':'<button class="btn primary" data-act="place">'+(a.type==="VR"?"이번 회차 주문 넣었어요":"이대로 주문 넣었어요")+'</button>'))+(a.type==="VR"&&!placed&&vrOrdered(a)&&!plan.due?'<button class="btn ghost" data-act="vr-reorder">'+(plan.zero?'첫 매수 다시 내기':'회차 주문 다시 내기')+'</button>':'')+'</div></section>';
 }
 
 function renderINF(a){
@@ -2361,6 +2377,7 @@ document.addEventListener("click", function(ev){
   } else if(act==="place"){
     var p=a._plan;
     if(!p||p.blocked||!p.orders.length) return;
+    if(a.type==="INF"&&a.pending&&a.pending.session!==p.session&&barOn(a.ticker,a.pending.session)) return;
     var pp={pending:pendingOf(p), events:[]};
     if(a.type==="VR"){ if(vrOrdered(a)||p.due) return; pp.cycleOrdered=true; pp.pending.cycleOrder=true;
       // 모든 회차: 주문마다 번호(oid)와 넣은 수량(qty0)을 적어 cycleOrders에 남긴다. 체결 기록에 같은 번호를 붙여 잔량을 센다 (vrCarry)
