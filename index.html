@@ -469,11 +469,13 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 .vr-sum .k{font-size:11.5px;color:var(--ink-3)}.vr-sum .v{font-family:var(--mono);font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
 .vr-sum .s{white-space:nowrap;font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .vr-check input{width:20px;height:20px;margin:0;accent-color:var(--accent);grid-row:1;align-self:center}
-.vr-check{font-family:var(--sans);display:grid;grid-template-columns:20px 1fr;column-gap:12px;row-gap:3px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.vr-check{font-family:var(--sans);display:grid;grid-template-columns:20px 1fr;column-gap:12px;cursor:pointer}
 .vr-check .k{font-weight:700;font-size:14px;color:var(--ink)}
-.vr-check .vals,.vr-check .h{grid-column:2}
-.vr-check .vals{font-size:14px;color:var(--ink-2)}.vr-check .vals b{color:var(--ink)}.vr-check .sep{margin:0 8px;color:var(--line-2)}
-.vr-check .h{font-size:12.5px;color:var(--ink-2)}
+.vr-tiles{display:flex;gap:6px}
+.vr-tiles>div{background:color-mix(in srgb,var(--surface) 70%,transparent);border-radius:12px;padding:9px 10px;display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-width:0}
+.vr-tiles span{font-size:12px;color:var(--ink-2);font-weight:600}
+.vr-tiles b{font-size:clamp(13px,4.2vw,17px);color:var(--ink);white-space:nowrap}
+.vr-roll .h{font-size:12.5px;color:var(--ink-2);margin-top:-6px}
 .vr-roll{gap:14px}
 .vr-roll .bt{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
 .vr-roll .rt{color:var(--warn);font-size:14px;font-weight:700}
@@ -483,7 +485,7 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 .vr-roll .rcalc summary{cursor:pointer;font-size:13px;color:var(--ink-2);font-weight:600}
 .vr-roll .rcalc>div{margin-top:8px;font-size:12.5px;color:var(--ink-2);display:grid;gap:4px;overflow-wrap:anywhere}
 .vr-roll .rcalc>div span{display:inline-block;min-width:52px;font-family:var(--sans);font-weight:600;color:var(--ink)}
-.vr-check .edit-go{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.vr-roll .edit-go{color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .vr-roll .rbtn{width:100%;padding:14px;font-size:16px;border-radius:12px}
 .vr-roll .rbtn:disabled{opacity:.45;cursor:not-allowed}
 </style>
@@ -1124,7 +1126,8 @@ function renderVR(a){
       '<div class="actions" style="margin-top:0"><button class="btn primary" data-act="roll">'+(r.extended?'0회차 한 주 늘리기':'V 정하고 1회차 시작')+'</button></div></div>';
     else roll='<div class="banner warn vr-roll"><div class="bt"><span class="rt">'+(a.cycle||1)+'회차 마감 · V 갱신</span><span class="when">'+dlabel(rb.d)+' 종가 '+usd(rb.c)+'</span></div>'+
       '<div class="rv"><div class="k">다음 V <span>(갱신 후 새 기준)</span></div><b class="num">'+usd(r.next.V)+'</b></div>'+
-      '<label class="vr-check"><input type="checkbox" class="roll-ok" onchange="var b=this.closest(\'.vr-roll\').querySelector(\'[data-act=roll]\');b.disabled=!this.checked;"><span class="k">실제 증권사 잔고 확인 완료</span><span class="vals">보유수량 <b class="num">'+a.qty+'주</b><span class="sep">/</span>Pool <b class="num">'+usd(a.pool)+'</b></span><span class="h">다르면 <a href="#" class="edit-go" onclick="event.preventDefault();event.stopPropagation();var d=document.getElementById(\'ed-'+esc(a.id)+'\');if(d){d.open=true;d.scrollIntoView({behavior:\'smooth\',block:\'start\'});}">상태 수정</a>에서 먼저 고쳐 주세요</span></label>'+
+      '<div class="vr-tiles"><div><span>보유수량</span><b class="num">'+a.qty+'주</b></div><div><span>평단</span><b class="num">'+(a.avg&&a.qty?usd(a.avg):'-')+'</b></div><div><span>Pool</span><b class="num">'+usd(a.pool)+'</b></div></div>'+
+      '<label class="vr-check"><input type="checkbox" class="roll-ok" onchange="var b=this.closest(\'.vr-roll\').querySelector(\'[data-act=roll]\');b.disabled=!this.checked;"><span class="k">실제 증권사 잔고와 같아요</span></label><div class="h">다르면 <a href="#" class="edit-go" onclick="event.preventDefault();event.stopPropagation();var d=document.getElementById(\'ed-'+esc(a.id)+'\');if(d){d.open=true;d.scrollIntoView({behavior:\'smooth\',block:\'start\'});}">상태 수정</a>에서 먼저 고쳐 주세요</div>'+
       '<details class="rcalc"><summary>V 계산 보기</summary><div class="num"><div><span>현재 E</span>'+usd(r.E)+' ('+a.qty+'주 × '+usd(rb.c)+')</div><div><span>현재 V</span>'+usd(a.V)+'</div><div><span>다음 V</span>'+usd(a.V)+' + Pool/G '+usd(a.pool/(a.G||10))+' + (E−V)÷2√G '+usd((r.E-a.V)/(2*Math.sqrt(a.G||10)))+(r.contrib?' + 적립 '+usd(r.contrib):'')+' = <b>'+usd(r.next.V)+'</b></div></div></details>'+
       '<button class="btn primary rbtn" data-act="roll" disabled>V 갱신 반영</button></div>';
   }
