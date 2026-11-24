@@ -820,7 +820,8 @@ function renderFillConfirm(a,p,bar){
   var hasLimit=p.orders.some(function(o){return o.type==="LIMIT";});
   var openHtml=openN?'<div class="bd">시가가 지정가보다 유리하게(매수는 낮게, 매도는 높게) 열려 '+openN+'건은 지정가 대신 시가 '+usd(bar.o)+'로 체결된 것으로 잡았어요. 시가는 시세 사이트 값이라 증권사 체결가와 몇 센트 다를 수 있으니, 체결 내역과 비교해 다르면 가격을 고쳐 주세요.</div>':'';
   var miss=E.bigMisses(p.orders,bar), missQ=miss.reduce(function(s,o){return s+o.qty;},0);
-  var missHtml=miss.length?'<div class="bd" style="color:var(--danger)">큰수 때문에 못 산 매수가 있어요 : '+esc(miss.map(function(o){return o.label+" "+o.qty+"주 (원래 "+usd(o.orig)+")";}).join(", "))+'. 종가 '+usd(bar.c)+'가 큰수 '+usd(miss[0].price)+'보다 높고 원래 매수가 이하라, 원래 가격에 걸었다면 '+missQ+'주가 체결됐을 거예요. 실제로 산 게 아니면 체크하지 마세요.</div>':'';
+  var missHtml=miss.length?'<div class="bd" style="color:var(--danger)">큰수 때문에 못 산 매수가 있어요 : '+esc(miss.map(function(o){return o.label+" "+o.qty+"주 (원래 "+usd(o.orig)+")";}).join(", "))+'. 종가 '+usd(bar.c)+'가 큰수 '+usd(miss[0].price)+'보다 높고 원래 매수가 이하라, 원래 가격에 걸었다면 '+missQ+'주가 체결됐을 거예요. 실제로 산 게 아니면 체크하지 마세요.</div>'+
+    '<div class="actions" style="margin-top:0"><button class="btn" data-act="unbig">큰수 없이 원래 가격으로 주문했어요</button></div>':'';
   var head='<div class="row spread"><div class="bt">'+dlabel(p.session)+' 체결 확인</div><div class="small num">'+(hasLimit&&bar.o!=null?'시가 '+usd(bar.o)+' · ':'')+'종가 '+usd(bar.c)+' · 고가 '+usd(bar.h)+'</div></div>';
   // 판정된 체결이 없으면 주문 줄을 다 펼치지 않고, 실제로 체결된 게 있을 때만 직접 입력을 열게 한다
   if(!n && !miss.length && !fe.manual)
@@ -2473,6 +2474,12 @@ document.addEventListener("click", function(ev){
   } else if(act==="fills-manual"){
     if(fillEdits[a.id]) fillEdits[a.id].manual=true;
     render();
+  } else if(act==="unbig"){
+    // 큰수로 낮추지 않고 원래 가격 그대로 주문을 넣었을 때: 기록된 주문을 원래 가격으로 바꿔 체결을 다시 판정한다
+    var up=a.pending; if(!up||!up.orders.some(function(o){ return o.big&&o.orig!=null; })) return;
+    var uo=up.orders.map(function(o){ var c={}; for(var k in o) if(o[k]!==undefined&&k!=="big"&&k!=="orig") c[k]=o[k]; if(o.big&&o.orig!=null) c.price=o.orig; return c; });
+    delete fillEdits[a.id];
+    save(a,{pending:Object.assign({},up,{orders:uo})},dlabel(up.session)+" 주문을 원래 가격으로").then(function(){ toast("원래 가격 주문으로 체결을 다시 판정했어요. 확인하고 반영하세요."); render(); }).catch(function(){});
   } else if(act==="cancel-pending"){
     delete fillEdits[a.id];
     var lbl=a.pending?dlabel(a.pending.session)+" 주문 기록 취소":"주문 기록 취소";
@@ -2548,6 +2555,11 @@ document.addEventListener("change", function(ev){
   var f=fe.fills[+el.getAttribute("data-fi")], k=el.getAttribute("data-f");
   var row=el.closest(".fill");
   if(k==="filled") f.filled=el.checked; else if(k==="px") f.px=numOf(el); else f.qty=numOf(el);
+  // 체결가가 빈 줄을 체크하면 LOC·MOC는 종가, 지정가는 주문가를 넣어 둔다 (체크 안 한 줄은 비워 둔다)
+  if(k==="filled"&&f.filled&&!(f.px>0)){
+    var fb=barOn(a.ticker,fe.session), fo=f.order, dp=fo.type==="LIMIT"?fo.price:fb&&fb.c;
+    if(dp>0){ f.px=dp; var pe=$("fp-"+el.getAttribute("data-fi")); if(pe) pe.value=dp; }
+  }
   if(f.err){ f.err=false; row.querySelectorAll("input[type=number]").forEach(function(x){ x.style.borderColor=""; }); }
   row.classList.toggle("on", f.filled);
 });
