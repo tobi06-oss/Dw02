@@ -639,6 +639,8 @@ table.log.vrh td:nth-child(2),table.log.vrh td:nth-child(3){text-align:right}
 "use strict";
 var E = window.Engine;
 var db = null, loaded = false, accounts = {}, prices = {}, selected = null, fillEdits = {};
+// 계좌에 반영을 누른 뒤 새 내용이 이 화면에 들어올 때까지(계좌 rev가 바뀔 때까지) 체결 확인 대신 '기록하는 중'을 보인다
+var applying = {};
 // 맨 위 전략 탭(무한매수 | VR): 고른 전략의 계좌만 아래 탭에 보이고, 전략마다 마지막으로 본 계좌를 기억한다
 var curType = "INF", lastSel = {}, addMode = false;
 try { selected = localStorage.getItem("desk.sel"); curType = localStorage.getItem("desk.kind")==="VR" ? "VR" : "INF"; lastSel = JSON.parse(localStorage.getItem("desk.selk")||"{}")||{}; } catch(e) {}
@@ -778,8 +780,11 @@ function renderView(){
 function banners(a){
   var out="";
   (a.events||[]).forEach(function(ev){ out+='<div class="banner info"><div class="bd">'+esc(ev)+'</div></div>'; });
-  var p=a.pending;
-  if(p){
+  var p=a.pending, ap=applying[a.id];
+  if(ap&&(!p||ap.session!==p.session||ap.rev!==a.rev)){ delete applying[a.id]; ap=null; }
+  if(p&&ap){
+    out+='<div class="banner info"><div class="bt">기록하는 중…</div><div class="bd">'+dlabel(p.session)+' 체결을 저장하고 있어요. 저장이 끝나면 화면이 저절로 바뀌어요.<br>오래 걸리면 인터넷 연결을 확인하고 앱을 다시 열어 주세요.</div></div>';
+  } else if(p){
     var bar=barOn(a.ticker,p.session);
     if(bar){ out+=renderFillConfirm(a,p,bar); }
     else {
@@ -2505,6 +2510,8 @@ document.addEventListener("click", function(ev){
     dayMark(a,p2.session,patch);
     patch.events=res.events;
     b.disabled=true;
+    applying[a.id]={session:p2.session, rev:a.rev}; render();
+    var fail=function(){ delete applying[a.id]; render(); };
     var undoLabel=dlabel(p2.session)+" 체결 반영", done=function(msg){ delete fillEdits[a.id]; toast(msg||(res.log.length?res.log.length+"건을 반영했어요.":"체결 없음으로 기록했어요.")); };
     if(a.type==="INF"&&a.linked&&trk.meta){
       var ts=Date.now(), nt=res.log.map(function(l,i){ return tradeFromFill(a,l,bar.d,bar.c,ts+i); });
@@ -2517,9 +2524,9 @@ document.addEventListener("click", function(ev){
       saveAll(ws, ended?null:undoLabel).then(function(){
         done(ended?"사이클을 마감해 지난 사이클에 보관하고, 새 사이클을 시작했어요.":null);
         render();
-      }).catch(function(){ b.disabled=false; });
+      }).catch(fail);
     } else {
-      save(a,patch,undoLabel).then(function(){ done(); render(); }).catch(function(){ b.disabled=false; });
+      save(a,patch,undoLabel).then(function(){ done(); render(); }).catch(fail);
     }
   } else if(act==="roll"){
     var rb=barOn(a.ticker,E.vrDue(a.nextUpdate)); if(!rb){ toast(dlabel(E.vrDue(a.nextUpdate))+" 종가가 아직 없어요."); return; }
