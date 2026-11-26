@@ -161,6 +161,7 @@ details.panel[open]>summary{margin-bottom:12px}
 .slip-head{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .slip-head .when{font-family:var(--display);font-weight:800;font-size:19px;letter-spacing:-0.01em}
 .slip-head .basis{font-size:12px;color:var(--ink-3)}
+.hol{background:var(--warn-soft);color:var(--warn);font-weight:700;font-size:14px;border-radius:10px;padding:8px 12px;margin-bottom:12px}
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 .col{border-radius:14px;padding:14px 16px}
 .col.buy{background:var(--buy-soft)} .col.sell{background:var(--sell-soft)}
@@ -1051,7 +1052,9 @@ function slip(a, plan, buyHtml, sellHtml, notes, sum){
   // 맨 위에서 이번 회차 주문 시작일을 묻는 동안은(pastAsk) 그 카드의 '주문했어요'로만 기록한다
   var askP = a.type==="VR" && !placed && a.lastRoll && a.lastRoll.d && !!vrPastPlan(a);
   var vrMsg = plan.due ? (plan.zero ? "0회차 마감(시작 V 정하기)을 먼저 반영하면 1회차 주문을 넣을 수 있어요." : "V 갱신을 먼저 반영하면 이번 회차 주문을 넣을 수 있어요.") : plan.zero ? "" : "이번 회차 주문은 이미 넣었어요. 다음 주문은 V 갱신("+(a.nextUpdate?dlabel(E.vrDue(a.nextUpdate)):"-")+") 후에 넣어요.";
-  return '<section class="panel" aria-label="주문표"><div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
+  // 오늘(한국 날짜)이 미국 휴장일이면 주문표 위에 알린다. 주문표는 그대로 다음 장 것을 보여 준다
+  var td=todayKR(), hol=E.isHoliday(td)&&plan.session>td;
+  return '<section class="panel" aria-label="주문표">'+(hol?'<div class="hol">오늘 '+dlabel(td)+'은 미국 휴장입니다</div>':'')+'<div class="slip-head"><div><div class="basis">'+esc(a.ticker)+' · '+dlabel(plan.basis.d)+' 종가 '+usd(plan.basis.c)+' 기준</div>'+
     '<div class="when">'+(a.type==="VR"&&!plan.zero&&a.cycle>=1?'['+a.cycle+'회차] ':'')+dlabel(plan.session).replace("(", " (")+(a.type==="VR"?' VR 주문':' 무매 주문')+'</div></div>'+
     '</div>'+
     (sum||'')+'<div class="cols"><div class="col buy"><h3>매수 주문</h3>'+(buyHtml||'<div class="empty">매수 주문 없음</div>')+'</div>'+
